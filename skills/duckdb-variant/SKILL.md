@@ -9,7 +9,7 @@ description: >
 
 # VARIANT
 
-`VARIANT` is a binary column. Each value carries its own type, so rows in one column can differ. `JSON` is still text. Use `VARIANT` when the column will be filtered, sorted, or projected. Keep `JSON` when the user needs the original text bytes or the JSON mutation functions.
+`VARIANT` is a binary column. Each value carries its own type, so rows in one column can differ. `JSON` is still text. When the column will be filtered, sorted, or projected, use `VARIANT`. When the user needs the original text bytes or the JSON mutation functions, keep `JSON`.
 
 Run SQL with the `duckdb` skill.
 
@@ -41,12 +41,12 @@ FROM events;
 | Function | Use |
 | --- | --- |
 | `variant_typeof(v)` | Full type, including nested fields |
-| `variant_type(v)` | Top-level category only |
-| `variant_keys(v)` | Object keys; `[]` for an array or scalar |
+| `variant_type(v [, path])` | Top-level physical category (e.g. `OBJECT`, `INT32`); optional path |
+| `variant_keys(v [, path])` | Object keys; `[]` for an array or scalar; optional path |
 | `variant_extract(v, field)` | Field or list element, as `VARIANT` |
 | `variant_extract_string(v, path)` | Same, as `VARCHAR`; string paths only, non-scalars become JSON text |
-| `variant_array_length(v)` | Array length, as `UBIGINT`; `0` for a non-array |
-| `variant_exists(v, key)` | Key present in an object; `false` for an array index |
+| `variant_array_length(v [, path])` | Array length, as `UBIGINT`; `0` for a non-array; optional path |
+| `variant_exists(v, path)` | Key present in an object; `false` for an array index |
 | `variant_contains(haystack, needle)` | Structural containment, not substring |
 | `variant_normalize(v)` | Canonical form, so equal values share a representation |
 | `variant_comparator(v)` | Binary sort key for the logical `VARIANT` order |
@@ -62,15 +62,17 @@ SELECT data.user.id FROM events WHERE id = 5;
 SELECT variant_extract_string(data, 'name') FROM events WHERE id = 4;
 ```
 
-List indexes are 1-based. Index `0` raises `Extracting index 0 from VARIANT(ARRAY) is invalid, indexes are 1-based`.
+List indexes are 1-based. Index `0` raises `Extracting index 0 from VARIANT(ARRAY) is invalid, indexes are 1-based`. Out-of-bounds list indexes and missing object keys return `NULL`.
+
+There is no `variant_concat` function in DuckDB. Applying `||` casts operands to `VARCHAR`. To merge objects, cast to `JSON` and use `json_merge_patch(a::JSON, b::JSON)::VARIANT`.
 
 ```sql
 SELECT variant_extract([10, 20, 30]::VARIANT, 2);  -- 20
 ```
 
-`variant_extract` returns `VARIANT` even when the value is a string. Cast with `::VARCHAR` or use `variant_extract_string` when the next step needs text.
+`variant_extract` returns `VARIANT` even when the value is a string. `variant_extract_string` only accepts string paths, not list indexes. When the next step needs text, cast with `::VARCHAR` or use `variant_extract_string`.
 
-`VARIANT::VARCHAR` produces DuckDB's literal form, such as `{'a': 1}`. Use `::JSON::VARCHAR` when the next step needs JSON text.
+`VARIANT::VARCHAR` produces DuckDB's literal form, such as `{'a': 1}`. When the next step needs JSON text, use `::JSON::VARCHAR`.
 
 An object with duplicate keys keeps one value. JSON preserves both keys.
 
@@ -87,13 +89,13 @@ The value argument to `variant_group_object` must be `VARIANT`. A `NULL` key err
 
 ## Sorting and equality
 
-`ORDER BY v` uses the logical `VARIANT` order, which matches the underlying values rather than their bytes.
+Comparisons (`=`, `!=`, `<`, `<=`, `>`, `>=`), `GROUP BY`, and `DISTINCT` work directly on `VARIANT`. Ordering follows a strict type hierarchy: `BOOL` < numeric (`1 = 1.0` is true) < `VARCHAR` < `ARRAY` < `OBJECT` < `VARIANT_NULL`.
 
 ```sql
 SELECT i FROM range(-2, 2) t(i) ORDER BY i::VARIANT;
 ```
 
-`=` already compares logical values, so whitespace and key order do not matter. `variant_normalize` produces a canonical representation. `variant_comparator` returns a binary sort key; use it only when you need the key itself.
+`=` already compares logical values, so whitespace and key order do not matter. `variant_normalize` produces a canonical representation. When you need the binary sort key itself, use `variant_comparator`.
 
 ## Shredding
 
@@ -103,7 +105,7 @@ In a DuckDB database file, 2.0 shreds a `VARIANT` column inside row groups of at
 SET variant_minimum_shredding_size = -1;  -- off
 ```
 
-Parquet writes can shred too. The database setting does not gate Parquet shredding: a one-row file still writes the typed structure. Auto-shredding follows the first row group. To force a schema:
+Parquet writes can shred too. The database setting does not gate Parquet shredding; a one-row file still writes the typed structure. Auto-shredding follows the first row group. To force a schema:
 
 ```sql
 COPY events TO 'events.parquet' (
@@ -114,7 +116,7 @@ COPY events TO 'events.parquet' (
 
 DuckDB reads shredded `VARIANT` Parquet, including files Snowflake wrote. `SHREDDING` is a storage hint, not a validation contract. A row that does not match the schema falls back to the unshredded `value` and still round-trips. Extra fields survive. Invalid type names error at bind.
 
-`read_json` cannot read directly into a `VARIANT` column: it binds, then fails at execution. Read as `JSON`, then cast `::VARIANT`.
+`read_json` cannot read directly into a `VARIANT` column. It binds, then fails at execution. Read as `JSON`, then cast `::VARIANT`.
 
 Delta tables have a separate switch. See `duckdb-lakehouse`.
 

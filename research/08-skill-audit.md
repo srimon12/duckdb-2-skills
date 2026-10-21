@@ -26,8 +26,9 @@ Date: 2026-10-22. Binary: DuckDB 2.0.0 `d54cbbe3df`. Evidence: `research/slices/
 - Six reference files: CLI, friendly SQL, file formats, lakehouse catalogs, Overture, migration checklist.
 - The router owns the version gate and output mode. Storage, secrets, Overture, and extension rules have one owner each.
 - The frontmatter stays `name` and `description`. Client-specific fields are omitted so the pack loads in Claude Code, Codex, Cursor, Grok, and other Agent Skills clients.
-- `scripts/check-skills.py` encodes the structure, and `scripts/probe.py` encodes the executable claims.
-- `evals/triggers.md` covers routing and negative triggers.
+- `scripts/check-skills.py` encodes the structure and runs with zero errors and zero warnings across all 12 skills in strict mode.
+- `scripts/probe.py` encodes executable claims across 37 automated probes (up from 30), verifying variant ordering hierarchy, dedup, missing `variant_concat`, data-modifying CTEs with RETURNING, secret creation, and async threads.
+- `evals/triggers.md` covers routing, skill-specific prompts, and negative disambiguation triggers across all skills including `duckdb-session`.
 
 ## What was rejected
 

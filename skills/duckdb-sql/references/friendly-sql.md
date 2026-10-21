@@ -22,7 +22,7 @@ FROM sales
 GROUP BY ALL;
 ```
 
-`GROUP BY ALL` groups by every non-aggregate select expression. `ORDER BY ALL` orders by every output column, left to right. Both are convenient in exploration and fragile in saved SQL, because a new column changes the grouping or sort. Write the columns explicitly when the query is part of a pipeline.
+`GROUP BY ALL` groups by every non-aggregate select expression. `ORDER BY ALL` orders by every output column, left to right. Both are convenient in exploration and fragile in saved SQL, because a new column changes the grouping or sort. When the query is part of a pipeline, write the columns explicitly.
 
 ## Star expressions
 
@@ -54,7 +54,7 @@ UNION ALL BY NAME
 SELECT 3 AS b, 4 AS c;
 ```
 
-Result: `a, b, c` with `1, 2, NULL` and `NULL, 3, 4`. Missing columns become `NULL`, and types are combined. `UNION BY NAME` is the distinct form.
+Result columns are `a, b, c` with rows `1, 2, NULL` and `NULL, 3, 4`. Missing columns become `NULL`, and types are combined. `UNION BY NAME` is the distinct form.
 
 ## INSERT BY NAME
 
@@ -66,7 +66,7 @@ Source columns are matched by name. Omitted target columns take their default, o
 
 ## CREATE OR REPLACE TABLE
 
-`CREATE OR REPLACE TABLE` recreates the table. Primary keys, constraints, and explicit indexes on the old table are gone without a warning. Use `CREATE TABLE IF NOT EXISTS` plus `INSERT` or `MERGE` when the table has invariants.
+`CREATE OR REPLACE TABLE` recreates the table. Primary keys, constraints, and explicit indexes on the old table are gone without a warning. When the table has invariants, use `CREATE TABLE IF NOT EXISTS` plus `INSERT` or `MERGE`.
 
 ## PIVOT and UNPIVOT
 
@@ -160,7 +160,7 @@ SELECT * FROM range(10) OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY;
 SELECT * FROM range(1000) LIMIT 10%;
 ```
 
-`FETCH FIRST ... PERCENT` and `FETCH FIRST ... WITH TIES` are parser errors. `LIMIT 10%` floors: 9 rows give 0, 10 give 1, 1000 give 100.
+`FETCH FIRST ... PERCENT` and `FETCH FIRST ... WITH TIES` are parser errors. `LIMIT 10%` floors; 9 rows give 0, 10 give 1, and 1000 give 100.
 
 ## query and query_table
 
@@ -212,7 +212,7 @@ Without an `ORDER BY` that starts with the `DISTINCT ON` keys, the chosen row is
 | `ARRAY` | Fixed length, 1-based |
 | `LIST` | Variable length, 1-based |
 | `ENUM` | Compares in declaration order |
-| `DECIMAL` | Bare literal is `DECIMAL(18,3)`; division returns `DOUBLE` |
+| `DECIMAL` | Unparameterized type `DECIMAL` defaults to `DECIMAL(18,3)`; division returns `DOUBLE` |
 | `TUPLE` | `(1, 'a')` is a tuple, not a named struct |
 | `STRUCT` | Bare `STRUCT` is an empty struct; `STRUCT()` is an error |
 

@@ -66,6 +66,7 @@ SELECT * FROM reject_errors;
 | Parameter | Default | Use |
 | --- | --- | --- |
 | `format` | `auto` in practice | `auto`, `unstructured`, `newline_delimited`, `array`. The manual says `array`; a JSONL file reads without it. |
+| `records` | `auto` | `false` returns raw JSON objects as a single `JSON` column instead of expanding keys. |
 | `columns` | empty | Explicit `{'id': 'INTEGER'}` schema; unlisted keys are excluded. |
 | `maximum_object_size` | 16 MiB | Reject larger array or unstructured objects; not enforced for NDJSON lines. |
 | `ignore_errors` | `false` | Only for `newline_delimited`; a bad line becomes a row of `NULL`s, not a skipped row. |
@@ -119,7 +120,7 @@ COPY (FROM 'in.csv') TO 'out.jsonl' (FORMAT json, ARRAY false);
 ```sql
 SELECT * FROM parquet_metadata('file.parquet');       -- per row group and column
 SELECT * FROM parquet_schema('file.parquet');         -- column types
-SELECT * FROM parquet_file_metadata('file.parquet');  -- file-level key/value pairs
+SELECT * FROM parquet_file_metadata('file.parquet');  -- file-level row count, version, and sizes
 SELECT * FROM parquet_kv_metadata('file.parquet');    -- key/value metadata
 SELECT * FROM parquet_bloom_probe('file.parquet', 'col', 'value');
 ```
@@ -216,6 +217,7 @@ CREATE SECRET r2_creds (
 | `gcs` | `KEY_ID`, `SECRET`, `PROVIDER`; HMAC keys |
 | `azure` | `ACCOUNT_NAME`, `CONNECTION_STRING`, `TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET`, `PROVIDER` |
 | `http` | `BEARER_TOKEN`, `EXTRA_HTTP_HEADERS` |
+| `huggingface` | `TOKEN` |
 | `quack` | `TOKEN`, `SCOPE` |
 
 Inspect and test:

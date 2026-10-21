@@ -32,17 +32,17 @@ That installs under `~/.duckdb/cli/<version>/`, points `~/.duckdb/cli/latest` at
 | A script parses the rows | `duckdb -json -c "..."` | One JSON array on stdout; errors as text on stderr |
 | A person reads a terminal | `duckdb -box -c "..."` | A box table |
 
-`-csv`, `-json`, and every other output flag disable automatic agent mode. Pass `-agent` explicitly if you want agent framing with a different renderer.
+`-csv`, `-json`, and every other output flag disable automatic agent mode. To keep agent framing with a different renderer, pass `-agent` explicitly.
 
-`-agent -json` and `-agent -csv` keep the JSON errors and the banner, but they do not apply the 1,000-row, 10,000-byte, or 500-character caps. Add `LIMIT` or an aggregate when a result could be large.
+`-agent -json` and `-agent -csv` keep the JSON errors and the banner, but they do not apply the 1,000-row, 10,000-byte, or 500-character caps. When a result could be large, add `LIMIT` or an aggregate.
 
-Read stderr. Agent mode writes its banner, JSON errors, cost estimates, and progress there. A footer that says `first 20 and last 20 of N rows` means the table is a sample. Add `LIMIT` or an aggregate before you treat it as complete. Results of 1 to 9 rows have no hash footer; 0 and 10 or more do.
+Read stderr. Agent mode writes its banner, JSON errors, cost estimates, and progress there. A footer that says `first 20 and last 20 of N rows` means the table is a sample. Before treating the result as complete, add `LIMIT` or an aggregate. Results of 1 to 9 rows have no hash footer; 0 and 10 or more do.
 
-`-json` on error can leave a partial `[` on stdout. Check the exit code and stderr before parsing. `-json` with multiple statements emits one array per statement, and `NaN`/`Infinity` are not strict JSON. `EXPLAIN ANALYZE` prints a profile, not JSON, even with `-json`.
+`-json` on error can leave a partial `[` on stdout. Before parsing, check the exit code and stderr. `-json` with multiple statements emits one array per statement, and `NaN`/`Infinity` are not strict JSON. `EXPLAIN ANALYZE` prints a profile, not JSON, even with `-json`.
 
 ## Run SQL
 
-Each `duckdb` process starts with a fresh in-memory database, then runs `~/.duckdbrc` unless `-no-init` is set. `ATTACH` dies with the process, so use `duckdb-session` when state must survive.
+Each `duckdb` process starts with a fresh in-memory database, then runs `~/.duckdbrc` unless `-no-init` is set. When state must survive across calls, use `duckdb-session`.
 
 ```bash
 duckdb -agent -c "SELECT 42 AS answer;"
@@ -53,7 +53,7 @@ duckdb -f query.sql
 duckdb -init .duckdb/state.sql -agent -c "SHOW TABLES;"
 ```
 
-`-init` replaces `~/.duckdbrc`. `-no-init` skips both. `-cmd` runs at its argument position. `-f` runs a file and stops at the first error by default; stdin continues. A `-c` string cannot hold a dot command plus SQL; use `-cmd` or a heredoc.
+`-init` replaces `~/.duckdbrc`. `-no-init` skips both. `-cmd` runs at its argument position. `-f` runs a file and stops at the first error by default; stdin continues. To combine a dot command with SQL, use `-cmd` or a heredoc; a `-c` string cannot hold both.
 
 `-readonly` opens without write access, but an explicit `ATTACH ... (READ_WRITE)` can override it. `-safe` blocks external file access, still opens the database named on the command line, and locks configuration before `-init` runs.
 
@@ -63,11 +63,11 @@ duckdb -init .duckdb/state.sql -agent -c "SHOW TABLES;"
 SET max_execution_time = 30000;
 ```
 
-If stderr prints an `estimate:` line for a scan of more than a million rows, ask before an unbounded run.
+If stderr prints an `estimate:` line for a scan of 1,000,000 or more rows, ask before an unbounded run.
 
 ## New database files
 
-A file created by 2.0 with default settings uses storage version 69. DuckDB 1.x cannot open it. 2.0 opens files written by 1.x and keeps their old version when it writes to them. Read `duckdb-migrate` before creating a file that older processes must read.
+A file created by 2.0 with default settings uses storage version 69. DuckDB 1.x cannot open it. 2.0 opens files written by 1.x and keeps their old version when it writes to them. Before creating a file that older processes must read, read `duckdb-migrate`.
 
 ## Route
 
@@ -87,7 +87,7 @@ A file created by 2.0 with default settings uses storage version 69. DuckDB 1.x 
 
 When an error names a feature, load the owner instead of guessing:
 
-| Symptom | Skill |
+| Symptom | Skill or action |
 | --- | --- |
 | `Deprecated lambda arrow`, `Division by zero`, `nested schema`, `BEFORE ... FOR EACH ROW` | `duckdb-sql` |
 | `sqlite_master` does not exist, `read_csv` on a Parquet file, a secret validation failure | `duckdb-files` |

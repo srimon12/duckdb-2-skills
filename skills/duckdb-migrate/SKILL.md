@@ -25,8 +25,8 @@ The calendar lists 2.0.1 for 2026-11-18 and marks it tentative. For a mission-cr
 
 1. Inventory every process, file, extension, and client that touches DuckDB.
 2. Pin the output format for any file that older processes must read.
-3. Build a shadow copy and run the real workload against 2.0.
-4. Back up the catalog and data, or export the database.
+3. Back up the catalog and data, or export the database, and test the restore.
+4. Build a shadow copy and run the real workload against 2.0.
 5. Upgrade the binary and every extension together.
 6. Run the SQL-text checks and the test suite.
 7. Cut over, then keep the old binary until the rollback window closes.
@@ -61,9 +61,9 @@ SET storage_compatibility_version = 'v1.5.6';
 ATTACH 'file.db' (STORAGE_VERSION 'v1.5.6');
 ```
 
-`latest` means version 69. Python uses `config={"storage_compatibility_version": "v1.5.0"}`. The string is a minimum version, not a promise that every 1.5 patch shares one storage number. Check `tags['storage_version']` after the first write.
+`latest` means version 69. Python uses `config={"storage_compatibility_version": "v1.5.0"}`. The string is a minimum version, not a promise that every 1.5 patch shares one storage number. After the first write, check `tags['storage_version']`.
 
-`SET storage_compatibility_version` affects later attaches, not the already-open main database. `-storage-version` affects the main file and new files attached in that session, but it is ignored for an existing main file. Use it before the file path, not in a `-c` command after the file is open.
+`SET storage_compatibility_version` affects later attaches, not the already-open main database. `-storage-version` affects the main file and new files attached in that session, but it is ignored for an existing main file. Place it before the file path, not in a `-c` command after the file is open.
 
 Move an existing file onto 2.0 storage only when the user asks, and only after a backup:
 
@@ -94,7 +94,7 @@ Search application SQL for these. The replacement behavior is specified in `duck
 
 | Pattern | 2.0 behavior | Replacement |
 | --- | --- | --- |
-| `x -> expr` | Disabled by default | `lambda x: expr` |
+| Legacy arrow (`->`) | Disabled by default | `lambda x: expr` |
 | `1 // 0`, `1 % 0` | Raise | `TRY(expr)`; the setting is deprecated |
 | `col ~ 'pat'`, `col !~ 'pat'` | Partial match, like PostgreSQL | `regexp_full_match` for the 1.x full-match behavior |
 | `s3://bucket/key?s3_access_key_id=...` | The query string is part of the key | A secret; `s3_enable_deprecated_url_parameters` is the temporary bridge |

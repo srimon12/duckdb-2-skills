@@ -24,7 +24,7 @@ class ProbeError(RuntimeError):
 
 def duckdb(sql: str, cwd: Path, args: tuple[str, ...] = ()) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [DUCKDB, "-no-agent", "-json", *args, "-c", sql],
+        [DUCKDB, "-dark-mode", "-no-agent", "-json", *args, "-c", sql],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -39,7 +39,19 @@ def rows(sql: str, cwd: Path, args: tuple[str, ...] = ()) -> list[dict]:
     text = proc.stdout.strip()
     if not text:
         return []
-    return json.loads(text)
+    decoder = json.JSONDecoder()
+    pos = 0
+    results: list[dict] = []
+    while pos < len(text):
+        while pos < len(text) and text[pos].isspace():
+            pos += 1
+        if pos >= len(text):
+            break
+        obj, end_pos = decoder.raw_decode(text, pos)
+        if isinstance(obj, list):
+            results = obj
+        pos = end_pos
+    return results
 
 
 def one(sql: str, cwd: Path, args: tuple[str, ...] = ()) -> dict:
@@ -162,7 +174,7 @@ def check_secure_view(tmp: Path, network: bool) -> tuple[bool, str]:
 
 def check_rtree(tmp: Path, network: bool) -> tuple[bool, str]:
     proc = subprocess.run(
-        [DUCKDB, "-no-agent", "-c",
+        [DUCKDB, "-dark-mode", "-no-agent", "-c",
          "LOAD spatial; CREATE TABLE t AS SELECT point::GEOMETRY AS geom"
          " FROM st_generatepoints({min_x:0,min_y:0,max_x:100,max_y:100}::BOX_2D, 1000, 42);"
          " CREATE INDEX i ON t USING RTREE (geom);"
@@ -255,7 +267,7 @@ def check_merge(tmp: Path, network: bool) -> tuple[bool, str]:
 
 def check_explain_sql(tmp: Path, network: bool) -> tuple[bool, str]:
     proc = subprocess.run(
-        [DUCKDB, "-no-agent", "-c", "EXPLAIN (SQL) SELECT 42"],
+        [DUCKDB, "-dark-mode", "-no-agent", "-c", "EXPLAIN (SQL) SELECT 42"],
         cwd=tmp,
         capture_output=True,
         text=True,
@@ -267,7 +279,7 @@ def check_explain_sql(tmp: Path, network: bool) -> tuple[bool, str]:
 
 def check_agent_mode(tmp: Path, network: bool) -> tuple[bool, str]:
     proc = subprocess.run(
-        [DUCKDB, "-agent", "-c", "SELECT range AS i FROM range(2000)"],
+        [DUCKDB, "-dark-mode", "-agent", "-c", "SELECT range AS i FROM range(2000)"],
         cwd=tmp,
         capture_output=True,
         text=True,
@@ -279,7 +291,7 @@ def check_agent_mode(tmp: Path, network: bool) -> tuple[bool, str]:
 
 def check_csv_disables_agent(tmp: Path, network: bool) -> tuple[bool, str]:
     proc = subprocess.run(
-        [DUCKDB, "-csv", "-c", "SELECT 42 AS answer"],
+        [DUCKDB, "-dark-mode", "-csv", "-c", "SELECT 42 AS answer"],
         cwd=tmp,
         capture_output=True,
         text=True,
@@ -311,6 +323,69 @@ def check_docs_index(tmp: Path, network: bool) -> tuple[bool, str]:
     return ok, str(got)
 
 
+def check_async_threads(tmp: Path, network: bool) -> tuple[bool, str]:
+    got = one("SET async_threads = 16; SELECT current_setting('async_threads') AS v", tmp)
+    return str(got["v"]) == "16", str(got)
+
+
+def check_variant_concat_absent(tmp: Path, network: bool) -> tuple[bool, str]:
+    return expect_error(
+        "SELECT variant_concat([1]::VARIANT, [2]::VARIANT)",
+        tmp,
+        "variant_concat does not exist",
+    )
+
+
+def check_variant_dedup(tmp: Path, network: bool) -> tuple[bool, str]:
+    got = one(
+        "SELECT count(DISTINCT v) AS n FROM (VALUES (1::VARIANT), (1::BIGINT::VARIANT), ('1'::VARIANT)) t(v)",
+        tmp,
+    )
+    return got["n"] == 2, str(got)
+
+
+def check_variant_order_hierarchy(tmp: Path, network: bool) -> tuple[bool, str]:
+    res = rows(
+        "SELECT typeof(v) AS t, v FROM (VALUES ({'a':1}::VARIANT), (NULL::VARIANT), (1::VARIANT), (true::VARIANT), ('z'::VARIANT), ([1]::VARIANT)) t(v) ORDER BY v",
+        tmp,
+    )
+    ordered_values = [r["v"] for r in res]
+    ok = (
+        ordered_values[0] is True
+        and ordered_values[1] == 1
+        and ordered_values[2] == "z"
+        and ordered_values[3] == [1]
+        and ordered_values[4] == {"a": 1}
+        and ordered_values[5] is None
+    )
+    return ok, str(ordered_values)
+
+
+def check_json_merge_patch(tmp: Path, network: bool) -> tuple[bool, str]:
+    got = one("SELECT json_merge_patch('{\"a\": 1}', '{\"b\": 2}') AS v", tmp)
+    return got["v"] == {"a": 1, "b": 2}, str(got)
+
+
+def check_data_modifying_cte(tmp: Path, network: bool) -> tuple[bool, str]:
+    got = one(
+        "CREATE TABLE src(id INT); INSERT INTO src VALUES (1), (2);"
+        "CREATE TABLE dst(id INT);"
+        "WITH deleted AS (DELETE FROM src RETURNING id) INSERT INTO dst SELECT id FROM deleted;"
+        "SELECT count(*) AS n FROM dst",
+        tmp,
+    )
+    return got["n"] == 2, str(got)
+
+
+def check_secret_manager(tmp: Path, network: bool) -> tuple[bool, str]:
+    got = one(
+        "CREATE TEMPORARY SECRET s_probe (TYPE S3, KEY_ID 'test_key', SECRET 'test_secret');"
+        "SELECT type, provider FROM duckdb_secrets() WHERE name = 's_probe'",
+        tmp,
+    )
+    return got == {"type": "s3", "provider": "config"}, str(got)
+
+
 CHECKS = [
     Check("version is 2.0", check_version),
     Check("lambda syntax", check_lambda),
@@ -324,6 +399,9 @@ CHECKS = [
     Check("VARIANT index 0 rejected", check_variant_index_base),
     Check("VARIANT out-of-range returns NULL", check_variant_out_of_range),
     Check("variant_comparator returns BLOB", check_variant_comparator),
+    Check("variant_concat absent", check_variant_concat_absent),
+    Check("VARIANT distinct across types", check_variant_dedup),
+    Check("VARIANT order hierarchy", check_variant_order_hierarchy),
     Check("regex ~ is partial", check_regex_partial),
     Check("decimal_division exact", check_decimal_division),
     Check("SECURE VIEW", check_secure_view),
@@ -341,6 +419,10 @@ CHECKS = [
     Check("EXPLAIN (SQL)", check_explain_sql),
     Check("agent mode truncation footer", check_agent_mode),
     Check("-csv disables agent mode", check_csv_disables_agent),
+    Check("async_threads setting", check_async_threads),
+    Check("json_merge_patch", check_json_merge_patch),
+    Check("data-modifying CTE with RETURNING", check_data_modifying_cte),
+    Check("temporary secret creation", check_secret_manager),
     Check("docs index versions", check_docs_index),
 ]
 

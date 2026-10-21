@@ -11,7 +11,7 @@ description: >
 
 Object-storage secrets and plain Parquet or CSV on S3 live in `duckdb-files`. This skill starts once a catalog or lake table is involved.
 
-Run SQL with the `duckdb` skill. `INSTALL AND LOAD` the extension you need: `ducklake`, `iceberg`, `delta`, or `unity_catalog`. They autoload on first use when install is allowed.
+Run SQL with the `duckdb` skill. `INSTALL AND LOAD` the needed extension (`ducklake`, `iceberg`, `delta`, or `unity_catalog`). They autoload on first use when install is allowed.
 
 ## Choose the format
 
@@ -38,7 +38,7 @@ A DuckDB-file catalog defaults `DATA_PATH` to `<metadata>.files`. A new SQLite o
 
 Useful options: `READ_ONLY`, `CREATE_IF_NOT_EXISTS`, `DATA_INLINING_ROW_LIMIT`, `DUCKLAKE_VERSION '1.0'`, `ENCRYPTED`, `AUTOMATIC_MIGRATION`, `OVERRIDE_DATA_PATH`, `SNAPSHOT_VERSION`, and `SNAPSHOT_TIME`. The full table is in [references/catalogs.md](references/catalogs.md).
 
-Migrate only when the user wants a 1.1 feature. Back up the catalog and the data files. Stop writes, compaction, and cleanup. Make every client 1.1-capable. Reset the default, then migrate with write access:
+When the user wants a 1.1 feature, migrate. Back up the catalog and the data files. Stop writes, compaction, and cleanup. Make every client 1.1-capable. Reset the default, then migrate with write access:
 
 ```sql
 RESET ducklake_default_version;
@@ -46,9 +46,9 @@ ATTACH 'ducklake:metadata.ducklake' AS lake (AUTOMATIC_MIGRATION true);
 SELECT value FROM lake.options() WHERE option_name = 'version';
 ```
 
-Migration is irreversible. A leftover `ducklake_default_version='1.0'` makes a later plain attach fail with `Cannot downgrade a DuckLake catalog`. Omit `AUTOMATIC_MIGRATION` after the migration.
+Migration is irreversible. A leftover `ducklake_default_version='1.0'` makes a later plain attach fail with `Cannot downgrade a DuckLake catalog`. After the migration, omit `AUTOMATIC_MIGRATION`.
 
-These need 1.1: nested schemas, the `"NULL"` type, `epoch_month` and the other epoch transforms, `VARIANT` inlining into PostgreSQL or SQLite, multi-snapshot Puffin deletes, exact string statistics, `row_group_count`, and cross-schema compaction after `ADD COLUMN`.
+Version 1.1 is required for nested schemas, the `"NULL"` type, `epoch_month` and the other epoch transforms, `VARIANT` inlining into PostgreSQL or SQLite, multi-snapshot Puffin deletes, exact string statistics, `row_group_count`, and cross-schema compaction after `ADD COLUMN`.
 
 Snapshots and time travel:
 
@@ -61,7 +61,7 @@ SELECT ducklake_current_snapshot('lake');
 
 `VERSION` is a snapshot id. A timestamp before the first snapshot or in the future fails. The `AT` expression cannot contain a subquery.
 
-Maintenance order inside `CHECKPOINT`: flush inlined data, expire snapshots, merge adjacent files, rewrite data files, cleanup old files, delete orphaned files. `CHECKPOINT` can expire history and delete files, so set retention and back up before the first run.
+Inside `CHECKPOINT`, maintenance runs in this order: flush inlined data, expire snapshots, merge adjacent files, rewrite data files, cleanup old files, delete orphaned files. `CHECKPOINT` can expire history and delete files, so set retention and back up before the first run.
 
 ```sql
 CALL ducklake_merge_adjacent_files('lake', 'orders', schema => 'sales', max_compacted_files => 10);
@@ -101,7 +101,7 @@ SELECT * FROM ice.t AT (VERSION => 7635660646343998149);
 SELECT * FROM iceberg_snapshots('ice.t');
 ```
 
-Read `iceberg_snapshots` before copying a version number from Delta. The numbers mean different things.
+Before copying a version number from Delta, read `iceberg_snapshots`. The numbers mean different things.
 
 ## Delta
 

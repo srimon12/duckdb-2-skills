@@ -20,6 +20,11 @@ A description that needs this table explained is too weak. The prompt should be 
 | 10 | This pandas cell prints the query twice. | `duckdb-python` | `duckdb-sql` |
 | 11 | Find coffee shops within 2 km of Times Square. | `duckdb-spatial` | `duckdb-files` |
 | 12 | Store this JSON blob without flattening it. | `duckdb-variant` | `duckdb-files` |
+| 13 | Save all my attached databases and settings for tomorrow. | `duckdb-session` | `duckdb` |
+| 14 | Read CSV from an S3 bucket with secret credentials. | `duckdb-files` | `duckdb-quack`, `duckdb-sql` |
+| 15 | Write new partitions into our Apache Iceberg table. | `duckdb-lakehouse` | `duckdb-files` |
+| 16 | Convert PyCapsule Arrow stream to DuckDB relation zero-copy. | `duckdb-python` | `duckdb-files` |
+| 17 | Allow a frontend app to query Quack server directly with public token. | `duckdb-quack` | `duckdb-session` |
 
 ## Skill-specific
 
@@ -107,6 +112,15 @@ A description that needs this table explained is too weak. The prompt should be 
 | Move a 1.5 file to 2.0 storage. | back up, `EXPORT DATABASE` on 1.5, `IMPORT DATABASE` on 2.0 |
 | Open a 1.x file in 2.0. | allowed; writes keep the old storage version |
 | Roll back after migration. | restore the backup; the storage upgrade is not reversible in place |
+
+### `duckdb-session`
+
+| Prompt | Expected action |
+| --- | --- |
+| Record this session state to disk. | `duckdb_session_state()` into `state.sql` |
+| Restore session state from yesterday. | `.read state.sql` after checking secrets |
+| Find which database owns table `t1`. | join `duckdb_tables()` with `duckdb_databases()` on `database_oid` |
+| Set my prompt to show current database. | `.prompt 'duckdb (%d)> '` in CLI or rc |
 
 ### `duckdb-python`
 
