@@ -1,8 +1,13 @@
 {
   "name": "duckdb-2-skills",
   "description": "Agent skills for DuckDB 2.0: SQL, files, VARIANT, Quack, DuckLake, Iceberg, Delta, migration, and the Python client.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
+  "author": {
+    "name": "duckdb-2-skills contributors"
+  },
+  "homepage": "https://github.com/srimon12/duckdb-2-skills",
+  "repository": "https://github.com/srimon12/duckdb-2-skills",
   "keywords": [
     "duckdb",
     "duckdb-2",

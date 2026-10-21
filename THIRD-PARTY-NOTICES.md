@@ -43,3 +43,11 @@ section.
 SQL examples that match the DuckDB manual are taken from the 2.0 docs and the
 2026-10-21 release notes. Those pages remain the source of truth and are
 linked from each skill. DuckDB is a trademark of the DuckDB Foundation.
+
+The Markdown snapshots under `research/sources/duckdb-2.0/` and
+`research/sources/ducklake-stable/` come from
+[duckdb/duckdb-web](https://github.com/duckdb/duckdb-web) and
+[duckdb/ducklake-web](https://github.com/duckdb/ducklake-web). Both are MIT
+licensed, copyright 2018-2025 Stichting DuckDB Foundation. The snapshots are
+reference copies for research, not a second manual. `scripts/fetch-docs.py`
+recreates them at the commits recorded in `research/sources/MANIFEST.md`.

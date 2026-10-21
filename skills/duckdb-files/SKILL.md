@@ -1,15 +1,15 @@
 ---
 name: duckdb-files
 description: >
-  Read or convert local and remote data files with DuckDB 2.0: CSV, Parquet,
-  JSON, Avro, Excel, SQLite, HTTP, S3, R2, GCS, Azure. Use when the user
-  points at a data file or an object-storage URL, asks for a preview, or wants
-  parquet, csv, json, or xlsx output. Use /duckdb-files.
+  Read, preview, and convert data files with DuckDB 2.0. Covers CSV, Parquet,
+  JSON, Avro, Excel, SQLite, HTTP, and object storage, plus secrets and
+  asynchronous I/O. Use when the user points at a data file or an s3://,
+  https://, gs://, or az:// URL, or asks for parquet, csv, json, or xlsx output.
 ---
 
-# Read and convert files
+# Data files
 
-Run DuckDB with the `duckdb` skill. GeoJSON, Shapefile, and GeoPackage go to `duckdb-spatial`. A `.duckdb` database file goes to `duckdb-session`. Lake catalogs go to `duckdb-lakehouse`.
+Run DuckDB with the `duckdb` skill. Shapefile and GeoPackage go to `duckdb-spatial`. GeoJSON reads natively through the JSON reader. A native database file goes to `duckdb-session`. Lake catalogs go to `duckdb-lakehouse`. A `VARIANT` column goes to `duckdb-variant`.
 
 Do not build one macro that mentions every reader. A missing extension then fails the whole statement. Pick the reader from the path.
 
@@ -17,64 +17,41 @@ Do not build one macro that mentions every reader. A missing extension then fail
 
 | Path | Statement |
 | --- | --- |
-| `.csv`, `.tsv`, `.tab`, `.txt` | `FROM read_csv('path')` |
-| `.json`, `.jsonl`, `.ndjson` | `FROM read_json_auto('path')` |
+| `.csv`, `.tsv` | `FROM read_csv('path')`; `.tsv` sniffs the tab |
+| `.tab`, `.txt` | `FROM read_csv('path')`; bare paths do not dispatch |
+| `.json` | `FROM read_json('path')`; array or NDJSON, auto-detected |
+| `.jsonl`, `.ndjson` | `FROM read_json('path', format = 'newline_delimited')` |
 | `.parquet`, `.pq`, or a directory of Parquet | `FROM read_parquet('path')` |
-| `.avro` | `INSTALL avro; LOAD avro;` then `FROM read_avro('path')` |
-| `.xlsx` | `INSTALL excel; LOAD excel;` then `FROM read_xlsx('path')` |
-| `.db`, `.sqlite`, `.sqlite3` | `INSTALL sqlite_scanner; LOAD sqlite_scanner;` then `ATTACH 'path' AS s (TYPE sqlite);` and `SHOW TABLES` |
+| `.avro` | `FROM read_avro('path')`; autoloads |
+| `.xlsx` | `FROM read_xlsx('path')`; autoloads |
+| `.sqlite`, `.sqlite3` | `ATTACH 'path' AS s (TYPE sqlite);` then `SHOW TABLES` |
+| `.db`, `.duckdb` | `FROM read_duckdb('path')` or `FROM 'path'`; `.db` is DuckDB, not SQLite |
+| `.geojson`, `.geojsonl` | `FROM read_json('path', geojson := true)` or `FROM 'path'` |
+| `.shp`, `.gpkg`, `.fgb` | `LOAD spatial;` then `ST_Read('path')` |
 | anything else | `DESCRIBE FROM 'path'` and switch to the reader the error names |
 
-For a bare filename, resolve it under the working tree before you query it. Skip `.git`.
+`read_json_auto`, `read_csv_auto`, and `parquet_scan` still exist as aliases. Write the short name in new SQL.
 
-Preview:
+A bare filename resolves under the working tree. Skip `.git`.
+
+## Preview
 
 ```sql
 DESCRIBE FROM read_parquet('path');
-SELECT count(*) AS n FROM read_parquet('path');
 FROM read_parquet('path') LIMIT 20;
+SELECT count(*) AS n FROM read_parquet('path');
 ```
 
-Skip the `count(*)` when the file is a large remote Parquet. Use metadata instead:
+Skip `count(*)` on a large remote Parquet. Use metadata:
 
 ```sql
-SELECT file_name,
-       sum(row_group_num_rows) AS rows,
-       sum(row_group_compressed_bytes) AS compressed_bytes
-FROM parquet_metadata('path')
-GROUP BY file_name;
+SELECT num_rows, file_size_bytes
+FROM parquet_file_metadata('path');
 ```
 
-On a local file the user did not ask to join with the network, install any extension first, then restrict the process:
+Do not sum `row_group_num_rows` from `parquet_metadata`: it repeats once per column in a row group, so a 5-row 3-column file reports 15. Use `parquet_file_metadata`, `count(*)`, or `DISTINCT file_name, row_group_id, row_group_num_rows`.
 
-```sql
-SET allowed_paths = ['/absolute/file'];
-SET enable_external_access = false;
-SET allow_persistent_secrets = false;
-SET lock_configuration = true;
-```
-
-Skip that sandbox for `s3://`, `gs://`, `gcs://`, `r2://`, `az://`, `azure://`, `abfs://`, `abfss://`, `http://`, and `https://`.
-
-## Remote paths
-
-```sql
-LOAD httpfs;
-```
-
-| Store | Secret |
-| --- | --- |
-| S3, when AWS credentials already exist | `CREATE OR REPLACE SECRET (TYPE s3, PROVIDER credential_chain);` |
-| S3 with keys | `CREATE OR REPLACE SECRET (TYPE s3, PROVIDER config, KEY_ID '...', SECRET '...', REGION 'us-east-1');` |
-| Public bucket that only needs a region | `CREATE OR REPLACE SECRET (TYPE s3, PROVIDER config, REGION 'us-west-2');` |
-| Cloudflare R2 | `CREATE OR REPLACE SECRET (TYPE r2, PROVIDER credential_chain);` or a config secret. Rewrite `r2://bucket/key` to `s3://bucket/key` and set the R2 endpoint. |
-| GCS | `CREATE OR REPLACE SECRET (TYPE gcs, KEY_ID '...', SECRET '...');` and use `gs://` |
-| Azure | `INSTALL azure; LOAD azure;` then `CREATE OR REPLACE SECRET (TYPE azure, PROVIDER credential_chain, ACCOUNT_NAME '...');` |
-| HTTPS | `LOAD httpfs;` and no secret unless the server requires one |
-
-`credential_chain` for S3 autoloads the `aws` extension. Do not put access keys in the URL. DuckDB 2.0 treats `?s3_access_key_id=...` as part of the object key. The old behavior is `SET s3_enable_deprecated_url_parameters = true` after `LOAD httpfs`.
-
-List a prefix without downloading bodies. Select `filename`, `size`, and `last_modified` only:
+For a directory or bucket, list names and sizes without downloading bodies:
 
 ```sql
 SELECT filename, size, last_modified
@@ -83,29 +60,80 @@ ORDER BY filename
 LIMIT 50;
 ```
 
-Async I/O is already on for Parquet and for uncompressed, seekable, UTF-8 CSV, including those files read through DuckLake. JSON and DuckDB database files stay synchronous. Leave `async_threads` and `read_ahead_depth` alone unless the user asks to tune a fast network. The I/O page has the knobs.
-
 ## Convert
 
 ```sql
-COPY (FROM 'input.csv') TO 'output.parquet';
+COPY (FROM 'input.csv') TO 'output.parquet' (FORMAT parquet);
 ```
 
-| Extension | Copy clause |
+| Extension | Clause |
 | --- | --- |
-| `.parquet`, `.pq` | none |
+| `.parquet`, `.pq` | `(FORMAT parquet)` |
 | `.csv` | `(FORMAT csv, HEADER)` |
 | `.tsv` | `(FORMAT csv, HEADER, DELIMITER '\t')` |
 | `.json` | `(FORMAT json, ARRAY true)` |
 | `.jsonl`, `.ndjson` | `(FORMAT json, ARRAY false)` |
 | `.xlsx` | `(FORMAT xlsx)` after `INSTALL excel; LOAD excel;` |
 
-`PARTITION_BY (col)` works for Parquet and CSV directory output. `CODEC 'zstd'` is the Parquet compression option when the user asks for zstd. Load `httpfs` and the secret before a remote input. Report input, output, byte size, and a row count when it is cheap.
+`PARTITION_BY (col)` writes a directory of Parquet or CSV. Add `OVERWRITE_OR_IGNORE` for a rerun, `APPEND` to keep old files, `FILENAME_PATTERN` to name the files, `PER_THREAD_OUTPUT` for parallel writes, or `FILE_SIZE_BYTES` to cap each file. `ORDER_BY (...)` sorts rows inside each partition. `RETURN_FILES` returns the written paths.
+
+The format matrix, the CSV/JSON/Parquet parameters, and the secrets table are in [references/formats.md](references/formats.md).
+
+## Remote files
+
+```sql
+LOAD httpfs;
+```
+
+| Store | Secret |
+| --- | --- |
+| S3 with an existing AWS profile | `CREATE OR REPLACE SECRET (TYPE s3, PROVIDER credential_chain);` |
+| S3 with keys | `CREATE OR REPLACE SECRET (TYPE s3, PROVIDER config, KEY_ID '...', SECRET '...', REGION 'us-east-1');` |
+| Public bucket that only needs a region | `CREATE OR REPLACE SECRET (TYPE s3, PROVIDER config, REGION 'us-west-2');` |
+| Cloudflare R2 | `CREATE OR REPLACE SECRET (TYPE r2, ACCOUNT_ID '...', KEY_ID '...', SECRET '...');` and use `r2://`; the endpoint is derived |
+| GCS | `CREATE OR REPLACE SECRET (TYPE gcs, KEY_ID '...', SECRET '...');` HMAC keys, and `gs://` or `gcs://` |
+| Azure | `CREATE OR REPLACE SECRET (TYPE azure, PROVIDER config, ACCOUNT_NAME '...');` for a public container; a service principal uses `PROVIDER service_principal` |
+| HTTPS | `LOAD httpfs;` and no secret unless the server requires one |
+
+`credential_chain` autoloads the `aws` extension and fails closed when no profile exists. A public bucket needs no credential secret. A region pin is not a credential.
+
+Do not put access keys in the URL. DuckDB 2.0 treats `?s3_access_key_id=...` as part of the object key. The old behavior is `SET s3_enable_deprecated_url_parameters = true` after `LOAD httpfs`.
+
+Async I/O is already on for Parquet and for uncompressed, seekable, UTF-8 CSV, including files read through DuckLake. JSON and native database files stay synchronous. Defaults are `async_threads` = four times `threads` (capped at 256), `read_ahead_depth = -1`, `http_retries = 3`, and `http_retry_backoff = 4.0`. Leave them alone unless the user asks to tune a fast network. The full option list is in [references/formats.md](references/formats.md).
+
+## Sandbox a local file
+
+On a local file the user did not ask to join with the network, install and load every extension first, then restrict the process:
+
+```sql
+SET allowed_paths = ['/absolute/file.csv'];
+SET enable_external_access = false;
+SET allow_persistent_secrets = false;
+SET lock_configuration = true;
+```
+
+The same setting blocks remote reads too. Skip the local allow-list for `s3://`, `gs://`, `gcs://`, `r2://`, `az://`, `azure://`, `abfs://`, `abfss://`, `http://`, and `https://`, but do not assume remote is unrestricted after `enable_external_access=false`.
+
+`-safe` is not a substitute. It blocks all external file access, including the file the user named, while still opening the database path on the command line.
+
+## Verify
+
+```bash
+tmp=$(mktemp -d)
+printf 'id,name\n1,Ada\n2,Grace\n' > "$tmp/in.csv"
+duckdb -agent -c "COPY (FROM '$tmp/in.csv') TO '$tmp/out.parquet' (FORMAT parquet); DESCRIBE FROM '$tmp/out.parquet'; SELECT count(*) FROM '$tmp/out.parquet';"
+rm -rf "$tmp"
+```
+
+The describe must show `id` and `name`. The count must be `2`.
 
 ## References
 
-- https://duckdb.org/docs/2.0/data/io.html
-- https://duckdb.org/docs/2.0/core_extensions/httpfs/authentication.html
-- https://duckdb.org/docs/2.0/configuration/secrets_manager.html
-- https://duckdb.org/docs/2.0/operations_manual/migration.html (S3 URL parameters)
+- [Data import](https://duckdb.org/docs/2.0/data/overview.html) owns the format overview.
+- [CSV](https://duckdb.org/docs/2.0/data/csv/overview.html) owns the CSV parameters.
+- [JSON](https://duckdb.org/docs/2.0/data/json/loading_json.html) owns the JSON formats and parameters.
+- [Parquet](https://duckdb.org/docs/2.0/data/parquet/overview.html) owns the Parquet reader and writer.
+- [COPY](https://duckdb.org/docs/2.0/sql/statements/copy.html) owns the copy options.
+- [Secrets manager](https://duckdb.org/docs/2.0/configuration/secrets_manager.html) owns secret creation and scope.
+- [I/O](https://duckdb.org/docs/2.0/data/io.html) owns asynchronous reads and tuning.
 - Reader dispatch replaces the `read_any` macro in https://github.com/duckdb/duckdb-skills (MIT). The keyless `TYPE s3, PROVIDER config, REGION` secret was accepted by DuckDB 2.0.0.

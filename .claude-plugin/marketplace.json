@@ -1,22 +1,13 @@
 {
   "name": "duckdb-2-skills",
+  "owner": {
+    "name": "duckdb-2-skills contributors"
+  },
   "plugins": [
     {
       "name": "duckdb-2-skills",
       "source": "./",
-      "description": "Agent skills for DuckDB 2.0: SQL, files, VARIANT, Quack, DuckLake, Iceberg, Delta, migration, and the Python client.",
-      "version": "0.1.0",
-      "license": "MIT",
-      "keywords": [
-        "duckdb",
-        "duckdb-2",
-        "variant",
-        "quack",
-        "ducklake",
-        "iceberg",
-        "delta",
-        "parquet"
-      ]
+      "description": "Agent skills for DuckDB 2.0: SQL, files, VARIANT, Quack, DuckLake, Iceberg, Delta, migration, and the Python client."
     }
   ]
 }

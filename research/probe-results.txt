@@ -1,0 +1,36 @@
+# Probe results
+
+Binary: v2.0.0 (Cyanoptera) d54cbbe3df
+
+- **PASS** version is 2.0: `v2.0.0`
+- **PASS** lambda syntax: `[2, 3, 4]`
+- **PASS** lambda arrow rejected: `rejected as documented`
+- **PASS** $variable: `{'a': 7, 'b': 7}`
+- **PASS** integer division by zero: `{'a': None, 'b': inf}`
+- **PASS** nested schema USE rejected: `USE rejected; nested schema is visible through parent_schema`
+- **PASS** default storage version: `v2.0.0+`
+- **PASS** pinned storage version: `v1.5.0+`
+- **PASS** VARIANT functions and 1-based index: `{'t': 'INT32', 'c': 'OBJECT', 'i': 10}`
+- **PASS** VARIANT index 0 rejected: `rejected as documented`
+- **PASS** VARIANT out-of-range returns NULL: `{'v': None}`
+- **PASS** variant_comparator returns BLOB: `{'t': 'BLOB'}`
+- **PASS** regex ~ is partial: `{'partial': True, 'sem': 'partial'}`
+- **PASS** decimal_division exact: `{'v': '2.500000'}`
+- **PASS** SECURE VIEW: `{'a': 1}`
+- **PASS** R-tree index scan: `Rtree Index Scan`
+- **PASS** read_parquet schema rename: `{'renamed': 1}`
+- **PASS** checkpoint_on_detach enum: `{'v': 'ENABLED'}`
+- **PASS** row trigger: `{'n': 1}`
+- **PASS** BEFORE row trigger rejected: `rejected as documented`
+- **PASS** sqlite_master absent: `rejected as documented`
+- **PASS** read_duckdb: `{'a': 42}`
+- **PASS** COPY FROM DATABASE: `{'x': 1}`
+- **PASS** NEAREST join: `[{'id': 12}, {'id': 10}]`
+- **PASS** GROUP BY UNNEST: `[{'tag': 'a', 'n': 1}, {'tag': 'b', 'n': 3}, {'tag': 'c', 'n': 1}]`
+- **PASS** MERGE INTO: `{'v': 20}`
+- **PASS** EXPLAIN (SQL): `SELECT CAST(42 AS INTEGER) AS "42"`
+- **PASS** agent mode truncation footer: `truncation footer present`
+- **PASS** -csv disables agent mode: `plain CSV`
+- **PASS** docs index versions: `[{'version': '2.0', 'n': 2695}, {'version': 'blog', 'n': 999}]`
+
+30/30 passed

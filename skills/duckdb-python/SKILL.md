@@ -1,42 +1,137 @@
 ---
 name: duckdb-python
 description: >
-  Change Python code that used DuckDB 1.x so it runs on duckdb 2.0. Relations,
-  Arrow and Polars fetches, expressions, threads, and transactions. Use when
-  the user edits Python that imports duckdb, or runs /duckdb-python.
+  Write or migrate Python code that uses duckdb 2.0. Covers installation,
+  connections, lazy relations, DB-API results, Arrow and pandas output,
+  threads, transactions, and the appender. Use when the user edits Python
+  that imports duckdb.
 ---
 
 # Python client on DuckDB 2.0
 
-DuckDB 2.0 requires Python 3.11 or newer. Free-threaded CPython is not supported. On Python 3.10, `pip install duckdb` installs a 1.x release. Storage-format rules for the file on disk are in `duckdb-migrate`.
+DuckDB 2.0 requires Python 3.11 or newer. Free-threaded CPython is not supported. On Python 3.10, `pip install duckdb` installs a 1.x release.
 
-Apply the rows that match the code you are editing. Each line is the 2.0 behavior from the Python migration page.
+```bash
+pip install duckdb==2.0.0
+python -c "import duckdb; print(duckdb.__version__)"
+```
+
+Storage-format rules for the file on disk are in `duckdb-migrate`. SQL syntax is `duckdb-sql`.
+
+## Connect
+
+```python
+import duckdb
+
+duckdb.sql("SELECT 42").show()          # global in-memory database, returns a relation
+con = duckdb.connect("app.duckdb")      # a file
+con = duckdb.connect("app.duckdb", read_only=True)
+con = duckdb.connect(config={"threads": 4, "memory_limit": "2GB"})
+```
+
+`check_same_thread` is not a 2.0 option; it raises `TypeError`. Use one `cursor()` per thread. `config={"extension_directories": ["/path"]}` works; the singular `extension_directory` is silently ignored. `max_temp_directory_size` in `config` is ignored, so set it with `SET` after connecting.
+
+`duckdb.sql()` and `duckdb.execute()` use a module-level default connection. A second connection to the same file is a second writer and will conflict. Use one connection per process, or `read_only=True` for readers.
+
+To keep a file readable by DuckDB 1.5:
+
+```python
+con = duckdb.connect("app.duckdb", config={"storage_compatibility_version": "v1.5.0"})
+```
+
+## Relations are lazy
+
+`con.sql()` and `duckdb.sql()` return a relation. A read runs the query again, including a print in a notebook. Do not print a relation you only meant to define.
+
+```python
+rel = con.sql("SELECT * FROM events")
+rel.show()          # runs the query
+rel.show()          # runs it again
+
+rows = con.execute("SELECT * FROM events").fetchall()   # compute once
+rel.materialize()   # compute and keep the rows on the relation
+```
+
+Use `con.execute()` for DDL and DML. `con.sql("CREATE TABLE ...")` and `con.sql("INSERT ...")` run once at the call and return a relation over the statement result. Printing or fetching that relation does not run the statement again. Only read relations rerun.
+
+## The 2.0 API changes
+
+Apply the row that matches the code you are editing.
 
 | 1.x code | 2.0 code |
 | --- | --- |
-| `con.execute(q).fetch_arrow_table()`, `.arrow()`, `.pl()`, `.fetch_record_batch()` | `con.sql(q).to_arrow_table()`, `.to_arrow_reader()`, or `.pl()`. `to_arrow_table()` on an `execute()` result copies and warns. |
-| `rel.fetchone()`, `rel.fetchmany(n)`, `rel.fetch_df_chunk()` | Gone. A relation reruns on every read. Use `con.execute(q)` to hold a result, or `for row in rel.iter_rows()`. Stream with `rel.to_arrow_reader()`. |
+| `con.execute(q).fetch_arrow_table()`, `.arrow()`, `.pl()`, `.fetch_record_batch()` | These methods are gone from the execute result. Use `con.sql(q).to_arrow_table()`, `.to_arrow_reader()`, or `.pl()`. `con.to_arrow_table()` after `execute()` copies and warns. Relations keep `fetch_arrow_table`, `arrow`, and `fetch_record_batch` as deprecated aliases. |
+| `rel.fetchone()`, `rel.fetchmany(n)`, `rel.fetch_df_chunk()` | Gone on a relation. `con.execute()` results still have them. Use `con.execute(q)` for a held result, `for row in rel.iter_rows()`, or `rel.to_arrow_reader()`. |
 | `rel.execute()` | `rel.materialize()` when the rows must be computed and kept. |
 | `ColumnExpression("s") == "x"` and `rel.update(set={"a": "x"})` | A bare string is a value. Use `col("x")` for a column and `lit("x")` for text. `update()` rejects a bare string. |
 | `ColumnExpression("t.x")` | `col("t", "x")`. A dot is not a separator. |
 | `con.values({1: "a"})` | A dict with non-string keys becomes a `MAP`. Use string keys for a `STRUCT`. |
 | `rel.offset` when `offset` is a column | `rel["offset"]`. Relations gained methods named `offset`, `sample`, `head`, `rename`, `pivot`, `drop`, `unnest`, `unpivot`, `preview`, and `group_by`. |
-| `con.sql("CREATE TABLE ...")` | Returns a relation, and printing it runs the query again. Use `con.execute()` for DDL and DML. |
+| `con.sql("CREATE TABLE ...")` | Returns a relation, and printing it runs the statement again. Use `con.execute()` for DDL and DML. |
 | Another query while `execute()` rows are unread | `ResourceInUseException` until the result is consumed or you call `con.complete()` or `con.abort()`. The next `execute()` replaces the open result. |
 | Several threads calling one connection | `ResourceInUseException`. Give each thread `con.cursor()`. |
-| A failed `execute()` inside `con.begin()` | Aborts the transaction. `commit()` rolls back. Call `rollback()` before more SQL. |
-| `rel.write_csv(path, overwrite=False)` and `write_parquet(..., overwrite=False)` | Raise if the file exists. Omit `overwrite` to replace the file. |
+| A failed `execute()` inside `con.begin()` | Aborts the transaction. `commit()` rolls back and closes it. Call `rollback()` before more SQL, or accept `commit()` as the rollback; a `rollback()` after that `commit()` errors. |
+| `rel.write_csv(path, overwrite=False)` and `write_parquet(..., overwrite=False)` | Raise `IOException` if the file exists. Omit `overwrite` to replace the file. With `partition_by`, only `overwrite=True` writes into a non-empty directory. |
 | `Decimal("1E+2")` | `100` as `DECIMAL(3,0)`, not `1.00` as `DECIMAL(3,2)`. |
 | Arrow batches of 1,000,000 rows | Default batch size is 131072. Pass `batch_size`. |
-| A file written for DuckDB 1.5 | 2.0 can open it. A file 2.0 writes in the default format cannot be opened by 1.5. Pin it with `duckdb.connect(path, config={"storage_compatibility_version": "v1.5.0"})`. |
+| A file written for DuckDB 1.5 | 2.0 can open it. A file 2.0 writes in the default format cannot be opened by 1.5. Pin it with `storage_compatibility_version`. |
 
-A relation runs its query on every read, including a print in a notebook. Do not print a relation you only meant to define.
+`con.execute("SELECT ...").fetchone()` leaves the result open if other rows remain. The next query on that connection raises `ResourceInUseException`. Call `fetchall()` or `con.complete()` before the next statement, or use a separate cursor.
+
+## Arrow, pandas, and Polars
+
+```python
+rel.to_arrow_table()                 # eager Arrow table
+rel.to_arrow_reader(batch_size=65536)
+rel.df()                             # pandas DataFrame
+rel.pl()                             # Polars DataFrame
+rel.fetchdf()                        # alias on a DB-API result
+```
+
+`con.to_arrow_table()` after `execute()` warns because it copies the rows. Prefer a relation. To query a DataFrame or Arrow table, name it in SQL or use the helpers:
+
+```python
+con.sql("SELECT * FROM my_df")
+con.from_df(my_df)
+con.from_arrow(my_arrow)
+con.from_query("SELECT 42 AS x")
+```
+
+## Bulk load
+
+For a DataFrame, `INSERT INTO t SELECT * FROM df` is the fastest path. For pandas, `con.append("t", df)` is also fast.
+
+```python
+con.execute("CREATE TABLE people (id INTEGER PRIMARY KEY, name VARCHAR)")
+
+with con.appender("people") as appender:
+    appender.append_row(1, "Ada")
+    appender.append_rows([(2, "Grace"), (3, "Edsger")])
+```
+
+The appender also supports `action="upsert"`, `"update"`, and `"delete"` with a `key`, a `columns` subset, and `con.query_appender(statement, columns, source=...)` for custom SQL. A `with` block flushes on success and discards buffered rows on an exception. Call `flush()` outside a `with` block.
+
+## Verify
+
+```python
+import duckdb
+assert duckdb.__version__.startswith("2.")
+con = duckdb.connect()
+con.execute("CREATE TABLE t AS SELECT 42 AS a")
+assert con.execute("SELECT a FROM t").fetchall() == [(42,)]
+assert con.sql("SELECT a FROM t").to_arrow_table().num_rows == 1
+print("ok")
+```
+
+Run it in a venv with `duckdb==2.0.0` and `pyarrow` for the Arrow line.
 
 ## References
 
 - https://duckdb.org/docs/2.0/clients/python/migration.html
 - https://duckdb.org/docs/2.0/clients/python/overview.html
-- https://duckdb.org/docs/2.0/clients/python/expression.html
-- https://duckdb.org/docs/2.0/clients/python/relational_api.html
 - https://duckdb.org/docs/2.0/clients/python/dbapi.html
+- https://duckdb.org/docs/2.0/clients/python/relational_api.html
+- https://duckdb.org/docs/2.0/clients/python/expression.html
+- https://duckdb.org/docs/2.0/clients/python/appender.html
 - https://duckdb.org/docs/2.0/operations_manual/migration.html
+- The API changes and the open-result behavior were run against `duckdb==2.0.0` on Python 3.14.3.

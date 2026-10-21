@@ -2,4 +2,11 @@
 .duckdb/
 *.duckdb
 *.wal
-research/
+
+# The full upstream manuals are reproducible with scripts/fetch-docs.py.
+research/sources/duckdb-2.0/
+research/sources/ducklake-stable/
+
+# Local probe output and scratch data
+scratch/
+research/scratch/

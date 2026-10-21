@@ -1,22 +1,22 @@
 ---
 name: duckdb-variant
 description: >
-  Store and query semi-structured values with the DuckDB 2.0 VARIANT type:
-  casts from JSON, field extraction, shredding, and Parquet. Use when the user
-  mentions VARIANT, shredded JSON, schema-less columns, or variant_typeof.
-  Use /duckdb-variant.
+  Store and query semi-structured values with the DuckDB 2.0 VARIANT type.
+  Covers casts from JSON, field and list extraction, aggregate builders, and
+  Parquet shredding. Use when the user mentions VARIANT, shredded JSON,
+  schema-less columns, or variant_typeof.
 ---
 
 # VARIANT
 
-`VARIANT` is a binary column. Each value carries its own type, so rows in one column can differ. The `JSON` type is still text. Prefer `VARIANT` when the column will be filtered or projected. Keep `JSON` when the user needs the original text bytes.
+`VARIANT` is a binary column. Each value carries its own type, so rows in one column can differ. `JSON` is still text. Use `VARIANT` when the column will be filtered, sorted, or projected. Keep `JSON` when the user needs the original text bytes or the JSON mutation functions.
 
 Run SQL with the `duckdb` skill.
 
-## Create and load
+## Create and cast
 
 ```sql
-CREATE TABLE events (id INTEGER, payload VARIANT);
+CREATE TABLE events (id INTEGER, data VARIANT);
 INSERT INTO events VALUES
     (1, 42::VARIANT),
     (2, 'hello'::VARIANT),
@@ -27,38 +27,73 @@ INSERT INTO events VALUES
 
 Object keys come back sorted. `{'name': 'Alice', 'age': 30}::VARIANT` prints as `{'age': 30, 'name': Alice}`.
 
+A `VARIANT` can sit in a table, a Parquet file, or a Delta table. In Delta it can be written at the top level only; a nested `VARIANT` can be created but not written.
+
 ## Inspect
 
-`variant_typeof` returns the full type, such as `OBJECT(age, name)` or `ARRAY(3)`. `variant_type` returns only the category, such as `OBJECT`.
-
 ```sql
-SELECT variant_typeof(payload), variant_type(payload), variant_keys(payload)
+SELECT id, variant_typeof(data) AS full_type, variant_type(data) AS category
 FROM events;
 ```
 
-Extraction returns `VARIANT` from `variant_extract` and `VARCHAR` from `variant_extract_string`. Dot notation matches `variant_extract`.
-
-```sql
-SELECT payload.user.id FROM events WHERE id = 5;
-SELECT variant_extract_string(payload, 'name') FROM events WHERE id = 4;
-```
+`variant_typeof` returns the full type, such as `INT32`, `VARCHAR`, `ARRAY(3)`, or `OBJECT(age, name)`. `variant_type` returns the physical category, such as `OBJECT`, `BOOL_TRUE`, `INT8`, `DECIMAL`, or `TIMESTAMP_MICROS`. It does not return SQL type names.
 
 | Function | Use |
 | --- | --- |
 | `variant_typeof(v)` | Full type, including nested fields |
 | `variant_type(v)` | Top-level category only |
-| `variant_keys(v)` | Object keys |
+| `variant_keys(v)` | Object keys; `[]` for an array or scalar |
 | `variant_extract(v, field)` | Field or list element, as `VARIANT` |
-| `variant_extract_string(v, field)` | Same, as `VARCHAR` |
-| `variant_array_length(v)` | Array length |
-| `variant_exists(v, key)` | Key present |
-| `variant_contains(haystack, needle)` | Needle `VARIANT` occurs in the haystack |
-| `variant_group_object(key, value)` | Aggregate into one object. `NULL` or duplicate keys error |
-| `variant_group_array(x)` | Aggregate into a `VARIANT` array. Same as `list(x)::VARIANT` |
+| `variant_extract_string(v, path)` | Same, as `VARCHAR`; string paths only, non-scalars become JSON text |
+| `variant_array_length(v)` | Array length, as `UBIGINT`; `0` for a non-array |
+| `variant_exists(v, key)` | Key present in an object; `false` for an array index |
+| `variant_contains(haystack, needle)` | Structural containment, not substring |
+| `variant_normalize(v)` | Canonical form, so equal values share a representation |
+| `variant_comparator(v)` | Binary sort key for the logical `VARIANT` order |
+| `variant_group_object(key, value)` | Aggregate into one object |
+| `variant_group_array(x)` | Aggregate into a `VARIANT` array |
 
-`variant_normalize` and `variant_comparator` are for equality and sort order. Look them up on the functions page before using them in a predicate you have not tested.
+## Extract
 
-The functions page does not say whether `variant_extract` indexes lists from 0 or from 1. Project a sample row before relying on an index.
+Dot notation matches `variant_extract`.
+
+```sql
+SELECT data.user.id FROM events WHERE id = 5;
+SELECT variant_extract_string(data, 'name') FROM events WHERE id = 4;
+```
+
+List indexes are 1-based. Index `0` raises `Extracting index 0 from VARIANT(ARRAY) is invalid, indexes are 1-based`.
+
+```sql
+SELECT variant_extract([10, 20, 30]::VARIANT, 2);  -- 20
+```
+
+`variant_extract` returns `VARIANT` even when the value is a string. Cast with `::VARCHAR` or use `variant_extract_string` when the next step needs text.
+
+`VARIANT::VARCHAR` produces DuckDB's literal form, such as `{'a': 1}`. Use `::JSON::VARCHAR` when the next step needs JSON text.
+
+An object with duplicate keys keeps one value. JSON preserves both keys.
+
+## Aggregate
+
+```sql
+SELECT variant_group_object(k, v::VARIANT) AS obj
+FROM (VALUES ('a', 1), ('b', 2)) AS t(k, v);
+
+SELECT variant_group_array(x) AS arr FROM (VALUES (1), (2)) AS t(x);
+```
+
+The value argument to `variant_group_object` must be `VARIANT`. A `NULL` key errors, and a duplicate key errors. `variant_group_array` is equivalent to `list(x)::VARIANT`; it keeps order and `NULL`s, and works as a window function.
+
+## Sorting and equality
+
+`ORDER BY v` uses the logical `VARIANT` order, which matches the underlying values rather than their bytes.
+
+```sql
+SELECT i FROM range(-2, 2) t(i) ORDER BY i::VARIANT;
+```
+
+`=` already compares logical values, so whitespace and key order do not matter. `variant_normalize` produces a canonical representation. `variant_comparator` returns a binary sort key; use it only when you need the key itself.
 
 ## Shredding
 
@@ -68,22 +103,45 @@ In a DuckDB database file, 2.0 shreds a `VARIANT` column inside row groups of at
 SET variant_minimum_shredding_size = -1;  -- off
 ```
 
-Parquet writes can shred too. Auto-shredding follows the structure DuckDB sees. To force a schema:
+Parquet writes can shred too. The database setting does not gate Parquet shredding: a one-row file still writes the typed structure. Auto-shredding follows the first row group. To force a schema:
 
 ```sql
 COPY events TO 'events.parquet' (
     FORMAT parquet,
-    SHREDDING {'payload': 'STRUCT(name VARCHAR, age INTEGER)'}
+    SHREDDING {'data': 'STRUCT(name VARCHAR, age INTEGER)'}
 );
 ```
 
-DuckDB reads shredded `VARIANT` Parquet, including files Snowflake wrote. The docs do not say what happens when later rows do not match a `SHREDDING` schema. Check a sample after the copy.
+DuckDB reads shredded `VARIANT` Parquet, including files Snowflake wrote. `SHREDDING` is a storage hint, not a validation contract. A row that does not match the schema falls back to the unshredded `value` and still round-trips. Extra fields survive. Invalid type names error at bind.
 
-Delta tables have a separate shredding switch. See `duckdb-lakehouse`.
+`read_json` cannot read directly into a `VARIANT` column: it binds, then fails at execution. Read as `JSON`, then cast `::VARIANT`.
+
+Delta tables have a separate switch. See `duckdb-lakehouse`.
+
+## JSON mutation
+
+Mutation functions stay on the JSON type. Use them before the cast when the user needs to edit a document.
+
+```sql
+SELECT json_set('{"a": 1}'::JSON, '$.a', '2'::JSON) AS updated;
+```
+
+`json_set`, `json_insert`, `json_replace`, and `json_remove` take a JSON value, not a bare SQL value. Once the value is `VARIANT`, use `variant_extract` and rebuild with `variant_group_object` or a cast.
+
+## Verify
+
+```sql
+SELECT variant_typeof({'a': 1}::VARIANT) AS type,
+       variant_extract([10, 20]::VARIANT, 2) AS second,
+       variant_keys({'b': 2, 'a': 1}::VARIANT) AS keys;
+```
+
+Expect `OBJECT(a)`, `20`, and `[a, b]`.
 
 ## References
 
-- https://duckdb.org/docs/2.0/sql/data_types/variant.html
-- https://duckdb.org/docs/2.0/sql/functions/variant.html
-- https://duckdb.org/2026/10/21/announcing-duckdb-200.html
-- `variant_typeof`, `variant_type`, `variant_keys`, and `variant_extract` were present in DuckDB 2.0.0 `duckdb_functions()`. The examples above are from the 2.0 type and function pages.
+- [Variant type](https://duckdb.org/docs/2.0/sql/data_types/variant.html) owns storage, shredding, and Parquet.
+- [Variant functions](https://duckdb.org/docs/2.0/sql/functions/variant.html) owns the signatures.
+- [JSON functions](https://duckdb.org/docs/2.0/data/json/json_functions.html) owns mutation on JSON text.
+- [Delta extension](https://duckdb.org/docs/2.0/core_extensions/delta.html) owns the Delta variant rules.
+- `variant_typeof`, `variant_type`, `variant_keys`, `variant_extract`, and 1-based list indexing were run on DuckDB 2.0.0. Duplicate and NULL keys in `variant_group_object` were also checked there.
