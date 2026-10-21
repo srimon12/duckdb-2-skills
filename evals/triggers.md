@@ -117,10 +117,10 @@ A description that needs this table explained is too weak. The prompt should be 
 
 | Prompt | Expected action |
 | --- | --- |
-| Record this session state to disk. | `duckdb_session_state()` into `state.sql` |
-| Restore session state from yesterday. | `.read state.sql` after checking secrets |
-| Find which database owns table `t1`. | join `duckdb_tables()` with `duckdb_databases()` on `database_oid` |
-| Set my prompt to show current database. | `.prompt 'duckdb (%d)> '` in CLI or rc |
+| Record this session state to disk. | Append the `ATTACH` and `LOAD` lines to `state.sql`; restore with `duckdb -init state.sql` |
+| Restore session state from yesterday. | `duckdb -init state.sql`, after checking the file for secret values |
+| Find which database owns table `t1`. | Join `duckdb_tables()` with `duckdb_databases()` on `database_oid` |
+| Set my prompt to show the current database. | Set `.prompt` in `~/.duckdbrc`; check the placeholder against `.help prompt` |
 
 ### `duckdb-python`
 

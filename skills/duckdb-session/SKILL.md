@@ -35,7 +35,7 @@ The alias is the file name up to the first dot. `a.b.c.db` becomes `a`. Quote an
 
 `ATTACH IF NOT EXISTS` is keyed on the alias, not the path. The same alias with a different path is a silent no-op. The same path under a second alias fails with `Unique file handle conflict`. A missing path is created as a new storage-version-69 file. Before appending, check the path with `test -f`.
 
-Only when that path is not already attached, append:
+If the path is not already attached, append:
 
 ```sql
 ATTACH IF NOT EXISTS '/absolute/path/analytics.duckdb' AS analytics;
@@ -51,7 +51,7 @@ Options that matter:
 | `TYPE sqlite` | A SQLite file. Use `duckdb-files`, not this skill. |
 | `ATTACH OR REPLACE` | Replace an existing alias. Destructive; ask first. |
 
-Only when the user asked to make this database the default, or when the state file has no `USE` yet, add `USE analytics;`. A second attach should not silently change the default database. Without any `USE`, the default is `memory`, so a bare `SHOW TABLES` can look empty even after an attach.
+If the user asked to make this database the default, or the state file has no `USE` yet, add `USE analytics;`. A second attach should not silently change the default database. Without any `USE`, the default is `memory`, so a bare `SHOW TABLES` can look empty even after an attach.
 
 `-init` is CLI-only. Python and other clients must issue `ATTACH` in code. The init file may hold SQL and dot commands, and a parse or SQL error aborts startup with exit 1.
 

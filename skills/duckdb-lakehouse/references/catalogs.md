@@ -31,7 +31,7 @@ When the skill needs an attach option, a maintenance signature, or a format limi
 
 `MIGRATE` is not an option. `ATTACH ... (MIGRATE true)` fails.
 
-For backend choice, a DuckDB-file catalog allows one writing process. SQLite allows multiple local clients with one writer at a time and retries. PostgreSQL allows multi-user and remote lakehouses. MySQL is not recommended. Quack is experimental.
+A DuckDB-file catalog allows one writing process. SQLite allows multiple local clients with one writer at a time and retries. PostgreSQL allows multi-user and remote lakehouses. MySQL is not recommended. Quack is experimental.
 
 ## DuckLake 1.1
 
@@ -81,7 +81,7 @@ Files written before migration keep `row_group_count = NULL`. A 1.0 catalog's `d
 | `ducklake_flush_inlined_data` | `(catalog, schema_name, table_name)` | `schema_name`, `table_name`, `rows_flushed` |
 | `ducklake_expire_snapshots` | `(catalog, older_than, versions, dry_run)` | Expired snapshot rows |
 | `ducklake_cleanup_old_files` | `(catalog, older_than, cleanup_all, dry_run)` | `path` |
-| `ducklake_delete_orphaned_files` | `(catalog, older_than, dry_run)` | `path` |
+| `ducklake_delete_orphaned_files` | `(catalog, older_than, cleanup_all, dry_run)` | `path` |
 | `ducklake_set_option` | `(catalog, option, value, table_name, schema)` | `Success` |
 | `ducklake_add_data_files` | `(catalog, table_name, path, allow_missing, ignore_extra_columns, hive_partitioning, schema)` | `filename` |
 
