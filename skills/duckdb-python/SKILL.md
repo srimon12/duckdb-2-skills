@@ -67,7 +67,7 @@ Apply the row that matches the code you are editing.
 | `ColumnExpression("t.x")` | `col("t", "x")`. A dot is not a separator. |
 | `con.values({1: "a"})` | A dict with non-string keys becomes a `MAP`. Use string keys for a `STRUCT`. |
 | `rel.offset` when `offset` is a column | `rel["offset"]`. Relations gained methods named `offset`, `sample`, `head`, `rename`, `pivot`, `drop`, `unnest`, `unpivot`, `preview`, and `group_by`. |
-| `con.sql("CREATE TABLE ...")` | Returns a relation, and printing it runs the statement again. Use `con.execute()` for DDL and DML. |
+| `con.sql("CREATE TABLE ...")` | Runs once at the call. Printing the returned relation does not run the DDL or DML again. Use `con.execute()` when you do not want a relation. Only a read relation reruns. |
 | Another query while `execute()` rows are unread | `ResourceInUseException` until the result is consumed or you call `con.complete()` or `con.abort()`. The next `execute()` replaces the open result. |
 | Several threads calling one connection | `ResourceInUseException`. Give each thread `con.cursor()`. |
 | A failed `execute()` inside `con.begin()` | Aborts the transaction. `commit()` rolls back and closes it. Call `rollback()` before more SQL, or accept `commit()` as the rollback; a `rollback()` after that `commit()` errors. |

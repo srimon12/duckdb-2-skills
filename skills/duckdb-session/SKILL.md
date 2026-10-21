@@ -45,8 +45,8 @@ Options that matter:
 
 | Option | Use |
 | --- | --- |
-| `READ_ONLY` | Open a file that another process owns, or a file over HTTPS or S3. |
-| `STORAGE_VERSION 'v1.5.0'` | Create a file that older DuckDB versions can read. |
+| `READ_ONLY` | Open a file that other processes only read, or a file over HTTPS or S3. |
+| `STORAGE_VERSION 'v1.5.6'` | New file uses storage 68. DuckDB 1.5.6 can read it. DuckDB 1.4 cannot. `v1.5.0` writes the same header. |
 | `ENCRYPTION_KEY '...'` | Open an encrypted database. Load `httpfs` first for OpenSSL speed. |
 | `TYPE sqlite` | A SQLite file. Use `duckdb-files`, not this skill. |
 | `ATTACH OR REPLACE` | Replace an existing alias. Destructive; ask first. |
@@ -62,7 +62,7 @@ duckdb -json -c "ATTACH '/absolute/path/analytics.duckdb' AS analytics; SELECT d
 duckdb -init .duckdb/state.sql -json -c "SHOW TABLES;"
 ```
 
-`tags['storage_version']` is the version to trust. `v2.0.0+` means a 1.x process cannot open that file. Opening a 1.x file does not upgrade it, and writes keep its old version.
+`tags['storage_version']` is a compatibility floor, not the storage number. A 69 file reports `v2.0.0+`, which means 1.x cannot open it. A 68 file reports `v1.5.0+`. Opening a 1.x file does not upgrade it, and an ordinary write keeps its old version. `ATTACH existing (STORAGE_VERSION 'latest')` plus a write upgrades that file to 69. Do not pass `latest` unless the user asked to move the file.
 
 ## Explore
 
@@ -143,6 +143,5 @@ The alias appears once, with the expected storage version. A second run must not
 - [Concurrency](https://duckdb.org/docs/2.0/connect/concurrency.html) owns the one-writer rule.
 - [Storage](https://duckdb.org/docs/2.0/internals/storage.html) owns the version table.
 - [duckdb_databases](https://duckdb.org/docs/2.0/sql/meta/duckdb_table_functions.html#duckdb_databases) owns the catalog columns. The live function has more columns than the manual table; use `DESCRIBE`.
-
-`duckdb_secrets()` redacts `secret=` but still shows `key_id=`. Report names and types only, never the row.
+- `duckdb_secrets()` redacts `secret=` but still shows `key_id=`. Report names and types only, never the row.
 - The shared `state.sql` convention comes from the `attach-db` skill in https://github.com/duckdb/duckdb-skills (MIT). The default path here is `.duckdb/state.sql`.

@@ -47,7 +47,7 @@ A description that needs this table explained is too weak. The prompt should be 
 
 | Prompt | Expected action |
 | --- | --- |
-| Preview a 40 GB remote parquet. | `parquet_metadata` for counts, not `count(*)` |
+| Preview a 40 GB remote parquet. | `parquet_file_metadata(...).num_rows`, not a sum of `parquet_metadata.row_group_num_rows` |
 | Read an Excel workbook, sheet 2. | `read_xlsx(..., sheet = 'Sheet2')` after `LOAD excel` |
 | Read a SQLite file. | `ATTACH ... (TYPE sqlite)`, not `sqlite_master(path)` |
 | Convert CSV to zstd parquet. | `COPY ... (FORMAT parquet, CODEC 'zstd')` |
