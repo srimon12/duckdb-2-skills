@@ -45,7 +45,7 @@ Options that matter:
 
 | Option | Use |
 | --- | --- |
-| `READ_ONLY` | Open a file that another process owns, or a file over HTTPS or S3. |
+| `READ_ONLY` | Open a file that other processes only read, or a file over HTTPS or S3. |
 | `STORAGE_VERSION 'v1.5.6'` | New file uses storage 68. DuckDB 1.5.6 can read it. DuckDB 1.4 cannot. `v1.5.0` writes the same header. |
 | `ENCRYPTION_KEY '...'` | Open an encrypted database. Load `httpfs` first for OpenSSL speed. |
 | `TYPE sqlite` | A SQLite file. Use `duckdb-files`, not this skill. |
