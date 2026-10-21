@@ -16,7 +16,7 @@ pip install duckdb==2.0.0
 python -c "import duckdb; print(duckdb.__version__)"
 ```
 
-Storage-format rules for the file on disk are in `duckdb-migrate`. SQL syntax is `duckdb-sql`.
+For file storage-format rules, see `duckdb-migrate`. For SQL syntax, see `duckdb-sql`.
 
 ## Connect
 
@@ -29,9 +29,9 @@ con = duckdb.connect("app.duckdb", read_only=True)
 con = duckdb.connect(config={"threads": 4, "memory_limit": "2GB"})
 ```
 
-`check_same_thread` is not a 2.0 option; it raises `TypeError`. Use one `cursor()` per thread. `config={"extension_directories": ["/path"]}` works; the singular `extension_directory` is silently ignored. `max_temp_directory_size` in `config` is ignored, so set it with `SET` after connecting.
+`check_same_thread` is not a 2.0 option; it raises `TypeError`. Give each thread its own `con.cursor()`. A cursor has its own transaction and session settings; closing a connection closes all its cursors. `read_only=True` rejects writes and will not create a missing file. `config={"extension_directories": ["/path"]}` works; the singular `extension_directory` is silently ignored. Because `max_temp_directory_size` in `config` is ignored, set it with `SET` after connecting.
 
-`duckdb.sql()` and `duckdb.execute()` use a module-level default connection. A second connection to the same file is a second writer and will conflict. Use one connection per process, or `read_only=True` for readers.
+`duckdb.sql()` and `duckdb.execute()` use a module-level default connection. A second connection to the same file is a second writer and will conflict. Use one connection per process, or `read_only=True` for readers. When running Python functions inside SQL queries, use a separate `con.cursor()`.
 
 To keep a file readable by DuckDB 1.5:
 
@@ -52,7 +52,7 @@ rows = con.execute("SELECT * FROM events").fetchall()   # compute once
 rel.materialize()   # compute and keep the rows on the relation
 ```
 
-Use `con.execute()` for DDL and DML. `con.sql("CREATE TABLE ...")` and `con.sql("INSERT ...")` run once at the call and return a relation over the statement result. Printing or fetching that relation does not run the statement again. Only read relations rerun.
+For DDL and DML, use `con.execute()`. `con.sql("CREATE TABLE ...")` and `con.sql("INSERT ...")` run once at the call and return a relation over the statement result. Printing or fetching that relation does not run the statement again. Only read relations rerun.
 
 ## The 2.0 API changes
 
@@ -62,12 +62,12 @@ Apply the row that matches the code you are editing.
 | --- | --- |
 | `con.execute(q).fetch_arrow_table()`, `.arrow()`, `.pl()`, `.fetch_record_batch()` | These methods are gone from the execute result. Use `con.sql(q).to_arrow_table()`, `.to_arrow_reader()`, or `.pl()`. `con.to_arrow_table()` after `execute()` copies and warns. Relations keep `fetch_arrow_table`, `arrow`, and `fetch_record_batch` as deprecated aliases. |
 | `rel.fetchone()`, `rel.fetchmany(n)`, `rel.fetch_df_chunk()` | Gone on a relation. `con.execute()` results still have them. Use `con.execute(q)` for a held result, `for row in rel.iter_rows()`, or `rel.to_arrow_reader()`. |
-| `rel.execute()` | `rel.materialize()` when the rows must be computed and kept. |
+| `rel.execute()` | When the rows must be computed and kept, use `rel.materialize()`. |
 | `ColumnExpression("s") == "x"` and `rel.update(set={"a": "x"})` | A bare string is a value. Use `col("x")` for a column and `lit("x")` for text. `update()` rejects a bare string. |
 | `ColumnExpression("t.x")` | `col("t", "x")`. A dot is not a separator. |
-| `con.values({1: "a"})` | A dict with non-string keys becomes a `MAP`. Use string keys for a `STRUCT`. |
+| `con.values({1: "a"})` | A dict with non-string keys becomes a `MAP`. For a `STRUCT`, use string keys. |
 | `rel.offset` when `offset` is a column | `rel["offset"]`. Relations gained methods named `offset`, `sample`, `head`, `rename`, `pivot`, `drop`, `unnest`, `unpivot`, `preview`, and `group_by`. |
-| `con.sql("CREATE TABLE ...")` | Runs once at the call. Printing the returned relation does not run the DDL or DML again. Use `con.execute()` when you do not want a relation. Only a read relation reruns. |
+| `con.sql("CREATE TABLE ...")` | Runs once at the call. Printing the returned relation does not run the DDL or DML again. When you do not want a relation, use `con.execute()`. Only a read relation reruns. |
 | Another query while `execute()` rows are unread | `ResourceInUseException` until the result is consumed or you call `con.complete()` or `con.abort()`. The next `execute()` replaces the open result. |
 | Several threads calling one connection | `ResourceInUseException`. Give each thread `con.cursor()`. |
 | A failed `execute()` inside `con.begin()` | Aborts the transaction. `commit()` rolls back and closes it. Call `rollback()` before more SQL, or accept `commit()` as the rollback; a `rollback()` after that `commit()` errors. |
@@ -76,7 +76,7 @@ Apply the row that matches the code you are editing.
 | Arrow batches of 1,000,000 rows | Default batch size is 131072. Pass `batch_size`. |
 | A file written for DuckDB 1.5 | 2.0 can open it. A file 2.0 writes in the default format cannot be opened by 1.5. Pin it with `storage_compatibility_version`. |
 
-`con.execute("SELECT ...").fetchone()` leaves the result open if other rows remain. The next query on that connection raises `ResourceInUseException`. Call `fetchall()` or `con.complete()` before the next statement, or use a separate cursor.
+When rows remain unread after `con.execute().fetchone()`, calling `con.sql()`, `con.query()`, or an appender `flush()` on that connection raises `ResourceInUseException`. A subsequent `con.execute()` replaces the open result. To clear an open result, consume all rows, call `con.complete()`, call `con.abort()`, or use a separate cursor.
 
 ## Arrow, pandas, and Polars
 
@@ -85,10 +85,11 @@ rel.to_arrow_table()                 # eager Arrow table
 rel.to_arrow_reader(batch_size=65536)
 rel.df()                             # pandas DataFrame
 rel.pl()                             # Polars DataFrame
-rel.fetchdf()                        # alias on a DB-API result
+rel.pl(lazy=True)                    # Polars LazyFrame
+polars.DataFrame(rel)                # zero-copy Arrow PyCapsule, no pyarrow needed
 ```
 
-`con.to_arrow_table()` after `execute()` warns because it copies the rows. Prefer a relation. To query a DataFrame or Arrow table, name it in SQL or use the helpers:
+`con.to_arrow_table()` after `execute()` warns because it copies rows. Prefer a relation. Querying Arrow tables and Polars frames is zero-copy through Arrow C Data and PyCapsule interfaces. To query a DataFrame or Arrow table, name it in SQL or use the helpers:
 
 ```python
 con.sql("SELECT * FROM my_df")
@@ -109,7 +110,7 @@ with con.appender("people") as appender:
     appender.append_rows([(2, "Grace"), (3, "Edsger")])
 ```
 
-The appender also supports `action="upsert"`, `"update"`, and `"delete"` with a `key`, a `columns` subset, and `con.query_appender(statement, columns, source=...)` for custom SQL. A `with` block flushes on success and discards buffered rows on an exception. Call `flush()` outside a `with` block.
+The appender also supports `action="upsert"`, `"update"`, and `"delete"` with a `key`, a `columns` subset, and `con.query_appender(statement, columns, source=...)` for custom SQL. The appender has no `close()` method; call `clear()` to discard buffered rows. Do not share an appender across threads. Finish open `execute()` results before calling `flush()`. A `with` block flushes on success and discards buffered rows on an exception. Outside a `with` block, call `flush()`.
 
 ## Verify
 

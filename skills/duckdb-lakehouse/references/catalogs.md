@@ -1,6 +1,6 @@
 # Catalog reference
 
-Read this when the skill needs an attach option, a maintenance signature, or a format limit. The driver is `duckdb-lakehouse/SKILL.md`.
+When the skill needs an attach option, a maintenance signature, or a format limit, read this reference. The driver is `duckdb-lakehouse/SKILL.md`.
 
 ## DuckLake attach
 
@@ -31,7 +31,7 @@ Read this when the skill needs an attach option, a maintenance signature, or a f
 
 `MIGRATE` is not an option. `ATTACH ... (MIGRATE true)` fails.
 
-Backend choice: a DuckDB-file catalog allows one writing process. SQLite allows multiple local clients with one writer at a time and retries. PostgreSQL allows multi-user and remote lakehouses. MySQL is not recommended. Quack is experimental.
+A DuckDB-file catalog allows one writing process. SQLite allows multiple local clients with one writer at a time and retries. PostgreSQL allows multi-user and remote lakehouses. MySQL is not recommended. Quack is experimental.
 
 ## DuckLake 1.1
 
@@ -43,7 +43,7 @@ ATTACH 'ducklake:metadata.ducklake' AS lake (AUTOMATIC_MIGRATION true);
 SELECT value FROM lake.options() WHERE option_name = 'version';
 ```
 
-Before migrating: back up the catalog and the data files, stop writes, compaction, and cleanup, and make every client 1.1-capable. The migration is irreversible. A read-only attach cannot migrate. A leftover `ducklake_default_version='1.0'` makes later plain attaches fail with `Cannot downgrade a DuckLake catalog`. `DUCKLAKE_VERSION '1.1-dev1'` is rejected.
+Before migrating, back up the catalog and the data files, stop writes, compaction, and cleanup, and make every client 1.1-capable. The migration is irreversible. A read-only attach cannot migrate. A leftover `ducklake_default_version='1.0'` makes later plain attaches fail with `Cannot downgrade a DuckLake catalog`. `DUCKLAKE_VERSION '1.1-dev1'` is rejected.
 
 | Feature | 1.0 | 1.1 |
 | --- | --- | --- |
@@ -81,6 +81,7 @@ Files written before migration keep `row_group_count = NULL`. A 1.0 catalog's `d
 | `ducklake_flush_inlined_data` | `(catalog, schema_name, table_name)` | `schema_name`, `table_name`, `rows_flushed` |
 | `ducklake_expire_snapshots` | `(catalog, older_than, versions, dry_run)` | Expired snapshot rows |
 | `ducklake_cleanup_old_files` | `(catalog, older_than, cleanup_all, dry_run)` | `path` |
+| `ducklake_delete_orphaned_files` | `(catalog, older_than, cleanup_all, dry_run)` | `path` |
 | `ducklake_set_option` | `(catalog, option, value, table_name, schema)` | `Success` |
 | `ducklake_add_data_files` | `(catalog, table_name, path, allow_missing, ignore_extra_columns, hive_partitioning, schema)` | `filename` |
 
@@ -97,7 +98,7 @@ CALL ducklake_cleanup_old_files('lake', older_than => now() - INTERVAL '7 days',
 CALL ducklake_delete_orphaned_files('lake', dry_run => true);
 ```
 
-`CHECKPOINT` runs flush, expire, merge, rewrite, cleanup, and orphan deletion. With `expire_older_than` set it destroys time travel and the change feed. `cleanup_all => true` ignores age. Orphan deletion scans the data path recursively and can delete files DuckLake never wrote. Dry-run first.
+`CHECKPOINT` runs flush, expire, merge, rewrite, cleanup, and orphan deletion. With `expire_older_than` set, it destroys time travel and the change feed. `cleanup_all => true` ignores age. Orphan deletion scans the data path recursively and can delete files DuckLake never wrote. Dry-run first.
 
 Merge skips files with deletes or inlined deletions. Rewrite those first, then merge. Files are not removed immediately after a merge; cleanup is a separate step.
 
@@ -115,7 +116,7 @@ Transactions use snapshot isolation. One `BEGIN` to `COMMIT` is one snapshot. Co
 
 Change feed: `lake.table_changes('t', start, end)` and `ducklake_table_changes(catalog, schema, table, start, end)`. `change_type` is `insert`, `update_preimage`, `update_postimage`, or `delete`. `table_insertions` and `table_deletions` are wrappers.
 
-Unsupported: indexes, primary and unique keys, foreign keys, `CHECK`, sequences, user-defined types, fixed-size `ARRAY`, `ENUM`, generated columns, `VARINT`, `BITSTRING`, `UNION`, `DROP TABLE ... CASCADE`, nested `VARIANT` written to Parquet, and expression defaults in `ALTER TABLE ADD COLUMN`.
+Unsupported features include indexes, primary and unique keys, foreign keys, `CHECK`, sequences, user-defined types, fixed-size `ARRAY`, `ENUM`, generated columns, `VARINT`, `BITSTRING`, `UNION`, `DROP TABLE ... CASCADE`, nested `VARIANT` written to Parquet, and expression defaults in `ALTER TABLE ADD COLUMN`.
 
 ## Iceberg
 
@@ -171,7 +172,7 @@ Glue: `ATTACH '<account_id>' ... (ENDPOINT_TYPE 'glue')`, or `URI 'glue.<region>
 
 S3 Tables: `ATTACH '<s3_tables_arn>' ... (ENDPOINT_TYPE s3_tables)`. This sets SIGV4, the region from the ARN, `REMOVE_FILES_ON_DELETE false`, `STAGE_CREATE_TABLES false`, and `PURGE_REQUESTED true`.
 
-Unity Catalog Horizon over Iceberg REST: set `STAGE_CREATE_TABLES false`, `DISABLE_MULTI_TABLE_COMMIT true`, `SKIP_CREATE_TABLE_METADATA_UPDATES true`, `REMOVE_FILES_ON_DELETE false`.
+For Unity Catalog Horizon over Iceberg REST, set `STAGE_CREATE_TABLES false`, `DISABLE_MULTI_TABLE_COMMIT true`, `SKIP_CREATE_TABLE_METADATA_UPDATES true`, `REMOVE_FILES_ON_DELETE false`.
 
 Writes through an attached REST catalog: `CREATE/DROP SCHEMA`, `CREATE/DROP TABLE`, `INSERT`, `UPDATE`, `DELETE`, `MERGE INTO`, `ALTER TABLE`, `SELECT`, and `COPY FROM DATABASE` both ways. `UPDATE`, `DELETE`, and `MERGE` use merge-on-read positional deletes. They fail on sorted tables, copy-on-write is unsupported, and `write.update.mode`/`write.delete.mode` must be `merge-on-read`. V3 adds `VARIANT`, `TIMESTAMP_NS`, binary deletion vectors, and row lineage. `GEOGRAPHY` is unsupported.
 
@@ -203,7 +204,7 @@ INSERT INTO events VALUES (1, 'eu');
 
 Time travel: `AT (VERSION => 5)`, `AT (TIMESTAMP => TIMESTAMPTZ '...')`, `ATTACH ... (VERSION 5)`, `delta_scan(..., version => 5)`, `delta_scan(..., timestamp => ...)`. A future or pre-first-commit timestamp fails.
 
-`VARIANT`: top-level columns can be created, read, and appended. A nested `VARIANT` inside a struct, list, or map can be created but not written. DuckDB shreds only when `delta.enableVariantShredding` is true; `CREATE TABLE` cannot set it.
+For `VARIANT`, top-level columns can be created, read, and appended. A nested `VARIANT` inside a struct, list, or map can be created but not written. DuckDB shreds only when `delta.enableVariantShredding` is true; `CREATE TABLE` cannot set it.
 
 `delta_column_mapping_policy` defaults to `strict` in 2.0. `SET delta_column_mapping_policy = 'lenient'` restores name-based reads for id-mode files without Parquet field ids.
 

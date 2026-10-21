@@ -9,7 +9,7 @@ description: >
 
 # Data files
 
-Run DuckDB with the `duckdb` skill. Shapefile and GeoPackage go to `duckdb-spatial`. GeoJSON reads natively through the JSON reader. A native database file goes to `duckdb-session`. Lake catalogs go to `duckdb-lakehouse`. A `VARIANT` column goes to `duckdb-variant`.
+Run DuckDB with the `duckdb` skill. For Shapefile and GeoPackage, see `duckdb-spatial`. GeoJSON reads natively through the JSON reader. To attach or manage native database files, see `duckdb-session`. For Lakehouse catalogs, see `duckdb-lakehouse`. For `VARIANT` columns, see `duckdb-variant`.
 
 Do not build one macro that mentions every reader. A missing extension then fails the whole statement. Pick the reader from the path.
 
@@ -21,7 +21,7 @@ Do not build one macro that mentions every reader. A missing extension then fail
 | `.tab`, `.txt` | `FROM read_csv('path')`; bare paths do not dispatch |
 | `.json` | `FROM read_json('path')`; array or NDJSON, auto-detected |
 | `.jsonl`, `.ndjson` | `FROM read_json('path', format = 'newline_delimited')` |
-| `.parquet`, `.pq`, or a directory of Parquet | `FROM read_parquet('path')` |
+| `.parquet`, `.pq`, or a directory of Parquet | `FROM read_parquet('path')`; `.parquet` bare-reads, `.pq` needs explicit function |
 | `.avro` | `FROM read_avro('path')`; autoloads |
 | `.xlsx` | `FROM read_xlsx('path')`; autoloads |
 | `.sqlite`, `.sqlite3` | `ATTACH 'path' AS s (TYPE sqlite);` then `SHOW TABLES` |
@@ -42,7 +42,7 @@ FROM read_parquet('path') LIMIT 20;
 SELECT count(*) AS n FROM read_parquet('path');
 ```
 
-Skip `count(*)` on a large remote Parquet. Use metadata:
+On a large remote Parquet file, skip `count(*)` and use metadata:
 
 ```sql
 SELECT num_rows, file_size_bytes
@@ -75,7 +75,7 @@ COPY (FROM 'input.csv') TO 'output.parquet' (FORMAT parquet);
 | `.jsonl`, `.ndjson` | `(FORMAT json, ARRAY false)` |
 | `.xlsx` | `(FORMAT xlsx)` after `INSTALL excel; LOAD excel;` |
 
-`PARTITION_BY (col)` writes a directory of Parquet or CSV. Add `OVERWRITE_OR_IGNORE` for a rerun, `APPEND` to keep old files, `FILENAME_PATTERN` to name the files, `PER_THREAD_OUTPUT` for parallel writes, or `FILE_SIZE_BYTES` to cap each file. `ORDER_BY (...)` sorts rows inside each partition. `RETURN_FILES` returns the written paths.
+`PARTITION_BY (col)` writes a partitioned directory of Parquet, CSV, or JSON. Add `OVERWRITE_OR_IGNORE` for a rerun, `APPEND` to keep old files, `FILENAME_PATTERN` to name the files, `PER_THREAD_OUTPUT` for parallel writes, or `FILE_SIZE_BYTES` to cap each file. `ORDER_BY (...)` sorts rows inside each partition. `RETURN_FILES` returns the written paths.
 
 The format matrix, the CSV/JSON/Parquet parameters, and the secrets table are in [references/formats.md](references/formats.md).
 

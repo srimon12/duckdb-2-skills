@@ -15,7 +15,7 @@ LOAD spatial;
 SET geometry_always_xy = true;
 ```
 
-The spatial extension is not autoloadable. `geometry_always_xy` has no default in 2.0. `ST_Transform`, `ST_Distance_Spheroid`, `ST_Area_Spheroid`, and `ST_Length_Spheroid` raise an `Invalid Configuration Error` until it is set. Set it to `true` for longitude, latitude. Setting it to `false` is not a safe default: for EPSG:4326 it reads the coordinates as latitude, longitude and returns wrong numbers. Read it from `duckdb_settings()`; `current_setting('geometry_always_xy')` fails even after `LOAD spatial`.
+The spatial extension is not autoloadable. `geometry_always_xy` has no default in 2.0. `ST_Transform`, `ST_Distance_Spheroid`, `ST_Area_Spheroid`, and `ST_Length_Spheroid` raise an `Invalid Configuration Error` until it is set. Set it to `true` for longitude, latitude. Setting it to `false` is not a safe default. For EPSG:4326 it reads the coordinates as latitude, longitude and returns wrong numbers. Read it from `duckdb_settings()`; `current_setting('geometry_always_xy')` fails even after `LOAD spatial`.
 
 ## Coordinates and distance
 
@@ -44,7 +44,7 @@ SELECT ST_AsText(ST_Transform(ST_Point(-73.985, 40.748), 'EPSG:4326', 'EPSG:3857
 
 ## Filter before geometry
 
-Filter with `bbox.xmin` and `bbox.ymin` before any `ST_*` call. `bbox` is a per-row struct, not a partition column. For point data the min corner equals the point, so the min-corner predicate is exact. For polygons it is only a coarse prefilter, and a predicate on `xmax` or `ymax` can drop a feature that starts outside the box but intersects it. Follow the bbox filter with `ST_Intersects`.
+Before any `ST_*` call, filter with `bbox.xmin` and `bbox.ymin`. `bbox` is a per-row struct, not a partition column. For point data the min corner equals the point, so the min-corner predicate is exact. For polygons it is only a coarse prefilter, and a predicate on `xmax` or `ymax` can drop a feature that starts outside the box but intersects it. Follow the bbox filter with `ST_Intersects`.
 
 ```sql
 WHERE bbox.xmin BETWEEN -74.01 AND -73.96
@@ -59,7 +59,7 @@ EXPLAIN SELECT count(*) FROM places
 WHERE ST_Within(geom, ST_MakeEnvelope(-74.01, 40.72, -73.96, 40.77));
 ```
 
-The plan shows `Rtree Index Scan`. The index works for `ST_Equals`, `ST_Intersects`, `ST_Touches`, `ST_Crosses`, `ST_Within`, `ST_Contains`, `ST_Overlaps`, `ST_Covers`, `ST_CoveredBy`, `ST_ContainsProperly`, and `ST_DWithin`, when one argument is constant at planning time. `ST_Distance(geom, point) < d` does not use the index; rewrite it as `ST_DWithin`. Build the index after the table is loaded; bulk loading is faster than incremental inserts.
+The plan shows `Rtree Index Scan`. The index works for `ST_Equals`, `ST_Intersects`, `ST_Touches`, `ST_Crosses`, `ST_Within`, `ST_Contains`, `ST_Overlaps`, `ST_Covers`, `ST_CoveredBy`, `ST_ContainsProperly`, and `ST_DWithin`, when one argument is constant at planning time. `ST_Distance(geom, point) < d` does not use the index; rewrite it as `ST_DWithin`. After the table is loaded, build the index; bulk loading is faster than incremental inserts.
 
 ## Read and write
 
@@ -134,7 +134,7 @@ Other themes use the same release prefix and `theme=<name>/type=<type>/*`:
 | `base` | `land`, `water`, `infrastructure` |
 | `addresses` | `address` |
 
-Run `DESCRIBE` on a `LIMIT` subquery before you depend on a column. The full schema notes and three worked queries are in [references/overture.md](references/overture.md).
+Before depending on a column, run `DESCRIBE` on a `LIMIT` subquery. The full schema notes and three worked queries are in [references/overture.md](references/overture.md).
 
 The keyless S3 secret only sets the region. Do not put keys in the URL. Overture data has its own licenses per theme; check the Overture attribution page before publishing a derived dataset.
 
@@ -178,4 +178,4 @@ The point must be a GeoJSON `Point` with `[-73.985, 40.748]`. The distance must 
 - [Overture DuckDB guide](https://docs.overturemaps.org/getting-data/duckdb/) owns the release lookup and examples.
 - [Overture schema](https://docs.overturemaps.org/schema/) owns the current columns.
 - [Overture release calendar](https://docs.overturemaps.org/release-calendar/) owns the release cadence.
-- Bbox-first filtering and the `POINT_2D` cast are adapted from the `spatial` skill in https://github.com/duckdb/duckdb-skills (MIT). The release id and `taxonomy.primary` replace that skill's 2026-03-18 paths and `categories.primary` column. The STAC catalog returned `2026-10-21.0` on 2026-10-22. The skill reads the catalog rather than baking that id in.
+- Bbox-first filtering and the `POINT_2D` cast are adapted from the `spatial` skill in https://github.com/duckdb/duckdb-skills (MIT). The release id and `taxonomy.primary` replace that skill's fixed-date release paths and legacy category column. The STAC catalog returned `2026-10-21.0` on 2026-10-22. The skill reads the catalog rather than baking that id in.

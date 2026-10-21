@@ -43,7 +43,7 @@ SET storage_compatibility_version = 'v1.5.6';
 ATTACH 'my.db' (STORAGE_VERSION 'v1.5.6');
 ```
 
-Python:
+In Python:
 
 ```python
 duckdb.connect("my.db", config={"storage_compatibility_version": "v1.5.0"})
@@ -75,7 +75,7 @@ rg -n --glob '*.sql' --glob '*.py' --glob '*.md' \
 
 | Hit | Fix |
 | --- | --- |
-| `x -> expr` | `lambda x: expr` |
+| Legacy arrow (`x -> expr`) | `lambda x: expr` |
 | `// 0`, `% 0` | `TRY(expr)` |
 | `~`, `!~` | Decide partial or full; use `regexp_full_match` for full |
 | `s3_access_key_id` | A secret |
@@ -87,7 +87,7 @@ rg -n --glob '*.sql' --glob '*.py' --glob '*.md' \
 | `table_function_identifier_conversion` | Quote the argument |
 | Unquoted `read_csv(path)` | `read_csv('path')` |
 
-`->` also appears in JSON and in C code. Review each hit.
+Arrow syntax also appears in JSON and in C code. Review each hit.
 
 **Gate:** every hit is fixed or has a written reason to stay.
 
@@ -95,7 +95,7 @@ rg -n --glob '*.sql' --glob '*.py' --glob '*.md' \
 
 - Replace `-csv` with `-agent` for output a model reads, and `-json` for output a parser reads.
 - Replace removed settings.
-- Check `max_execution_time` is milliseconds.
+- Verify `max_execution_time` uses milliseconds.
 - Check `~/.duckdbrc` for a mode or startup setting that hides agent mode. Use `-no-init` to test without it.
 - Check scripts that parse errors. Agent mode writes JSON to stderr; `-json` writes text errors to stderr and can leave a partial `[` on stdout.
 
@@ -110,13 +110,13 @@ FROM duckdb_extensions()
 WHERE extension_name IN ('httpfs', 'spatial', 'json', 'parquet', 'icu');
 ```
 
-Restart the process after the update. Python code needs the `duckdb-python` changes. A custom build that linked ICU must load the `icu` extension.
+Restart the process after the update. When running Python, apply the changes in `duckdb-python`. When running a custom build that linked ICU, explicitly load the `icu` extension.
 
 **Gate:** every extension loads, and the Python test suite runs on 3.11 or newer.
 
 ## Phase 5: back up and test the restore
 
-Back up the file and test the restore before running a shadow workload. If the file must move to 2.0 storage:
+Back up the file and test the restore before running a shadow workload. When the file must move to 2.0 storage, export and import it:
 
 ```bash
 # old binary
@@ -127,7 +127,7 @@ duckdb mydata.new.db -c "IMPORT DATABASE 'tmp'"
 
 `EXPORT DATABASE` writes CSV by default; add `(FORMAT parquet)` if you expect Parquet. The export directory should be empty, and `IMPORT DATABASE` needs a fresh database.
 
-Or copy between attached databases. The target must be empty, and its storage version controls the output:
+To copy between attached databases, ensure the target is empty. The target storage version controls the output:
 
 ```sql
 ATTACH 'old.db' AS old (READ_ONLY);

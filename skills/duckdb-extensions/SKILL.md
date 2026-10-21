@@ -9,7 +9,7 @@ description: >
 
 # Extensions
 
-Require the 2.0 CLI from `duckdb` before installing. An extension installed by 1.5 is the wrong build for 2.0.
+Before installing, require the 2.0 CLI from `duckdb`. An extension installed by 1.5 is the wrong build for 2.0.
 
 ## Install and load
 
@@ -40,7 +40,7 @@ UPDATE EXTENSIONS;
 UPDATE EXTENSIONS (spatial, httpfs);
 ```
 
-The result columns are `extension_name`, `repository`, `update_result`, `previous_version`, and `current_version`. The statement does not reload. Restart the process before you depend on the new binary.
+The result columns are `extension_name`, `repository`, `update_result`, `previous_version`, and `current_version`. The statement does not reload. Before depending on the new binary, restart the process.
 
 Statically linked extensions in official builds, including `autocomplete`, `core_functions`, `icu`, `json`, `parquet`, and `shell`, are not updated this way. They ship with the binary.
 
@@ -80,11 +80,11 @@ For a one-off mirror, `SET custom_extension_repository = 'https://mirror.example
 
 ## Platform and security
 
-Community extensions are third-party and are not maintained by DuckDB Labs. Since 2.0 they are not built for `osx_amd64`. Core extensions still are, and 2.1 drops `osx_amd64` entirely.
+Community extensions are third-party and are not maintained by DuckDB Labs. Starting in 2.0, they are not built for `osx_amd64`. Core extensions still are, and 2.1 drops `osx_amd64` entirely.
 
 `allow_community_extensions` defaults to `true`. `allow_unsigned_extensions` defaults to `false`. `-unsigned` and `SET allow_unsigned_extensions = true` are for development only. A signed repository plus a pinned public key is the production path.
 
-Extensions live under `~/.duckdb/extensions/<duckdb-version>/<platform>/`. `extension_directories` is a list: DuckDB installs into the first entry and loads from all of them. The singular `extension_directory` is deprecated in 2.0 and warns.
+Extensions live under `~/.duckdb/extensions/<duckdb-version>/<platform>/`. `extension_directories` is a list. DuckDB installs into the first entry and loads from all of them. The singular `extension_directory` is deprecated in 2.0 and warns.
 
 ## Troubleshoot
 
@@ -97,7 +97,7 @@ Extensions live under `~/.duckdb/extensions/<duckdb-version>/<platform>/`. `exte
 | A stale extension loads | Restart the process; `UPDATE EXTENSIONS` does not reload. |
 | A local build cannot load an extension | Platform or version mismatch. Check `duckdb_extensions().install_path`. |
 
-Download a file manually when the repository is unreachable:
+When the repository is unreachable, download a file manually:
 
 ```sql
 FORCE INSTALL '/absolute/path/spatial.duckdb_extension';

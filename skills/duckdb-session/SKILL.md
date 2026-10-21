@@ -20,10 +20,10 @@ Do not write secret values into the state file. Store `ATTACH` lines and `CREATE
 Look in this order:
 
 1. `.duckdb/state.sql` in the project.
-2. `.duckdb-skills/state.sql` in the project, the path used by the older duckdb-skills plugin.
+2. `.duckdb-skills/state.sql` in the project, the path used by the upstream duckdb-skills plugin.
 3. `$HOME/.duckdb-skills/<project-id>/state.sql`, where `<project-id>` is the absolute project root with `/` replaced by `-`.
 
-If none exists, create `.duckdb/state.sql`. Tell the user the path. If the file belongs outside the repo, use the home location. Offer to add `.duckdb/` to `.gitignore` when the file lives in the project.
+If none exists, create `.duckdb/state.sql` (unless the project root is `$HOME`, where `.duckdb-skills/` avoids colliding with `~/.duckdb/`). Tell the user the path. If the file belongs outside the repo, use the home location. Offer to add `.duckdb/` to `.gitignore` when the file lives in the project.
 
 Append. Never replace the file. It may already hold secrets, macros, and `LOAD` statements.
 
@@ -33,9 +33,9 @@ Resolve the path to an absolute path. If the file is missing, ask before creatin
 
 The alias is the file name up to the first dot. `a.b.c.db` becomes `a`. Quote an alias that contains `-`, a space, or a leading digit.
 
-`ATTACH IF NOT EXISTS` is keyed on the alias, not the path. The same alias with a different path is a silent no-op. The same path under a second alias fails with `Unique file handle conflict`. A missing path is created as a new storage-version-69 file. Check the path with `test -f` before appending.
+`ATTACH IF NOT EXISTS` is keyed on the alias, not the path. The same alias with a different path is a silent no-op. The same path under a second alias fails with `Unique file handle conflict`. A missing path is created as a new storage-version-69 file. Before appending, check the path with `test -f`.
 
-Append only when that path is not already attached:
+If the path is not already attached, append:
 
 ```sql
 ATTACH IF NOT EXISTS '/absolute/path/analytics.duckdb' AS analytics;
@@ -51,7 +51,7 @@ Options that matter:
 | `TYPE sqlite` | A SQLite file. Use `duckdb-files`, not this skill. |
 | `ATTACH OR REPLACE` | Replace an existing alias. Destructive; ask first. |
 
-Add `USE analytics;` only when the user asked to make this database the default, or when the state file has no `USE` yet. A second attach should not silently change the default database. Without any `USE`, the default is `memory`, so a bare `SHOW TABLES` can look empty even after an attach.
+If the user asked to make this database the default, or the state file has no `USE` yet, add `USE analytics;`. A second attach should not silently change the default database. Without any `USE`, the default is `memory`, so a bare `SHOW TABLES` can look empty even after an attach.
 
 `-init` is CLI-only. Python and other clients must issue `ATTACH` in code. The init file may hold SQL and dot commands, and a parse or SQL error aborts startup with exit 1.
 
@@ -83,14 +83,14 @@ For each table the user cares about, up to 20:
 DESCRIBE analytics.main.table_name;
 ```
 
-`estimated_size` is an estimate. Use `count()` only when the user asked for an exact number or the estimate is small.
+`estimated_size` is an estimate. Only when the user asked for an exact number or the estimate is small, use `count()`.
 
 Nested schemas need a join. `duckdb_tables()` carries `schema_oid`; `duckdb_schemas()` carries `oid`, `schema_name`, and `parent_schema`.
 
 ```sql
 SELECT s.parent_schema, t.schema_name, t.table_name
 FROM duckdb_tables() AS t
-JOIN duckdb_schemas() AS s ON t.schema_oid = s.oid
+JOIN duckdb_schemas() AS s ON t.schema_oid = s.oid AND t.database_oid = s.database_oid
 WHERE t.database_name = 'analytics' AND s.parent_schema IS NOT NULL;
 ```
 
@@ -115,7 +115,7 @@ USE memory_db;
 DETACH analytics;
 ```
 
-Closing the only Python connection releases the cross-process lock. Locks persist while another connection or process holds the file. Detach the database in SQL when the lock matters.
+Closing the only Python connection releases the cross-process lock. Locks persist while another connection or process holds the file. When the lock matters, detach the database in SQL.
 
 ## Move or copy
 
@@ -123,9 +123,9 @@ Closing the only Python connection releases the cross-process lock. Locks persis
 COPY FROM DATABASE analytics TO archive;
 ```
 
-For a file-format migration, use `duckdb-migrate`. For a backup, `EXPORT DATABASE` writes a directory of SQL and CSV by default; add `(FORMAT parquet)` for Parquet. `IMPORT DATABASE` needs a fresh database, and the export directory should be empty.
+For a file-format migration, use `duckdb-migrate`. For a backup, export into an empty directory because `EXPORT DATABASE` writes SQL and CSV by default without clearing existing files; add `(FORMAT parquet)` for Parquet. `IMPORT DATABASE` needs a target database with no conflicting objects.
 
-`COPY FROM DATABASE` needs an attached, empty target. The target's storage version controls the output.
+`COPY FROM DATABASE` needs an attached target with no conflicting table names. The target's storage version controls the output.
 
 ## Verify
 

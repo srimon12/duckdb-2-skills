@@ -1,6 +1,6 @@
 # Overture reference
 
-Read this when the skill needs the current Overture release, a theme schema, or a worked query. The driver is `duckdb-spatial/SKILL.md`.
+When the skill needs the current Overture release, a theme schema, or a worked query, read this reference. The driver is `duckdb-spatial/SKILL.md`.
 
 ## Release lookup
 
@@ -102,9 +102,9 @@ LIMIT 20;
 
 ## Divisions
 
-`division` is the point type: `id`, `geometry`, `bbox`, `version`, `sources`, `names`, `subtype`, `country`, `admin_level`, `class`, `population`, `hierarchies`, `parent_division_id`. `division_area` is the polygon type: `division_id`, `is_land`, `is_territorial`, `country`, `region`, `admin_level`, and no `population`. `division_boundary` is the boundary-line type.
+The `division` point type includes `id`, `geometry`, `bbox`, `version`, `sources`, `names`, `subtype`, `country`, `admin_level`, `class`, `population`, `hierarchies`, and `parent_division_id`. The `division_area` polygon type includes `division_id`, `is_land`, `is_territorial`, `country`, `region`, and `admin_level` with no `population`. The `division_boundary` type represents boundary lines.
 
-`subtype` values include `country`, `region`, `county`, `locality`, `localadmin`, `neighborhood`, and `dependent`. Check the schema before filtering.
+`subtype` values include `country`, `region`, `county`, `locality`, `localadmin`, `neighborhood`, and `dependent`. Before filtering, check the schema.
 
 ```sql
 FROM read_parquet(
@@ -151,7 +151,7 @@ LIMIT 20;
 
 ## Licenses
 
-Overture themes carry different licenses. Places is published under CDLA Permissive 2.0 and Apache 2.0. Check the attribution page for the theme you use before publishing a derived dataset.
+Overture themes carry different licenses. Places is published under CDLA Permissive 2.0 and Apache 2.0. Before publishing a derived dataset, check the attribution page for the theme you use.
 
 ## Native GeoJSON
 

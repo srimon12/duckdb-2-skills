@@ -9,7 +9,7 @@ description: >
 
 # Docs search
 
-Use the hosted index before guessing a signature. Answer from the returned chunks, and cite the page.
+Before guessing a signature, query the hosted index. Answer from the returned chunks, and cite the page.
 
 ## Index versions
 
@@ -58,9 +58,9 @@ ORDER BY score DESC
 LIMIT 8;
 ```
 
-The 2.0 macro has ten parameters: `match_bm25(docname, query_string, fields := NULL, k := 1.2, b := 0.75, conjunctive := false, field_weights := NULL, field_b := NULL, scoring_model := 'bm25f', tie_breaker := 0.0)`. The manual page lists only six; the binary and `duckdb_functions()` are authoritative. The indexed fields are `page_title`, `section`, and `text`.
+The 2.0 macro accepts ten parameters in `match_bm25(docname, query_string, fields := NULL, k := 1.2, b := 0.75, conjunctive := false, field_weights := NULL, field_b := NULL, scoring_model := 'bm25f', tie_breaker := 0.0)`. The manual page lists only six; the binary and `duckdb_functions()` are authoritative. The indexed fields are `page_title`, `section`, and `text`.
 
-Set `conjunctive := 1` when every term must appear. `field_weights := {'text': 2.0}` boosts a field. `stemmer`, `stopwords`, and `ignore` are `PRAGMA create_fts_index` options, not `match_bm25` arguments. `bm25_k1` and `bm25_b` do not exist; use `k` and `b`.
+When every term must appear, set `conjunctive := 1`. Use `field_weights := {'text': 2.0}` to boost a field. The options `stemmer`, `stopwords`, and `ignore` belong to `PRAGMA create_fts_index`, not `match_bm25`. The names `bm25_k1` and `bm25_b` do not exist; use `k` and `b`.
 
 Turn the question into two or three technical terms. Drop "how" and "do". Keep a function name as written. If a search returns nothing, drop a term. If you had set `conjunctive := 1`, retry with `0`; the default is already `0`.
 
@@ -70,7 +70,7 @@ Prefix a relative `url` with `https://duckdb.org` or `https://ducklake.select`.
 
 Lead with the answer in one or two sentences. Then give the page title and absolute URL for each chunk you used. Quote only the lines that carry the signature or the rule.
 
-If the cache is missing and the network works, query the hosted index directly: `ATTACH ... AS remote; USE remote;` and run the same query. It took about five seconds in probing. If the network is down, use a stale cache read-only with a warning. If neither exists, say so and link `https://duckdb.org/docs/2.0/` or `https://ducklake.select/docs/stable/`. Do not invent an answer from memory.
+If the cache is missing and the network works, query the hosted index directly with `ATTACH ... AS remote; USE remote;` and run the same query. The query took about five seconds in probing. If the network is down, use a stale cache read-only with a warning. If neither exists, report the issue and link `https://duckdb.org/docs/2.0/` or `https://ducklake.select/docs/stable/`. Do not invent an answer from memory.
 
 ## Verify
 

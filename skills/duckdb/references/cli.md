@@ -36,7 +36,7 @@ Each process starts empty unless a database path or an init file is given. `ATTA
 | `-init FILE` | Use `FILE` instead of `~/.duckdbrc`. |
 | `-no-init` | Skip the init file entirely. |
 | `-readonly` | Open the database read-only. Later `ATTACH` defaults to read-only, but an explicit `(READ_WRITE)` overrides it. |
-| `-safe` | Enable safe mode: no external file access, configuration locked. The database named on the command line still opens. |
+| `-safe` | Enable safe mode with no external file access and locked configuration. The database named on the command line still opens. |
 | `-storage-version VER` | Storage compatibility version for a new file only. Opening an existing file ignores it. `latest` means the 2.0 format. An invalid value exits 0 without creating a file. |
 | `-bail` | Stop after the first error. |
 | `-echo` | Print each command before running it. |
@@ -53,9 +53,9 @@ Each process starts empty unless a database path or an init file is given. `ATTA
 | `-connect [quack[:SECRET]]` | Connect to a remote Quack server. Cannot be combined with a local database path. |
 | `-version`, `-h`, `-help` | Version or help. |
 
-`-agent` and an output flag can be combined. The flag picks the renderer; `-agent` still forces the agent contract, so errors stay JSON and the banner still prints. It does not apply the row, byte, or cell caps: `-agent -json` returns the whole JSON array. Without an explicit `-agent`, any output flag turns automatic agent mode off.
+`-agent` and an output flag can be combined. The flag picks the renderer; `-agent` still forces the agent contract, so errors stay JSON and the banner still prints. It does not apply the row, byte, or cell caps. `-agent -json` returns the whole JSON array. Without an explicit `-agent`, any output flag turns automatic agent mode off. In batch execution, note that a trailing `-cmd` after the final `-c` does not run.
 
-Automatic activation requires all three: a known agent variable is present (even `AI_AGENT=0`), stdout is not a terminal, and no output flag was passed. Known variables include `AI_AGENT`, `AGENT`, `CLAUDECODE`, `CODEX_CI`, `CODEX_SANDBOX`, `CODEX_THREAD_ID`, `COPILOT_AGENT`, `COPILOT_AGENT_SESSION_ID`, `COPILOT_CLI`, `CURSOR_AGENT`, and `GEMINI_CLI`. `DUCKDB_AGENT_MODE=0` or `-no-agent` forces it off; the CLI flags win.
+Automatic activation requires three conditions. A known agent variable is present (even `AI_AGENT=0`), stdout is not a terminal, and no output flag was passed. Known variables include `AI_AGENT`, `AGENT`, `CLAUDECODE`, `CODEX_CI`, `CODEX_SANDBOX`, `CODEX_THREAD_ID`, `COPILOT_AGENT`, `COPILOT_AGENT_SESSION_ID`, `COPILOT_CLI`, `CURSOR_AGENT`, and `GEMINI_CLI`. `DUCKDB_AGENT_MODE=0` or `-no-agent` forces it off; the CLI flags win.
 
 ## Output modes
 
@@ -141,11 +141,11 @@ Dot commands start at column 1, take one line, and need no semicolon.
 | `max_temp_directory_size` | Cap on spill. Default 90% of available disk; it does not accept a percentage string. |
 | `preserve_insertion_order` | `false` can speed bulk loads and lower memory; it gives up row order. |
 | `enable_progress_bar` | Turn off for clean stderr in automation. |
-| `checkpoint_on_detach` | Enum, not a boolean. Default `DEFAULT`. |
+| `checkpoint_on_detach` | Enum (`ENABLED`, `DISABLED`, `DEFAULT`), not a boolean. Default `DEFAULT`. |
 | `storage_compatibility_version` | `latest` or a version such as `v1.5.6`. |
 | `allow_persistent_secrets` | Set `false` before locking configuration. |
 | `enable_external_access` | Set `false` to block file and network access. |
-| `allowed_paths` | Allowlist for the file sandbox. |
+| `allowed_paths` | Allowlist for the file sandbox. Set before locking configuration. |
 | `lock_configuration` | Freeze settings for the session. |
 | `allow_unsigned_extensions` | Development only. |
 | `async_threads` | Async I/O pool. Default four times `threads`, capped at 256. |
@@ -163,7 +163,7 @@ SELECT name, value, description FROM duckdb_settings() ORDER BY name;
 
 | Control | Blocks |
 | --- | --- |
-| `-safe` / `.safe_mode` | External file access, `.web`, `.read`, `.output`, `.once`, `.import`, `.log`, `.open`, `.sh`, `.system`, and `getenv`. It locks configuration before `-init` runs. The named database still opens. |
+| `-safe` / `.safe_mode` | External file access, `.cd`, `.excel`, `.web`, `.read`, `.output`, `.once`, `.import`, `.log`, `.open`, `.sh`, `.system`, and `getenv`. It locks configuration before `-init` runs. The named database still opens. |
 | `-readonly` | Writes to the opened database, unless an `ATTACH` says `(READ_WRITE)`. |
 | `SET enable_external_access = false` | All file and network access, including the database path in some cases. |
 | `SET allowed_paths = [...]` | Everything outside the listed paths. Set it before locking. |
@@ -180,7 +180,7 @@ SET allow_persistent_secrets = false;
 SET lock_configuration = true;
 ```
 
-External access cannot be turned back on in the same process. `-safe -init allow.sql` fails because `-safe` locks configuration before init runs; use `.safe_mode` at the end of an init script when paths must be configured first.
+External access cannot be turned back on in the same process. `-safe -init allow.sql` fails because `-safe` locks configuration before init runs; when paths must be configured first, use `.safe_mode` at the end of an init script.
 
 ## Install
 
@@ -191,10 +191,10 @@ External access cannot be turned back on in the same process. `-safe -init allow
 | Windows | `winget install DuckDB.cli` |
 | Docker | `docker run --rm -it duckdb/duckdb` |
 
-The install script puts the binary under `~/.duckdb/cli/<version>/`, points `latest` at it, and links `~/.local/bin/duckdb` only when that directory exists and has no `duckdb` file. Pin a version with `DUCKDB_VERSION=1.2.2` on the install command. Homebrew was still on 1.5.6 on 2026-10-22. Version check:
+The install script puts the binary under `~/.duckdb/cli/<version>/`, points `latest` at it, and links `~/.local/bin/duckdb` only when that directory exists and has no `duckdb` file. Pin a version with `DUCKDB_VERSION=2.0.0` on the install command. Homebrew was still on 1.5.6 on 2026-10-22. `osx_amd64` has partial support and is dropped in 2.1; Linux requires glibc >= 2.28. Version check:
 
 ```bash
-duckdb --version
+duckdb -no-agent --version
 curl -fsSL https://duckdb.org/data/latest_stable_version.txt
 ```
 
@@ -205,7 +205,7 @@ CALL enable_logging(storage = 'memory');
 SELECT * FROM duckdb_logs();
 ```
 
-Since 1.5 the CLI defaults to `shell_log_storage`, which `duckdb_logs` cannot query. Enable memory storage first. A bare `CALL enable_logging()` prints a warning and `INFO:QueryLog` lines to stdout, which corrupts JSON or CSV output. `enable_http_logging` and `http_logging_output` were removed in 2.0. Use the unified logging framework.
+Since 1.5 the CLI defaults to `shell_log_storage`, which `duckdb_logs` cannot query. Enable memory storage first. A bare `CALL enable_logging()` prints a warning and `INFO:QueryLog` lines to stdout, which corrupts JSON or CSV output. `enable_http_logging` and `http_logging_output` were removed in 2.0. Use `CALL enable_logging('HTTP');`.
 
 ## JSON caveats
 
@@ -214,6 +214,7 @@ Since 1.5 the CLI defaults to `shell_log_storage`, which `duckdb_logs` cannot qu
 - Duplicate column names produce duplicate keys; a parser usually keeps the last one.
 - `errors_as_json = true` covers post-parse errors only. Parser errors stay text unless agent framing is on.
 - `EXPLAIN ANALYZE` ignores `-json` and prints a profile.
+- Interruption via SIGINT exits 1 with a table header on stdout and no JSON error on stderr. Always check the exit code.
 
 ## References
 

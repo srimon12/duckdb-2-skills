@@ -61,7 +61,7 @@ DISCONNECT;
 
 `DISCONNECT` with nothing connected raises. While `CONNECT` is active, unqualified names run on the remote. Local in-memory databases and local DuckDB files do not accept `CONNECT`.
 
-Qualify names when you want the attachment as a catalog and the local session stays put:
+When you want the attachment as a catalog and the local session stays put, qualify names:
 
 ```sql
 ATTACH 'quack:localhost' AS remote_db (TOKEN 'my_token');
@@ -113,7 +113,7 @@ Other client functions: `quack_query_by_name(catalog, query)` for an attached ca
 
 The default bind is localhost, plain HTTP, no TLS. That is correct on one machine. For any other host, keep `quack_serve` on localhost and put a TLS reverse proxy in front. The proxy guide recommends a 256 MB body limit, 600-second read and send timeouts, HTTP/1.1 keep-alive, and buffering off. Clients must name port 443 explicitly because Quack's default remains 9494. Non-local client URIs assume HTTPS.
 
-Do not set `allow_other_hostname = true` for a shared network. `0.0.0.0` is not local. Refuse it unless the user explicitly asks and a TLS proxy is in front. Do not paste a token into a shell history, a committed file, or `state.sql`. Use a named secret.
+Do not set `allow_other_hostname = true` for a shared network. `0.0.0.0` is not local. Unless the user explicitly asks and a TLS proxy is in front, refuse it. Do not paste a token into a shell history, a committed file, or `state.sql`. Use a named secret.
 
 A token is OS-user access, not tenant isolation. The server can read and write files as its user and install extensions. To reduce that surface, start the server first, then lock it:
 
@@ -127,7 +127,7 @@ Locking before `quack_serve` fails because the server reads `~/.duckdb/stored_se
 
 The server checks a token on connect and runs an authorization callback before each query. The defaults allow every authenticated query.
 
-Do not replace that callback with a regular expression on the query text. A data-modifying CTE starts with `WITH`, and a comment can hide the first keyword, so a prefix check that allows `WITH` still runs writes. Read the security page before setting `quack_authorization_function`.
+Do not replace that callback with a regular expression on the query text. A data-modifying CTE starts with `WITH`, and a comment can hide the first keyword, so a prefix check that allows `WITH` still runs writes. Before setting `quack_authorization_function`, read the security page.
 
 `quack_authentication_function` takes `(sid, client_token, server_token)` and returns `BOOLEAN`. `quack_authorization_function` takes `(connection_id, query)`. Both run on a fresh server-side connection, so they cannot rely on session state.
 
@@ -141,9 +141,9 @@ SELECT count(*) FROM orders;
 DISCONNECT;
 ```
 
-The string starts with `postgres:` and then a libpq connection string. Do not emit `postgres://...`. The 2.0 connect page names MySQL and does not show a MySQL connection-string example, so open the MySQL extension page before writing one.
+The string starts with `postgres:` and then a libpq connection string. Do not use an unadorned URI scheme like `postgres:` followed by double slashes for CONNECT. The 2.0 connect page names MySQL and does not show a MySQL connection-string example, so open the MySQL extension page before writing one.
 
-The current PostgreSQL forms are `CONNECT 'postgres:dbname=mydb host=localhost'` and `CONNECT 'postgres:postgresql://localhost/mydb'`. `CONNECT 'postgres://localhost/mydb'` is treated as a local file and fails. `ATTACH 'postgres://localhost/mydb' (TYPE postgres)` does work. For MySQL, use `CONNECT 'mysql:host=localhost database=mydb'`; `mysql://...` fails the same way.
+The current PostgreSQL forms are `CONNECT 'postgres:dbname=mydb host=localhost'` and `CONNECT 'postgres:postgresql://localhost/mydb'`. A bare URI without `postgres:` (such as `CONNECT 'postgresql://localhost/mydb'`) is treated as a local file and fails. In contrast, `ATTACH 'postgresql://localhost/mydb' (TYPE postgres)` does work. For MySQL, use `CONNECT 'mysql:host=localhost database=mydb'`; `mysql://...` fails the same way.
 
 For direct reads and writes without routing the session, use `postgres_query`, `postgres_execute`, `mysql_query`, and `mysql_execute`. `postgres_scan`, `postgres_scan_pushdown`, and `mysql_scan` are absent from the 2.0.0 binary. Secrets and pooling live on the extension pages.
 

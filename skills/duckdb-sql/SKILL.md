@@ -69,9 +69,9 @@ CREATE TABLE sales.europe.orders (id INTEGER);
 SELECT * FROM sales.europe.orders;
 ```
 
-The parent must exist. `USE sales.europe`, `SET search_path = 'sales.europe'`, and `SET schema = 'sales.europe'` all fail: a nested schema cannot sit on the search path. Two-part names resolve from the top level, so `SELECT * FROM europe.orders` after `USE sales` fails. `SHOW TABLES` under `sales` does not list tables in `sales.europe`.
+The parent must exist. `USE sales.europe`, `SET search_path = 'sales.europe'`, and `SET schema = 'sales.europe'` all fail because a nested schema cannot sit on the search path. Two-part names resolve from the top level, so `SELECT * FROM europe.orders` after `USE sales` fails. `SHOW TABLES` under `sales` does not list tables in `sales.europe`.
 
-`duckdb_schemas()` exposes `schema_name`, `parent_schema`, and `parent_schema_oid`. `duckdb_tables()` carries `schema_oid` but no parent name, so join the two when the full path matters.
+`duckdb_schemas()` exposes `schema_name`, `parent_schema`, and `parent_schema_oid`. When the full path matters, join `duckdb_tables()` with `duckdb_schemas()` on `schema_oid = oid`.
 
 `DROP SCHEMA sales` fails while the subtree exists. `DROP SCHEMA sales CASCADE` removes it. `CREATE SCHEMA "sales.europe"` is one literal top-level name with a dot, and `USE "sales.europe"` works for that schema.
 
@@ -111,7 +111,7 @@ CREATE TRIGGER trg_audit
         JOIN n ON o.id = n.id;
 ```
 
-`RETURNING` is blocked per matching event: an `INSERT ... RETURNING` fails when the table has an `INSERT` row trigger, and a `DELETE ... RETURNING` fails with a `DELETE` row trigger. `UPDATE ... RETURNING` works with an `INSERT` row trigger. A table whose triggers are all statement-level allows `RETURNING`.
+`RETURNING` is blocked per matching event. An `INSERT ... RETURNING` fails when the table has an `INSERT` row trigger, and a `DELETE ... RETURNING` fails with a `DELETE` row trigger. `UPDATE ... RETURNING` works with an `INSERT` row trigger. A table whose triggers are all statement-level allows `RETURNING`.
 
 All `BEFORE` triggers fire before all `AFTER` triggers; triggers on the same event fire in creation order. Names are unique per table. `CREATE OR REPLACE TRIGGER` and `IF NOT EXISTS` work, but not together. Inspect with `duckdb_triggers()`.
 
@@ -151,7 +151,7 @@ All `BEFORE` triggers fire before all `AFTER` triggers; triggers on the same eve
 | `approx_count_distinct` | Roughly 0.5% low on 1M values | Use `count(DISTINCT x)` for user-visible numbers |
 | Empty-group aggregate | `sum`, `list`, and `string_agg` return `NULL`; `count` returns `0` | `coalesce(sum(x), 0)` |
 | `sum` overflow | `sum(DECIMAL(38,0))` and `sum(HUGEINT)` can overflow | Cast deliberately to `DECIMAL(38,s)` |
-| Timestamps | `DATE -> TIMESTAMPTZ` uses the session zone | Store instants as `TIMESTAMPTZ`; set the zone explicitly |
+| Timestamps | Casting `DATE` to `TIMESTAMPTZ` uses the session zone | Store instants as `TIMESTAMPTZ`; set the zone explicitly |
 | `CREATE OR REPLACE TABLE` | Drops constraints and indexes | Use `CREATE TABLE IF NOT EXISTS` plus `INSERT`/`MERGE` |
 | `PIVOT ... FILTER` | Accepted and silently ignored | Filter in a subquery before the pivot |
 | Simplified `UNPIVOT` | Drops `NULL` values | Use the standard form with `INCLUDE NULLS` |
@@ -163,7 +163,7 @@ Friendly-SQL examples and the edge cases behind these rows are in [references/fr
 
 ## Parser
 
-The PEG parser is the default and errors carry `LINE n:` and a caret. If a query that worked on 1.5 fails to parse, `SET enable_legacy_parser = true;` autoloads the extension and switches for the session. The legacy parser rejects `NEAREST` and is not a semantic time machine. File the query, use the fallback only to unblock, and remove it from saved SQL.
+The PEG parser is the default and errors carry `LINE n:` and a caret. If a query that worked on 1.5 fails to parse, `SET enable_legacy_parser = true;` autoloads the extension and switches for the session. The legacy parser rejects `NEAREST` and is not a semantic time machine. File an issue with the query, use the fallback only to unblock, and remove it from saved SQL.
 
 ## Before optimizing
 
