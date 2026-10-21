@@ -125,13 +125,9 @@ SET lock_configuration = true;
 
 Locking before `quack_serve` fails because the server reads `~/.duckdb/stored_secrets` at startup. The default authorization callback allows every query. Replace it when the server is shared.
 
-The server checks a token on connect and runs an authorization callback before each query. The defaults allow every authenticated query. To restrict:
+The server checks a token on connect and runs an authorization callback before each query. The defaults allow every authenticated query.
 
-```sql
-CREATE MACRO read_only(sid, query) AS
-    regexp_matches(upper(trim(query)), '^(SELECT|FROM|WITH|EXPLAIN|DESCRIBE|SHOW)\b');
-SET GLOBAL quack_authorization_function = 'read_only';
-```
+Do not replace that callback with a regular expression on the query text. A data-modifying CTE starts with `WITH`, and a comment can hide the first keyword, so a prefix check that allows `WITH` still runs writes. Read the security page before setting `quack_authorization_function`.
 
 `quack_authentication_function` takes `(sid, client_token, server_token)` and returns `BOOLEAN`. `quack_authorization_function` takes `(connection_id, query)`. Both run on a fresh server-side connection, so they cannot rely on session state.
 

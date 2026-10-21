@@ -155,12 +155,16 @@ SELECT h3_latlng_to_cell(40.748, -73.985, 9) AS cell,
 
 ## Verify
 
-```sql
+```bash
+duckdb -no-agent -c "
+INSTALL spatial; LOAD spatial;
+SET geometry_always_xy = true;
 SELECT ST_AsGeoJSON(ST_Point(-73.985, 40.748)) AS point,
        ST_Distance_Spheroid(
            ST_Point(-73.985, 40.748)::POINT_2D,
            ST_Point(-73.97, 40.76)::POINT_2D
        ) AS meters;
+"
 ```
 
 The point must be a GeoJSON `Point` with `[-73.985, 40.748]`. The distance must be a positive number near 1,800 meters.

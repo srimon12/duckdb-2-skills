@@ -118,9 +118,7 @@ The setting autoloads the extension. It rejected `NEAREST` in probing, and the m
 
 ## CLI and deployment
 
-Agent mode is on when a known agent variable is set, stdout is not a terminal, and no output flag was passed. `-csv` turns automatic agent mode off. Use `-agent` for model-read output and `-json` for parsers.
-
-`max_execution_time` is milliseconds. `0` means no limit.
+Output mode and `max_execution_time` belong to `duckdb`. Do not restate them here.
 
 CLI logs since 1.5 use `shell_log_storage` and do not appear in `duckdb_logs`. Enable memory storage first:
 

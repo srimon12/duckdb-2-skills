@@ -98,7 +98,7 @@ When an error names a feature, load the owner instead of guessing:
 ## Verify
 
 ```bash
-duckdb --version
+duckdb -no-agent --version
 duckdb -agent -c "SELECT 42 AS answer;"
 duckdb -json -c "SELECT 42 AS answer;"
 ```
