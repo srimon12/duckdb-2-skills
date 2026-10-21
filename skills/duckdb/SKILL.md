@@ -31,6 +31,7 @@ That installs under `~/.duckdb/cli/<version>/`, points `~/.duckdb/cli/latest` at
 | A model reads the table | `duckdb -agent -c "..."` | Compact Markdown, JSON errors on stderr, a row cap, a result hash |
 | A script parses the rows | `duckdb -json -c "..."` | One JSON array on stdout; errors as text on stderr |
 | A person reads a terminal | `duckdb -box -c "..."` | A box table |
+| A person explores data in a browser | `duckdb -ui` when the `ui` extension installs | A local UI served from `localhost:4213` |
 
 `-csv`, `-json`, and every other output flag disable automatic agent mode. To keep agent framing with a different renderer, pass `-agent` explicitly.
 
@@ -39,6 +40,8 @@ That installs under `~/.duckdb/cli/<version>/`, points `~/.duckdb/cli/latest` at
 Read stderr. Agent mode writes its banner, JSON errors, cost estimates, and progress there. A footer that says `first 20 and last 20 of N rows` means the table is a sample. Before treating the result as complete, add `LIMIT` or an aggregate. Results of 1 to 9 rows have no hash footer; 0 and 10 or more do.
 
 `-json` on error can leave a partial `[` on stdout. Before parsing, check the exit code and stderr. `-json` with multiple statements emits one array per statement, and `NaN`/`Infinity` are not strict JSON. `EXPLAIN ANALYZE` prints a profile, not JSON, even with `-json`.
+
+`duckdb -ui` needs the `ui` extension. The 2.0.0 extension caveat and the fallback are in [references/cli.md](references/cli.md).
 
 ## Run SQL
 
@@ -74,8 +77,9 @@ A file created by 2.0 with default settings uses storage version 69. DuckDB 1.x 
 | Task | Skill |
 | --- | --- |
 | Write or run SQL, lambdas, triggers, nested schemas | `duckdb-sql` |
+| Diagnose a slow query, plan, spill, or Parquet layout | `duckdb-profile` |
 | Attach a database and keep it across calls | `duckdb-session` |
-| Read or convert a file, or query object storage | `duckdb-files` |
+| Read, convert, or batch-ingest a file, or query object storage | `duckdb-files` |
 | `VARIANT` or semi-structured columns | `duckdb-variant` |
 | Serve a database, `CONNECT`, Postgres or MySQL pushdown | `duckdb-quack` |
 | DuckLake, Iceberg, Delta | `duckdb-lakehouse` |
@@ -93,6 +97,7 @@ When an error names a feature, load the owner instead of guessing:
 | `sqlite_master` does not exist, `read_csv` on a Parquet file, a secret validation failure | `duckdb-files` |
 | `Trying to read a database file with version number 69` | `duckdb-migrate` |
 | `Extension ... not found`, `no update available` | `duckdb-extensions` |
+| `Out of Memory Error`, a plan whose actual rows dwarf its estimate, `Row Groups Scanned` near the total | `duckdb-profile` |
 | Output is box drawing under an agent | check `~/.duckdbrc`; rerun with `-no-init` |
 
 ## Verify

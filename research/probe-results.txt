@@ -14,6 +14,9 @@ Binary: v2.0.0 (Cyanoptera) d54cbbe3df
 - **PASS** VARIANT index 0 rejected: `rejected as documented`
 - **PASS** VARIANT out-of-range returns NULL: `{'v': None}`
 - **PASS** variant_comparator returns BLOB: `{'t': 'BLOB'}`
+- **PASS** variant_concat absent: `rejected as documented`
+- **PASS** VARIANT distinct across types: `{'n': 2}`
+- **PASS** VARIANT order hierarchy: `[True, 1, 'z', [1], {'a': 1}, None]`
 - **PASS** regex ~ is partial: `{'partial': True, 'sem': 'partial'}`
 - **PASS** decimal_division exact: `{'v': '2.500000'}`
 - **PASS** SECURE VIEW: `{'a': 1}`
@@ -29,8 +32,27 @@ Binary: v2.0.0 (Cyanoptera) d54cbbe3df
 - **PASS** GROUP BY UNNEST: `[{'tag': 'a', 'n': 1}, {'tag': 'b', 'n': 3}, {'tag': 'c', 'n': 1}]`
 - **PASS** MERGE INTO: `{'v': 20}`
 - **PASS** EXPLAIN (SQL): `SELECT CAST(42 AS INTEGER) AS "42"`
+- **PASS** EXPLAIN shows estimates: `estimate present`
+- **PASS** EXPLAIN ANALYZE shows actuals: `actual rows and timing present`
+- **PASS** EXPLAIN (FORMAT JSON): `PROJECTION`
+- **PASS** EXPLAIN ANALYZE executes DML: `inserted 3 rows during ANALYZE`
+- **PASS** Parquet row-group pruning: `1 of 10 row groups`
+- **PASS** Parquet metadata row duplication: `{'file_rows': 10, 'chunk_rows': 30}`
+- **PASS** Parquet schema drift: `[{'a': 1, 'b': 2, 'c': None}, {'a': 1, 'b': None, 'c': 3}]`
+- **PASS** partitioned COPY round trip: `{'n': 9, 'meta': 9}`
+- **PASS** COPY overwrite guard: `rejected as documented`
+- **PASS** OVERWRITE_OR_IGNORE leaves stale partitions: `stale partition remains, 2 rows`
+- **PASS** OVERWRITE removes stale partitions: `old partition removed, 1 rows`
+- **PASS** CSV rejects one row per error: `{'errors': 2, 'lines': 1}`
+- **PASS** Parquet row group minimum: `full row group 2048`
+- **PASS** JSON ignore_errors nulls a row: `[{'id': 1, 'name': 'a'}, {'id': None, 'name': None}, {'id': 3, 'name': 'c'}]`
 - **PASS** agent mode truncation footer: `truncation footer present`
 - **PASS** -csv disables agent mode: `plain CSV`
+- **PASS** -ui flag exists: `ui flag present`
+- **PASS** async_threads setting: `{'v': 16}`
+- **PASS** json_merge_patch: `{'v': {'a': 1, 'b': 2}}`
+- **PASS** data-modifying CTE with RETURNING: `{'n': 2}`
+- **PASS** temporary secret creation: `{'type': 's3', 'provider': 'config'}`
 - **PASS** docs index versions: `[{'version': '2.0', 'n': 2695}, {'version': 'blog', 'n': 999}]`
 
-30/30 passed
+52/52 passed

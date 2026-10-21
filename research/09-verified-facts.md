@@ -6,7 +6,7 @@ Binary: DuckDB 2.0.0 (Cyanoptera) `d54cbbe3df`, run 2026-10-22 on macOS arm64.
 
 ## Automated
 
-Run `python3 scripts/probe.py --network --write research/probe-results.txt`.
+Run `python3 scripts/probe.py --network --write research/probe-results.txt`. The table below is the first-pass set. The next-phase probes are recorded separately below.
 
 | # | Fact | Probe | Observed |
 | --- | --- | --- | --- |
@@ -68,10 +68,39 @@ Run `python3 scripts/probe.py --network --write research/probe-results.txt`.
 | 51 | `ATTACH ... (STORAGE_VERSION 'latest')` plus a write upgrades an old file | attach a 68 file with `latest`, create a table | tag `v2.0.0+`; 1.5.6 refuses it |
 | 52 | A lower `STORAGE_VERSION` on an existing file errors | attach a 69 file with `v1.5.6` | `cannot initialize database with storage version 68` |
 | 53 | `EXPORT DATABASE` defaults to CSV | export a table | `schema.sql`, `load.sql`, `t.csv` |
-| 54 | `COPY FROM DATABASE` needs an empty target | copy into a database that already has the table | `Table with name "t" already exists!` |
+| 54 | `COPY FROM DATABASE` permits an unrelated target table | copy `s.t` into a target that already has `other` | succeeds; a target with `t` fails with `Table with name "t" already exists!` |
 | 55 | A native file allows one writer or many readers, not both | writer plus read-only process | lock conflict; two read-only processes coexist |
 | 56 | `ATTACH IF NOT EXISTS` is keyed on the alias | same alias, different path | silent no-op |
 | 57 | A missing path in `ATTACH` is created as a 69 file | `ATTACH IF NOT EXISTS 'missing.db'` | file created, header 999 |
 | 58 | `match_bm25` has ten parameters in 2.0 | bind a wrong named argument | candidate list includes `field_weights`, `field_b`, `scoring_model`, `tie_breaker` |
 | 59 | Filtering the BM25 alias needs a subquery | same-SELECT `WHERE score IS NOT NULL` | `Alias "score" referenced - but the expression has side effects` |
 | 60 | `ORDER BY score` works without a subquery | same-SELECT order | correct top rows |
+
+## Next phase
+
+Rows 61-77 are automated in `scripts/probe.py`. Rows 78-82 are manual because they depend on the extension repository, the browser UI, or the JSON profile shape.
+
+| # | Fact | Command | Observed |
+| --- | --- | --- | --- |
+| 61 | `EXPLAIN` shows estimated rows and does not execute | `EXPLAIN SELECT count(*) FROM t WHERE id < 10` | `~N rows`; no `Total Time` |
+| 62 | `EXPLAIN ANALYZE` shows actual rows and timing | same query with `ANALYZE` | `10 rows`, `Total Time` |
+| 63 | `EXPLAIN ANALYZE` executes DML | `CREATE TABLE t; EXPLAIN ANALYZE INSERT INTO t SELECT range FROM range(3); SELECT count(*)` | count is `3` |
+| 64 | `EXPLAIN (FORMAT JSON)` returns a plan tree | `EXPLAIN (FORMAT JSON) SELECT 42` | node `PROJECTION` with `extra_info` |
+| 65 | A Parquet filter prunes row groups | sorted 100k-row file, `ROW_GROUP_SIZE 10000`, `WHERE id = 99999` | `Row Groups Scanned: 1 / 10` |
+| 66 | A non-sargable filter scans every row group | `CAST(d AS VARCHAR) LIKE '2024-01%'` on a sorted date file | `Row Groups Scanned: 5 / 5` |
+| 67 | `parquet_file_metadata` has one row per file | 10 rows, 3 columns | `sum(num_rows)=10` |
+| 68 | `parquet_metadata` repeats row-group rows per column | same file | `sum(row_group_num_rows)=30` |
+| 69 | Schema drift errors on a glob by default | two files with different columns | `schema mismatch in glob` |
+| 70 | `union_by_name` fills missing columns with NULL | same two files | two rows; missing fields are `NULL` |
+| 71 | Partitioned COPY round-trips rows | `PARTITION_BY (y,m)`, `RETURN_FILES` | `Count=9`, `Files=[...]`; footer rows `9` |
+| 72 | Partitioned COPY refuses a non-empty target by default | rerun without overwrite | `Directory "..." is not empty` |
+| 73 | `OVERWRITE_OR_IGNORE` leaves stale partitions | write two months, rerun one month | old month remains; `count=2` |
+| 74 | `OVERWRITE` removes stale partitions | same case with `OVERWRITE` | only the new month remains; `count=1` |
+| 75 | CSV rejects one row per error | one line with two bad columns | `rows=2`, `distinct_lines=1` |
+| 76 | `ROW_GROUP_SIZE` below 2048 is raised | `ROW_GROUP_SIZE 1000` on 10k rows | full groups have `2048` rows; final group `1808` |
+| 77 | JSON `ignore_errors` nulls a malformed line | three-line JSONL with one bad line | three rows; middle row has `NULL` fields |
+| 78 | `duckdb -ui` needs the `ui` extension | `duckdb -ui -c "SELECT 42"` | `HTTP 404` for `v2.0.0/osx_arm64/ui.duckdb_extension.gz` |
+| 79 | The 2.0.0 UI extension is missing on every platform checked | `INSTALL ui` on osx/linux/windows | `HTTP 404` on five platform URLs |
+| 80 | `EXPLAIN (FORMAT WEB)` works without the UI extension | `EXPLAIN (FORMAT WEB) SELECT 42` | writes a temporary HTML file and opens it |
+| 81 | `duckdb -ui -readonly` is unsupported | read the UI page | the UI writes notebook state; use a separate UI catalog |
+| 82 | `EXPLAIN ANALYZE (FORMAT JSON)` is an object, not an array | `EXPLAIN ANALYZE (FORMAT JSON) SELECT ...` | `io`, `operator` tree, `type=TABLE_SCAN`, `row_groups_scanned` |

@@ -61,6 +61,8 @@ SELECT * FROM read_csv('bad.csv', store_rejects = true);
 SELECT * FROM reject_errors;
 ```
 
+The rejects table has one row per error, not one row per bad line. A line with two bad columns produces two rows. Count distinct `(file_id, line)` when the number must match the input.
+
 ## JSON parameters
 
 | Parameter | Default | Use |
@@ -137,8 +139,8 @@ These apply to every format unless noted.
 | --- | --- | --- |
 | `FORMAT` | from extension | `csv`, `parquet`, `json`, `blob`, or an extension format such as `xlsx` or `gdal`. |
 | `USE_TMP_FILE` | auto | Write to `.tmp` first, then rename. |
-| `OVERWRITE_OR_IGNORE` | `false` | Allow overwriting in a multi-file write. |
-| `OVERWRITE` | `false` | Remove existing files in the target directory. Local only. |
+| `OVERWRITE_OR_IGNORE` | `false` | Overwrite matching paths in a multi-file write; stale partitions remain. |
+| `OVERWRITE` | `false` | Remove the target directory tree on a local filesystem. |
 | `APPEND` | `false` | Generate a new name when the target exists. |
 | `FILENAME_PATTERN` | auto | `{uuid}`, `{uuidv4}`, `{uuidv7}`, `{i}`. |
 | `FILE_EXTENSION` | auto | Extension for generated files. |
@@ -154,7 +156,7 @@ These apply to every format unless noted.
 
 CSV: `HEADER` (default true), `DELIM`/`SEP`, `QUOTE`, `ESCAPE`, `NULLSTR`, `DATEFORMAT`, `TIMESTAMPFORMAT`, `FORCE_QUOTE`, `PREFIX`, `SUFFIX`, `NEW_LINE`, `COMPRESSION`. A `.tsv` target still infers CSV, so pass `DELIMITER '\t'`. `CODEC` is Parquet-only.
 
-Parquet: `COMPRESSION` (default `snappy`), `COMPRESSION_LEVEL` (zstd 1-22), `ROW_GROUP_SIZE` (default 122880), `ROW_GROUP_SIZE_BYTES`, `ROW_GROUPS_PER_FILE`, `PARQUET_VERSION` (`V1`, `V2`), `KV_METADATA`, `FIELD_IDS`, `SHREDDING`, `WRITE_BLOOM_FILTER`, `BLOOM_FILTER_FALSE_POSITIVE_RATIO`, `GEOPARQUET_VERSION`, `TIMESTAMP_IS_ADJUSTED_TO_UTC`, `WRITE_TIMESTAMP_AS_INT96`, `DATA_PAGE_SIZE_LIMIT`, `DICTIONARY_SIZE_LIMIT`.
+Parquet: `COMPRESSION` (default `snappy`), `COMPRESSION_LEVEL` (zstd 1-22), `ROW_GROUP_SIZE` (default 122880, minimum target 2048; the final group can be smaller), `ROW_GROUP_SIZE_BYTES`, `ROW_GROUPS_PER_FILE`, `PARQUET_VERSION` (`V1`, `V2`), `KV_METADATA`, `FIELD_IDS`, `SHREDDING`, `WRITE_BLOOM_FILTER`, `BLOOM_FILTER_FALSE_POSITIVE_RATIO`, `GEOPARQUET_VERSION`, `TIMESTAMP_IS_ADJUSTED_TO_UTC`, `WRITE_TIMESTAMP_AS_INT96`, `DATA_PAGE_SIZE_LIMIT`, `DICTIONARY_SIZE_LIMIT`.
 
 JSON: `ARRAY` (default false, so `.json` writes NDJSON), `COMPRESSION`, `DATEFORMAT`, `TIMESTAMPFORMAT`. `FORMAT jsonl` is an alias.
 
@@ -166,12 +168,12 @@ JSON: `ARRAY` (default false, so `.json` writes NDJSON), `COMPRESSION`, `DATEFOR
 COPY (FROM 'sales.csv') TO 'out' (
     FORMAT parquet,
     PARTITION_BY (year, month),
-    OVERWRITE_OR_IGNORE,
+    OVERWRITE,
     FILENAME_PATTERN 'part-{i}'
 );
 ```
 
-The target is a directory. The default layout is `year=2026/month=10/`. `PARTITION_PATH` replaces the default layout:
+The target is a directory. The default layout is `year=2026/month=10/`. `OVERWRITE_OR_IGNORE` is safe only when the new run produces the same partition set. It does not remove a partition that disappeared. Use `OVERWRITE` for a full rebuild, or remove the root first. `PARTITION_PATH` replaces the default layout:
 
 ```sql
 COPY (FROM 'sales.csv') TO 'out' (

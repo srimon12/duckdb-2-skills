@@ -167,7 +167,7 @@ The PEG parser is the default and errors carry `LINE n:` and a caret. If a query
 
 ## Before optimizing
 
-`EXPLAIN` shows the plan with estimated cardinality and does not run the query. `EXPLAIN ANALYZE` runs it and reports actual rows and timings. Use `SET enable_profiling = 'query_tree'` or `tracked_metrics`; `PRAGMA enable_profiling` is deprecated.
+For plan reading, `EXPLAIN` versus `EXPLAIN ANALYZE`, profiling, and spill diagnosis, use `duckdb-profile`. `EXPLAIN (SQL)` stays here because it is a SQL rendering feature, not a plan.
 
 ## Verify
 

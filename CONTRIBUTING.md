@@ -54,16 +54,18 @@ Add a reference file only when the content is long, tabular, and needed on a min
 - Open with one sentence that says when to read it.
 - Do not link a reference from another skill's reference. Link the owning skill.
 
-Current reference files: CLI flags, friendly SQL, file formats, lakehouse catalogs, Overture, migration checklist.
+Current reference files: CLI flags, friendly SQL, file formats, batch ingest, plan reading, lakehouse catalogs, Overture, migration checklist.
 
 ## Fact ownership
 
 | Fact | Owner |
 | --- | --- |
 | CLI invocation, output modes, agent mode, version gate, install | `duckdb` |
+| Plan reading, profiling, pushdown, join and spill diagnosis | `duckdb-profile` |
 | `state.sql`, attach/detach, catalog introspection, checkpointing | `duckdb-session` |
 | Friendly SQL, lambdas, triggers, parser fallback, SQL traps | `duckdb-sql` |
 | Reader and writer dispatch, COPY options, secrets, async I/O | `duckdb-files` |
+| Batch ingest contract, quarantine, partitioned load, row-count proof | `duckdb-files` (`references/ingest.md`) |
 | `VARIANT` functions, shredding, JSON versus VARIANT | `duckdb-variant` |
 | Quack, `CONNECT`, Postgres and MySQL pushdown | `duckdb-quack` |
 | DuckLake, Iceberg, Delta, catalog choice | `duckdb-lakehouse` |
@@ -107,7 +109,11 @@ A claim without a source does not go in a skill. A source without a probe is lab
 
 ## Adding a skill
 
-A new skill needs a job an agent does repeatedly, a trigger that does not collide with an existing skill, and enough depth to fill a page. Rejected in the 2.0 pass: triggers, JSON beside `VARIANT`, separate Iceberg and Delta, C API and other clients, a `CREATE EXTENSION REPOSITORY` procedure.
+A new skill needs a job an agent does repeatedly, a trigger that does not collide with an existing skill, and enough depth to fill a page. `duckdb-profile` cleared that bar in the next-phase pass. A separate ingest skill did not. The workflow is `duckdb-files/references/ingest.md` because `duckdb-files` already owns the convert, partition, and COPY triggers.
+
+Rejected in the 2.0 pass: triggers, JSON beside `VARIANT`, separate Iceberg and Delta, C API and other clients, a `CREATE EXTENSION REPOSITORY` procedure.
+
+Rejected in the next-phase pass: a separate ingest skill, dbt-duckdb, Evidence or Rill, VSS or embedding workflows, Lambda or Cloud Run deployment, MotherDuck hybrid mode, an MCP server, and a Core/Lakehouse/AI repo split.
 
 ## Release checklist
 
@@ -115,6 +121,7 @@ A new skill needs a job an agent does repeatedly, a trigger that does not collid
 - [ ] `probe.py` passes.
 - [ ] Every reference file is linked and under budget.
 - [ ] `evals/triggers.md` has a pass for each changed description.
+- [ ] `evals/ingest` passes its reference run and its grader.
 - [ ] `README.md` skill table matches `skills/`.
 - [ ] `plugin.json` and `marketplace.json` versions match.
 - [ ] `research/08-skill-audit.md` says what changed and why.

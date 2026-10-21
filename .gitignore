@@ -10,3 +10,7 @@ research/sources/ducklake-stable/
 # Local probe output and scratch data
 scratch/
 research/scratch/
+
+# Python bytecode
+__pycache__/
+*.pyc

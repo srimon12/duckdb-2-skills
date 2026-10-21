@@ -1,7 +1,7 @@
 # Slice: release coverage
 
 Status: complete
-Scope: What DuckDB 2.0.0 and DuckLake 1.1 actually shipped, and whether the 12-skill pack covers it. Runtime details owned by other slices are cited only when release scope is contested.
+Scope: What DuckDB 2.0.0 and DuckLake 1.1 actually shipped, and whether the 2.0-pass pack covers it. Runtime details owned by other slices are cited only when release scope is contested.
 Sources: `research/sources/duckdb-2.0/` (pinned manual), `research/sources/ducklake-stable/` (pinned manual), https://duckdb.org/2026/10/21/announcing-duckdb-200.html, https://duckdb.org/2026/08/17/duckdb-20-highlights.html, https://github.com/duckdb/duckdb/releases/tag/v2.0.0, https://duckdb.org/release_calendar.html, https://ducklake.select/2026/10/21/ducklake-11/, https://duckdb.org/quack/faq.html, and the 12 `skills/*/SKILL.md` files plus `skills/duckdb/references/cli.md`. The manual `index.md` is a navigation page and contributes no release claim.
 
 ## Verified facts
