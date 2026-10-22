@@ -76,6 +76,7 @@ def expect_error(sql: str, cwd: Path, needle: str, args: tuple[str, ...] = ()) -
 
 def head_status(url: str) -> int:
     try:
+        # Cloudflare returns 403 for Python's default User-Agent.
         request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "DuckDB/2.0.0"})
         with urllib.request.urlopen(request, timeout=15) as resp:
             return resp.status
