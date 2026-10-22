@@ -31,7 +31,7 @@ That installs under `~/.duckdb/cli/<version>/`, points `~/.duckdb/cli/latest` at
 | A model reads the table | `duckdb -agent -c "..."` | Compact Markdown, JSON errors on stderr, a row cap, a result hash |
 | A script parses the rows | `duckdb -json -c "..."` | One JSON array on stdout; errors as text on stderr |
 | A person reads a terminal | `duckdb -box -c "..."` | A box table |
-| A person explores data in a browser | `duckdb -ui` when the `ui` extension installs | A local UI served from `localhost:4213` |
+| A person explores data in a browser | `duckdb -ui` | A local UI served from `localhost:4213` |
 
 `-csv`, `-json`, and every other output flag disable automatic agent mode. To keep agent framing with a different renderer, pass `-agent` explicitly.
 
@@ -41,7 +41,7 @@ Read stderr. Agent mode writes its banner, JSON errors, cost estimates, and prog
 
 `-json` on error can leave a partial `[` on stdout. Before parsing, check the exit code and stderr. `-json` with multiple statements emits one array per statement, and `NaN`/`Infinity` are not strict JSON. `EXPLAIN ANALYZE` prints a profile, not JSON, even with `-json`.
 
-`duckdb -ui` needs the `ui` extension. The 2.0.0 extension caveat and the fallback are in [references/cli.md](references/cli.md).
+`duckdb -ui` installs the `ui` extension on first run. The extension can lag a release, and it has no 2.0.0 build for `osx_amd64` or `windows_arm64`. See [references/cli.md](references/cli.md).
 
 ## Run SQL
 

@@ -252,6 +252,6 @@ Do not use `union_by_name` to hide a missing required column. Count the `NULL`s 
 
 ## 9. Hand off
 
-For a person, write a small query that reads the partition root and open it with `duckdb -ui` when the UI is available. `duckdb` owns the 2.0.0 extension caveat. Use `-box` or a notebook when it is not. For a plan, use `EXPLAIN (FORMAT WEB)`.
+For a person, write a small query that reads the partition root and open it with `duckdb -ui`. `duckdb` owns the install caveat. Use `-box` or a notebook when the UI is unavailable. For a plan, use `EXPLAIN (FORMAT WEB)`.
 
 The full reader and writer option matrix is in [formats.md](formats.md). Query-plan diagnosis is in `duckdb-profile`. JSON versus `VARIANT` is in `duckdb-variant`.

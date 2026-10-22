@@ -61,7 +61,7 @@ Date: 2026-10-22. Binary: DuckDB 2.0.0 `d54cbbe3df`. Evidence: `research/slices/
 ## Open verification
 
 - A live Iceberg REST catalog and a Unity Catalog endpoint were not available.
-- The 2.0.0 `ui` extension returned HTTP 404 on five platform URLs on 2026-10-22. The UI handoff is documented with a fallback, not assumed to work.
+- The 2.0.0 `ui` extension was promoted to `core` after the release. The UI handoff documents the install lag and the missing `osx_amd64` build, and the probe starts the server.
 - The Claude Code plugin validator was not run because the CLI is not installed.
 - A Grok project-skill trust test was inconclusive.
 - `decimal_division` with mixed `DECIMAL` and `INTEGER` arguments was unstable on 2.0.0; the skill tells the reader to cast both.

@@ -19,7 +19,7 @@ Checked 2026-10-22. Hacker News is the only source with enough volume to rank th
 
 1. **Diagnose the query and the files.** The repeated failure is a query that returns the right rows and still hammers S3, spills memory, or hides a cross join. The geospatial thread, the 650 GB thread, the 2.0 footer-request comments, and the `memory_limit` comments all describe cost and latency, not syntax.
 2. **One file-to-Parquet workflow.** The 2.0 thread's concrete story is 7 TB of NDJSON to Parquet. The jq thread and the file-engine thread are the same job. The useful skill is the contract from messy input to checked, partitioned Parquet.
-3. **A guarded UI handoff.** The Local UI is the largest DuckDB story. The comments ask whether data leaves the machine and how the page is loaded. The UI is worth a handoff, but the 2.0.0 `ui` extension returned HTTP 404 on five platform URLs on 2026-10-22. The handoff needs a fallback.
+3. **A guarded UI handoff.** The Local UI is the largest DuckDB story. The comments ask whether data leaves the machine and how the page is loaded. The UI is worth a handoff, but the 2.0.0 `ui` extension was briefly missing from `core` during the release window and has no `osx_amd64` build. The handoff needs a fallback.
 
 ## What the threads do not support
 
@@ -35,4 +35,4 @@ Checked 2026-10-22. Hacker News is the only source with enough volume to rank th
 
 Build `duckdb-profile` as the one new top-level skill. Put the file-to-Parquet contract in `duckdb-files/references/ingest.md` because `duckdb-files` already owns the convert, partition, and COPY triggers. Add one task eval for the ingest contract. Do not add a separate ingest skill, dbt, BI, VSS, Lambda, MotherDuck, MCP, or a repo split.
 
-The UI is a handoff, not a dependency. `duckdb -ui` stays in `duckdb`; the profile skill says when it helps and what to use when the extension is missing.
+The UI is a handoff, not a dependency. `duckdb -ui` stays in `duckdb`; the profile skill says when it helps and what to use when the extension cannot install.

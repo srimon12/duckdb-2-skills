@@ -7,9 +7,13 @@ import argparse
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -68,6 +72,17 @@ def expect_error(sql: str, cwd: Path, needle: str, args: tuple[str, ...] = ()) -
     if needle.lower() not in proc.stderr.lower():
         return False, f"error did not contain {needle!r}: {proc.stderr.strip()[:160]}"
     return True, "rejected as documented"
+
+
+def head_status(url: str) -> int:
+    try:
+        request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "DuckDB/2.0.0"})
+        with urllib.request.urlopen(request, timeout=15) as resp:
+            return resp.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+    except OSError:
+        return 0
 
 
 @dataclass
@@ -582,10 +597,73 @@ def check_json_ignore_errors_null(tmp: Path, network: bool) -> tuple[bool, str]:
     return ok, str(got)
 
 
-def check_ui_flag(tmp: Path, network: bool) -> tuple[bool, str]:
+def check_ui_extension(tmp: Path, network: bool) -> tuple[bool, str]:
     proc = subprocess.run([DUCKDB, "-help"], capture_output=True, text=True, timeout=30)
-    ok = proc.returncode == 0 and "-ui" in proc.stdout
-    return ok, "ui flag present" if ok else proc.stdout[-120:]
+    if proc.returncode != 0 or "-ui" not in proc.stdout:
+        return False, "ui flag missing from -help"
+    if not network:
+        return True, "skipped (network)"
+
+    home = tmp / "ui-home"
+    home.mkdir(exist_ok=True)
+    log = tmp / "ui.log"
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home))
+    ok = False
+    detail = "ui server did not start"
+    with log.open("w", encoding="utf-8") as out:
+        ui = subprocess.Popen(
+            [DUCKDB, "-no-agent"],
+            cwd=tmp,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            assert ui.stdin is not None
+            try:
+                ui.stdin.write(
+                    f"INSTALL ui;\nLOAD ui;\nSET ui_local_port = {port};\nCALL start_ui_server();\n"
+                )
+                ui.stdin.flush()
+            except OSError:
+                pass
+            for _ in range(120):
+                if ui.poll() is not None:
+                    break
+                try:
+                    with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2) as resp:
+                        body = resp.read(256)
+                        ok = resp.status == 200 and b"<!DOCTYPE html>" in body
+                        detail = "ui server started"
+                        break
+                except OSError:
+                    time.sleep(1)
+        finally:
+            ui.terminate()
+            try:
+                ui.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                ui.kill()
+                ui.wait()
+    if not ok:
+        return False, log.read_text(encoding="utf-8")[-200:].strip() or detail
+
+    version = one("PRAGMA version", tmp)["library_version"]
+    platform = one("PRAGMA platform", tmp)["platform"]
+    base = f"https://extensions.duckdb.org/{version}"
+    status = head_status(f"{base}/{platform}/ui.duckdb_extension.gz")
+    if status != 200:
+        return False, f"{platform} ui URL returned {status}"
+    for unsupported in ("osx_amd64", "windows_arm64"):
+        status = head_status(f"{base}/{unsupported}/ui.duckdb_extension.gz")
+        if status != 404:
+            return False, f"{unsupported} ui URL returned {status}; update the docs"
+    return True, "ui server started; osx_amd64 and windows_arm64 missing"
 
 
 CHECKS = [
@@ -635,7 +713,7 @@ CHECKS = [
     Check("JSON ignore_errors nulls a row", check_json_ignore_errors_null),
     Check("agent mode truncation footer", check_agent_mode),
     Check("-csv disables agent mode", check_csv_disables_agent),
-    Check("-ui flag exists", check_ui_flag),
+    Check("ui extension installs and serves", check_ui_extension),
     Check("async_threads setting", check_async_threads),
     Check("json_merge_patch", check_json_merge_patch),
     Check("data-modifying CTE with RETURNING", check_data_modifying_cte),

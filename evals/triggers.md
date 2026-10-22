@@ -40,7 +40,7 @@ A description that needs this table explained is too weak. The prompt should be 
 | Parse this result in a script. | `-json`, not `-agent` |
 | The output is a box drawing under my agent. | check `~/.duckdbrc`; rerun with `-no-init` |
 | Safe mode blocked the file I named. | explain that `-safe` blocks external access; use the SQL sandbox for one named file |
-| Open this in a local UI. | `duckdb -ui`; if the `ui` extension 404s, use `-box` or `EXPLAIN (FORMAT WEB)` |
+| Open this in a local UI. | `duckdb -ui`; use `-box` if the extension cannot install |
 
 ### `duckdb-sql`
 
@@ -62,7 +62,7 @@ A description that needs this table explained is too weak. The prompt should be 
 | My Parquet filter reads every row group. | check for a function or cast around the filter column; rewrite as a range |
 | The query runs out of memory. | check `memory_limit`, `temp_directory`, blocking operators, `preserve_insertion_order` |
 | Explain this plan without running the query. | `EXPLAIN`, not `EXPLAIN ANALYZE` |
-| Open this plan in a browser. | `EXPLAIN (FORMAT WEB)`; `duckdb -ui` only if the `ui` extension installs |
+| Open this plan in a browser. | `EXPLAIN (FORMAT WEB)`; `duckdb -ui` for the notebook UI |
 
 ### `duckdb-files`
 

@@ -82,7 +82,7 @@ Invalid Input Error: Failed to read file "b.parquet": schema mismatch in glob
 
 ## UI facts
 
-`duckdb -ui` exists in `-help`. It needs the `ui` extension. On 2026-10-22, `INSTALL ui` returned HTTP 404 for `v2.0.0/osx_arm64/ui.duckdb_extension.gz`. The same 404 appeared for `osx_amd64`, `linux_amd64`, `linux_arm64`, and `windows_amd64`. A 1.5.6 URL returned 200, so the failure is version-specific, not a general network outage.
+`duckdb -ui` exists in `-help` and installs the `ui` extension from `core` on first run. The extension is built and published separately from DuckDB. On the 2.0.0 release, `core` returned 404 until `00:35:22Z` on 2026-10-22, while `core_nightly` had the same binary from `20:12:50Z`. `duckdb -ui` reads `core`, so it failed during that window. The 2.0.0 `ui` build has no binary for `osx_amd64` or `windows_arm64`.
 
 `EXPLAIN (FORMAT WEB)` still works. It writes a temporary HTML file and opens it. `EXPLAIN ANALYZE (FORMAT WEB)` adds actuals.
 
@@ -97,6 +97,6 @@ The UI page is served by an embedded HTTP server that fetches the page assets fr
 | `EXPLAIN ANALYZE` and `-json` interaction | `duckdb` |
 | Metadata function signatures and the row-count trap | `duckdb-files` |
 | Reader options and schema drift mechanics | `duckdb-files` |
-| UI flag, port, read-only limit, 404 caveat | `duckdb` |
+| UI flag, port, read-only limit, install caveat | `duckdb` |
 
 The profile skill links the owners instead of restating them.

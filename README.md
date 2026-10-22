@@ -143,11 +143,11 @@ Checked here on 2026-10-22 with DuckDB 2.0.0 `d54cbbe3df` on macOS arm64:
 - Parquet `schema`, R-tree index scan, `SECURE VIEW`, regex `~`.
 - `EXPLAIN` estimates, `EXPLAIN ANALYZE` actuals, JSON plans, and the fact that `EXPLAIN ANALYZE` runs DML.
 - Parquet row-group pruning, metadata row duplication, schema drift, partitioned writes, overwrite behavior, and the row-group minimum.
-- CSV rejects, JSON `ignore_errors` nulling, and the 2.0.0 `ui` extension 404.
+- CSV rejects, JSON `ignore_errors` nulling, and the `ui` extension install and server startup.
 - The docs index versions and the BM25 subquery.
 - A local Quack server on a non-default port and a Python 2.0.0 venv.
 
-Not run here: a live Iceberg REST catalog, a Delta or Unity Catalog endpoint, the browser UI beyond the flag and extension check, the Claude Code plugin validator (the CLI is not installed), and a second-machine install. Those claims are labeled documented or announced in the research, not probed.
+Not run here: a live Iceberg REST catalog, a Delta or Unity Catalog endpoint, the interactive browser UI beyond server startup, the Claude Code plugin validator (the CLI is not installed), and a second-machine install. Those claims are labeled documented or announced in the research, not probed.
 
 ## Research
 

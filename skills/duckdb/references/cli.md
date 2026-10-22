@@ -55,7 +55,7 @@ Each process starts empty unless a database path or an init file is given. `ATTA
 
 `-agent` and an output flag can be combined. The flag picks the renderer; `-agent` still forces the agent contract, so errors stay JSON and the banner still prints. It does not apply the row, byte, or cell caps. `-agent -json` returns the whole JSON array. Without an explicit `-agent`, any output flag turns automatic agent mode off. In batch execution, note that a trailing `-cmd` after the final `-c` does not run.
 
-On 2026-10-22, `INSTALL ui` returned HTTP 404 for the 2.0.0 build on `osx_arm64`, `osx_amd64`, `linux_amd64`, `linux_arm64`, and `windows_amd64`. Check `duckdb -ui` before relying on it. The UI fetches its page assets from `https://ui.duckdb.org`, while the queries run in the local process. Use `-box` or `EXPLAIN (FORMAT WEB)` when the extension or the network is unavailable.
+`-ui` installs the `ui` extension from `core` on first run. The extension ships separately and can lag a release, so a fresh release may return HTTP 404 until it is promoted from `core_nightly`. Retry later. The 2.0.0 `ui` build has no binary for `osx_amd64` or `windows_arm64`. The page assets load from `https://ui.duckdb.org`, while the queries run in the local process. Use `-box` or `EXPLAIN (FORMAT WEB)` when the UI is unavailable.
 
 Automatic activation requires three conditions. A known agent variable is present (even `AI_AGENT=0`), stdout is not a terminal, and no output flag was passed. Known variables include `AI_AGENT`, `AGENT`, `CLAUDECODE`, `CODEX_CI`, `CODEX_SANDBOX`, `CODEX_THREAD_ID`, `COPILOT_AGENT`, `COPILOT_AGENT_SESSION_ID`, `COPILOT_CLI`, `CURSOR_AGENT`, and `GEMINI_CLI`. `DUCKDB_AGENT_MODE=0` or `-no-agent` forces it off; the CLI flags win.
 

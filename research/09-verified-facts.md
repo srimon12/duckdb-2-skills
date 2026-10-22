@@ -78,7 +78,7 @@ Run `python3 scripts/probe.py --network --write research/probe-results.txt`. The
 
 ## Next phase
 
-Rows 61-77 are automated in `scripts/probe.py`. Rows 78-82 are manual because they depend on the extension repository, the browser UI, or the JSON profile shape.
+Rows 61-77 are automated in `scripts/probe.py`. Row 78 and the URL checks in row 79 run under `--network`. Rows 80-82 are manual because they depend on the browser or the JSON profile shape.
 
 | # | Fact | Command | Observed |
 | --- | --- | --- | --- |
@@ -99,8 +99,8 @@ Rows 61-77 are automated in `scripts/probe.py`. Rows 78-82 are manual because th
 | 75 | CSV rejects one row per error | one line with two bad columns | `rows=2`, `distinct_lines=1` |
 | 76 | `ROW_GROUP_SIZE` below 2048 is raised | `ROW_GROUP_SIZE 1000` on 10k rows | full groups have `2048` rows; final group `1808` |
 | 77 | JSON `ignore_errors` nulls a malformed line | three-line JSONL with one bad line | three rows; middle row has `NULL` fields |
-| 78 | `duckdb -ui` needs the `ui` extension | `duckdb -ui -c "SELECT 42"` | `HTTP 404` for `v2.0.0/osx_arm64/ui.duckdb_extension.gz` |
-| 79 | The 2.0.0 UI extension is missing on every platform checked | `INSTALL ui` on osx/linux/windows | `HTTP 404` on five platform URLs |
+| 78 | `duckdb -ui` installs the separately published `ui` extension from `core` | `INSTALL ui` during and after the 2.0.0 release window | 404 before the promotion; 200 after `00:35:22Z` on 2026-10-22 |
+| 79 | The 2.0.0 `ui` extension is promoted from `core_nightly` to `core` and is not built for every platform | compare `Last-Modified` and SHA; HEAD each platform URL | nightly `20:12:50Z`, core `00:35:22Z`, same `b4f0b9bb12`; 404 on `osx_amd64` and `windows_arm64` |
 | 80 | `EXPLAIN (FORMAT WEB)` works without the UI extension | `EXPLAIN (FORMAT WEB) SELECT 42` | writes a temporary HTML file and opens it |
 | 81 | `duckdb -ui -readonly` is unsupported | read the UI page | the UI writes notebook state; use a separate UI catalog |
 | 82 | `EXPLAIN ANALYZE (FORMAT JSON)` is an object, not an array | `EXPLAIN ANALYZE (FORMAT JSON) SELECT ...` | `io`, `operator` tree, `type=TABLE_SCAN`, `row_groups_scanned` |

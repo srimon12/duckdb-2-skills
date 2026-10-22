@@ -226,7 +226,7 @@ The estimate format and the actual format are different. Do not feed one parser 
 
 `EXPLAIN (FORMAT WEB)` writes a temporary HTML file and opens it. It works without the `ui` extension. `EXPLAIN ANALYZE (FORMAT WEB)` includes actual rows and timings.
 
-`duckdb -ui` starts the local UI. `duckdb` owns the flag and the 2.0.0 extension caveat. Use `EXPLAIN (FORMAT WEB)` for plans when the UI is unavailable or the network is restricted.
+`duckdb -ui` starts the local UI. `duckdb` owns the flag and the install caveat. Use `EXPLAIN (FORMAT WEB)` for plans when the UI is unavailable or the network is restricted.
 
 ## Before changing a setting
 

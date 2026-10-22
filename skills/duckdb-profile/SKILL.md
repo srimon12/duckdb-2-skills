@@ -124,7 +124,7 @@ SET tracked_metrics = ['query.*', 'operator.*'];
 
 `tracked_metrics` affects `json` and `no_output`, not `query_tree`. `profiling_mode` is deprecated and has no effect. `CALL enable_profiling(...)` and `CALL disable_profiling()` are the table-function form. `duckdb_available_metrics()` lists metric names. Read [references/plans.md](references/plans.md) before building a metrics pipeline.
 
-`duckdb -ui` is the local browser UI. `duckdb` owns the flag and the 2.0.0 extension caveat. `EXPLAIN (FORMAT WEB)` is the built-in plan fallback. The UI fetches its assets from `https://ui.duckdb.org`; queries run locally, but the page is remote. Do not use it for offline or restricted-network data.
+`duckdb -ui` is the local browser UI. `duckdb` owns the flag and the install caveat. `EXPLAIN (FORMAT WEB)` is the built-in plan fallback. The UI fetches its assets from `https://ui.duckdb.org`; queries run locally, but the page is remote. Do not use it for offline or restricted-network data.
 
 ## Verify
 

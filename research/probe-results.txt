@@ -48,11 +48,11 @@ Binary: v2.0.0 (Cyanoptera) d54cbbe3df
 - **PASS** JSON ignore_errors nulls a row: `[{'id': 1, 'name': 'a'}, {'id': None, 'name': None}, {'id': 3, 'name': 'c'}]`
 - **PASS** agent mode truncation footer: `truncation footer present`
 - **PASS** -csv disables agent mode: `plain CSV`
-- **PASS** -ui flag exists: `ui flag present`
+- **PASS** ui extension installs and serves: `ui server started; osx_amd64 and windows_arm64 missing`
 - **PASS** async_threads setting: `{'v': 16}`
 - **PASS** json_merge_patch: `{'v': {'a': 1, 'b': 2}}`
 - **PASS** data-modifying CTE with RETURNING: `{'n': 2}`
 - **PASS** temporary secret creation: `{'type': 's3', 'provider': 'config'}`
-- **PASS** docs index versions: `[{'version': '2.0', 'n': 2695}, {'version': 'blog', 'n': 999}]`
+- **PASS** docs index versions: `[{'version': '2.0', 'n': 2689}, {'version': 'blog', 'n': 999}]`
 
 52/52 passed
