@@ -1,6 +1,6 @@
 # Evals
 
-The pack has two failure modes worth testing. A skill does not fire when it should, and a sibling fires instead. Both are cheap to catch with a fresh session and one prompt.
+The pack has three failure modes worth testing. A skill does not fire when it should, a sibling fires instead, or the right skill produces a plausible result that does not survive a row-count or type check. The first two are trigger cases. The third is the ingest task case.
 
 ## Manual loop
 
@@ -21,6 +21,16 @@ The prompt should be something a user would type. If it names the skill, it test
 | FAIL | Wrong skill, no skill, or invented syntax. The description or the route table needs work. |
 
 Run the trigger suite after a description change. Run the owning skill's task cases after a body or code change. Run the whole table before a release.
+
+## Ingest task case
+
+The file-to-Parquet workflow lives in `duckdb-files/references/ingest.md`. Its case is [ingest](ingest/README.md). The prompt is organic and the grader is deterministic. It checks the kept row count, the quarantine count, the declared types, the month partitions, the amount total, and the Parquet footer count. The reference run is:
+
+```bash
+bash evals/ingest/run_reference.sh
+```
+
+The case is blind in practice. Give the candidate `prompt.md` and the generated `orders.csv`, not the truth file, the solution, or this directory.
 
 ## Optional harness
 

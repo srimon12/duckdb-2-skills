@@ -1,10 +1,11 @@
 ---
 name: duckdb-files
 description: >
-  Read, preview, and convert data files with DuckDB 2.0. Covers CSV, Parquet,
-  JSON, Avro, Excel, SQLite, HTTP, and object storage, plus secrets and
-  asynchronous I/O. Use when the user points at a data file or an s3://,
-  https://, gs://, or az:// URL, or asks for parquet, csv, json, or xlsx output.
+  Read, preview, convert, and batch-ingest data files with DuckDB 2.0. Covers
+  CSV, Parquet, JSON, Avro, Excel, SQLite, HTTP, object storage, rejected rows,
+  partitioned writes, secrets, and asynchronous I/O. Use when the user points
+  at a data file or an s3://, https://, gs://, or az:// URL, asks for parquet,
+  csv, json, or xlsx output, or wants a repeatable batch load.
 ---
 
 # Data files
@@ -75,9 +76,15 @@ COPY (FROM 'input.csv') TO 'output.parquet' (FORMAT parquet);
 | `.jsonl`, `.ndjson` | `(FORMAT json, ARRAY false)` |
 | `.xlsx` | `(FORMAT xlsx)` after `INSTALL excel; LOAD excel;` |
 
-`PARTITION_BY (col)` writes a partitioned directory of Parquet, CSV, or JSON. Add `OVERWRITE_OR_IGNORE` for a rerun, `APPEND` to keep old files, `FILENAME_PATTERN` to name the files, `PER_THREAD_OUTPUT` for parallel writes, or `FILE_SIZE_BYTES` to cap each file. `ORDER_BY (...)` sorts rows inside each partition. `RETURN_FILES` returns the written paths.
+`PARTITION_BY (col)` writes a partitioned directory of Parquet, CSV, or JSON. Use `OVERWRITE` for a full rebuild, `OVERWRITE_OR_IGNORE` only when the partition set is unchanged, and `APPEND` to keep old files. `FILENAME_PATTERN` names the files, `PER_THREAD_OUTPUT` parallelizes writes, and `FILE_SIZE_BYTES` caps each file. `ORDER_BY (...)` sorts rows inside each partition. `RETURN_FILES` returns `Count` and `Files`.
 
 The format matrix, the CSV/JSON/Parquet parameters, and the secrets table are in [references/formats.md](references/formats.md).
+
+## Ingest a batch
+
+For a repeatable load, read [references/ingest.md](references/ingest.md). It owns the contract from inspect to typed rows, quarantine, partitioned write, and row-count proof. A one-file conversion stays in `Convert` above.
+
+The short form is: read raw, cast explicitly, split good and bad, write `good` to partitioned Parquet, persist `bad` with a reason, and prove `input = kept + quarantined`. Do not use `ignore_errors` as a repair.
 
 ## Remote files
 

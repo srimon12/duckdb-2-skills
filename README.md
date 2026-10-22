@@ -6,7 +6,7 @@ This is an independent pack. It is not a fork of [duckdb/duckdb-skills](https://
 
 ## What this is
 
-Twelve skills. One router, eleven task skills, and six lookup references. The router checks the binary, picks the output mode, and points at the skill that owns the job. Each task skill is short enough to load whole and specific enough to change the next command.
+Thirteen skills. One router, twelve task skills, and eight lookup references. The router checks the binary, picks the output mode, and points at the skill that owns the job. Each task skill is short enough to load whole and specific enough to change the next command.
 
 The pack was rewritten for 2.0. It is not a 1.x pack with a version string changed. DuckDB 2.0 changes the storage format, the lambda syntax, the parser, the CLI output contract, the lakehouse extensions, and the Python client. Each of those has a migration action.
 
@@ -75,8 +75,9 @@ Copy `skills/<name>/` into the client's skills root. The folder is the unit; the
 | --- | --- | --- |
 | [`duckdb`](skills/duckdb/SKILL.md) | Gate the binary, pick the output mode, route | The user mentions DuckDB or the CLI, or you do not know which skill to load |
 | [`duckdb-sql`](skills/duckdb-sql/SKILL.md) | Write and run SQL | A query, lambda, trigger, nested schema, `MERGE`, or SQL migration |
+| [`duckdb-profile`](skills/duckdb-profile/SKILL.md) | Diagnose a slow query or unhealthy Parquet layout | A slow query, `EXPLAIN ANALYZE`, spill, row-group scan, or schema drift |
 | [`duckdb-session`](skills/duckdb-session/SKILL.md) | Attach a database and keep it across calls | Attach, open, switch, or persist a native `.duckdb` file |
-| [`duckdb-files`](skills/duckdb-files/SKILL.md) | Read, preview, and convert files | A CSV, Parquet, JSON, Avro, Excel, SQLite, HTTP, or object-storage path |
+| [`duckdb-files`](skills/duckdb-files/SKILL.md) | Read, preview, convert, and batch-ingest files | A CSV, Parquet, JSON, Avro, Excel, SQLite, HTTP, object-storage path, or batch load |
 | [`duckdb-variant`](skills/duckdb-variant/SKILL.md) | Store and query semi-structured values | `VARIANT`, shredded JSON, schema-less columns |
 | [`duckdb-quack`](skills/duckdb-quack/SKILL.md) | Serve a database or route a session | Quack, `-serve`, `-connect`, `CONNECT`, Postgres or MySQL pushdown |
 | [`duckdb-lakehouse`](skills/duckdb-lakehouse/SKILL.md) | Use DuckLake, Iceberg, Delta, Unity Catalog | A lakehouse catalog or an open table format decision |
@@ -93,14 +94,16 @@ skills/
   duckdb/                  router and CLI contract
   duckdb-sql/              task skill
     references/            long lookup tables, loaded only when needed
+  duckdb-profile/          plan and file diagnosis
+  duckdb-files/            readers, writers, and the ingest reference
   ...
 research/                  evidence, snapshots, and the per-skill audit
 scripts/                   structure checks and executable probes
-evals/                     trigger cases
+evals/                     trigger cases and the ingest task case
 CONTRIBUTING.md            the skill contract
 ```
 
-Load `duckdb` first when the task is not specific. It routes. The other eleven skills are written to stand alone for their job, but each deep fact has one owner. When a skill needs a fact another skill owns, it gives the one line needed to recognize the situation and links the owner.
+Load `duckdb` first when the task is not specific. It routes. The other twelve skills are written to stand alone for their job, but each deep fact has one owner. When a skill needs a fact another skill owns, it gives the one line needed to recognize the situation and links the owner.
 
 `references/` is lookup material, not required reading. A skill links a reference at the point where the choice is made.
 
@@ -126,9 +129,10 @@ The evidence for each claim is in [research/](research/), with the per-skill ver
 python3 scripts/check-skills.py
 python3 scripts/probe.py
 python3 scripts/probe.py --network --write research/probe-results.txt
+bash evals/ingest/run_reference.sh
 ```
 
-`check-skills.py` checks frontmatter, name and directory agreement, descriptions, required sections, line budgets, relative links, cross-skill names, and stale strings. `probe.py` runs the executable claims against the local binary.
+`check-skills.py` checks frontmatter, name and directory agreement, descriptions, required sections, line budgets, relative links, cross-skill names, and stale strings. `probe.py` runs the executable claims against the local binary. The ingest reference run proves the file-to-Parquet workflow with 25 checks.
 
 Checked here on 2026-10-22 with DuckDB 2.0.0 `d54cbbe3df` on macOS arm64:
 
@@ -137,10 +141,13 @@ Checked here on 2026-10-22 with DuckDB 2.0.0 `d54cbbe3df` on macOS arm64:
 - Storage versions, `COPY FROM DATABASE`, `read_duckdb`.
 - `VARIANT` functions, 1-based indexing, comparator, shredding syntax.
 - Parquet `schema`, R-tree index scan, `SECURE VIEW`, regex `~`.
+- `EXPLAIN` estimates, `EXPLAIN ANALYZE` actuals, JSON plans, and the fact that `EXPLAIN ANALYZE` runs DML.
+- Parquet row-group pruning, metadata row duplication, schema drift, partitioned writes, overwrite behavior, and the row-group minimum.
+- CSV rejects, JSON `ignore_errors` nulling, and the `ui` extension install and server startup.
 - The docs index versions and the BM25 subquery.
 - A local Quack server on a non-default port and a Python 2.0.0 venv.
 
-Not run here: a live Iceberg REST catalog, a Delta or Unity Catalog endpoint, the Claude Code plugin validator (the CLI is not installed), and a second-machine install. Those claims are labeled documented or announced in the research, not probed.
+Not run here: a live Iceberg REST catalog, a Delta or Unity Catalog endpoint, the interactive browser UI beyond server startup, the Claude Code plugin validator (the CLI is not installed), and a second-machine install. Those claims are labeled documented or announced in the research, not probed.
 
 ## Research
 

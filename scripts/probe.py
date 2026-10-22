@@ -7,9 +7,13 @@ import argparse
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
+import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -68,6 +72,18 @@ def expect_error(sql: str, cwd: Path, needle: str, args: tuple[str, ...] = ()) -
     if needle.lower() not in proc.stderr.lower():
         return False, f"error did not contain {needle!r}: {proc.stderr.strip()[:160]}"
     return True, "rejected as documented"
+
+
+def head_status(url: str) -> int:
+    try:
+        # Cloudflare returns 403 for Python's default User-Agent.
+        request = urllib.request.Request(url, method="HEAD", headers={"User-Agent": "DuckDB/2.0.0"})
+        with urllib.request.urlopen(request, timeout=15) as resp:
+            return resp.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+    except OSError:
+        return 0
 
 
 @dataclass
@@ -386,6 +402,271 @@ def check_secret_manager(tmp: Path, network: bool) -> tuple[bool, str]:
     return got == {"type": "s3", "provider": "config"}, str(got)
 
 
+def check_explain_estimate(tmp: Path, network: bool) -> tuple[bool, str]:
+    proc = subprocess.run(
+        [DUCKDB, "-dark-mode", "-no-agent", "-c",
+         "CREATE TABLE t AS SELECT range AS id FROM range(100000);"
+         " EXPLAIN SELECT count(*) FROM t WHERE id < 10;"],
+        cwd=tmp, capture_output=True, text=True, timeout=120,
+    )
+    ok = proc.returncode == 0 and "~" in proc.stdout and "rows" in proc.stdout
+    return ok, "estimate present" if ok else proc.stdout[-120:]
+
+
+def check_explain_analyze(tmp: Path, network: bool) -> tuple[bool, str]:
+    proc = subprocess.run(
+        [DUCKDB, "-dark-mode", "-no-agent", "-c",
+         "CREATE TABLE t AS SELECT range AS id FROM range(100000);"
+         " EXPLAIN ANALYZE SELECT count(*) FROM t WHERE id < 10;"],
+        cwd=tmp, capture_output=True, text=True, timeout=120,
+    )
+    ok = proc.returncode == 0 and "Total Time:" in proc.stdout and "10 rows" in proc.stdout
+    return ok, "actual rows and timing present" if ok else proc.stdout[-120:]
+
+
+def check_explain_json(tmp: Path, network: bool) -> tuple[bool, str]:
+    proc = subprocess.run(
+        [DUCKDB, "-dark-mode", "-no-agent", "-c", "EXPLAIN (FORMAT JSON) SELECT 42 AS x;"],
+        cwd=tmp, capture_output=True, text=True, timeout=120,
+    )
+    try:
+        tree = json.loads(proc.stdout)
+        ok = proc.returncode == 0 and tree[0]["name"] == "PROJECTION"
+        detail = tree[0]["name"] if ok else str(tree)[:120]
+    except Exception as exc:  # noqa: BLE001 - a malformed plan is the result
+        ok, detail = False, f"{type(exc).__name__}: {exc}"
+    return ok, detail
+
+
+def check_explain_analyze_dml(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = tmp / "dml.duckdb"
+    db.unlink(missing_ok=True)
+    proc = duckdb(
+        f"ATTACH '{db}' AS d; CREATE TABLE d.t(id INT);"
+        " EXPLAIN ANALYZE INSERT INTO d.t SELECT range FROM range(3);",
+        tmp,
+    )
+    got = one(f"ATTACH '{db}' AS d; SELECT count(*) AS n FROM d.t", tmp)
+    ok = proc.returncode == 0 and got["n"] == 3
+    return ok, f"inserted {got['n']} rows during ANALYZE"
+
+
+def check_parquet_row_groups(tmp: Path, network: bool) -> tuple[bool, str]:
+    rows(
+        "COPY (SELECT range AS id FROM range(100000) ORDER BY id)"
+        " TO 'rg.parquet' (FORMAT parquet, ROW_GROUP_SIZE 10000)",
+        tmp,
+    )
+    proc = subprocess.run(
+        [DUCKDB, "-dark-mode", "-no-agent", "-c",
+         "EXPLAIN ANALYZE SELECT count(*) FROM 'rg.parquet' WHERE id = 99999;"],
+        cwd=tmp, capture_output=True, text=True, timeout=120,
+    )
+    ok = "Row Groups Scanned: 1 / 10" in proc.stdout
+    return ok, "1 of 10 row groups" if ok else proc.stdout[-160:]
+
+
+def check_parquet_metadata_dup(tmp: Path, network: bool) -> tuple[bool, str]:
+    rows(
+        "COPY (SELECT i AS a, i + 1 AS b, i + 2 AS c FROM range(10) t(i))"
+        " TO 'meta.parquet' (FORMAT parquet)",
+        tmp,
+    )
+    got = one(
+        "SELECT (SELECT CAST(sum(num_rows) AS BIGINT) FROM parquet_file_metadata('meta.parquet')) AS file_rows,"
+        " (SELECT CAST(sum(row_group_num_rows) AS BIGINT) FROM parquet_metadata('meta.parquet')) AS chunk_rows",
+        tmp,
+    )
+    ok = got["file_rows"] == 10 and got["chunk_rows"] == 30
+    return ok, str(got)
+
+
+def check_parquet_schema_drift(tmp: Path, network: bool) -> tuple[bool, str]:
+    drift = tmp / "drift"
+    drift.mkdir(exist_ok=True)
+    rows("COPY (SELECT 1 AS a, 2 AS b) TO 'drift/a.parquet' (FORMAT parquet)", tmp)
+    rows("COPY (SELECT 1 AS a, 3 AS c) TO 'drift/b.parquet' (FORMAT parquet)", tmp)
+    ok, detail = expect_error("FROM read_parquet('drift/*.parquet')", tmp, "schema mismatch")
+    if not ok:
+        return ok, detail
+    got = rows(
+        "FROM read_parquet('drift/*.parquet', union_by_name = true)"
+        " ORDER BY b NULLS LAST, c NULLS LAST",
+        tmp,
+    )
+    ok = len(got) == 2 and got[0]["b"] == 2 and got[0]["c"] is None and got[1]["b"] is None
+    return ok, str(got)
+
+
+def check_partitioned_copy(tmp: Path, network: bool) -> tuple[bool, str]:
+    rows(
+        "COPY (SELECT i AS id, 2024 AS y, i % 3 + 1 AS m FROM range(9) t(i))"
+        " TO 'parts' (FORMAT parquet, PARTITION_BY (y, m), OVERWRITE,"
+        " FILENAME_PATTERN 'part_{i}', RETURN_FILES)",
+        tmp,
+    )
+    got = one(
+        "SELECT (SELECT count(*) FROM read_parquet('parts/*/*/*.parquet')) AS n,"
+        " (SELECT CAST(sum(num_rows) AS BIGINT) FROM parquet_file_metadata('parts/*/*/*.parquet')) AS meta",
+        tmp,
+    )
+    ok = got["n"] == 9 and got["meta"] == 9
+    return ok, str(got)
+
+
+def check_copy_overwrite_guard(tmp: Path, network: bool) -> tuple[bool, str]:
+    rows(
+        "COPY (SELECT 1 AS id, 2024 AS y, 1 AS m UNION ALL SELECT 2, 2024, 2)"
+        " TO 'guard' (FORMAT parquet, PARTITION_BY (y, m))",
+        tmp,
+    )
+    return expect_error(
+        "COPY (SELECT 1 AS id, 2024 AS y, 1 AS m)"
+        " TO 'guard' (FORMAT parquet, PARTITION_BY (y, m))",
+        tmp,
+        "not empty",
+    )
+
+
+def check_overwrite_or_ignore_stale(tmp: Path, network: bool) -> tuple[bool, str]:
+    rows(
+        "COPY (SELECT 1 AS id, 2024 AS y, 1 AS m UNION ALL SELECT 2, 2024, 2)"
+        " TO 'stale' (FORMAT parquet, PARTITION_BY (y, m))",
+        tmp,
+    )
+    rows(
+        "COPY (SELECT 1 AS id, 2024 AS y, 1 AS m)"
+        " TO 'stale' (FORMAT parquet, PARTITION_BY (y, m), OVERWRITE_OR_IGNORE)",
+        tmp,
+    )
+    got = one("SELECT count(*) AS n FROM read_parquet('stale/*/*/*.parquet')", tmp)
+    ok = got["n"] == 2
+    return ok, f"stale partition remains, {got['n']} rows"
+
+
+def check_overwrite_removes_stale(tmp: Path, network: bool) -> tuple[bool, str]:
+    rows(
+        "COPY (SELECT 1 AS id, 2024 AS y, 1 AS m UNION ALL SELECT 2, 2024, 2)"
+        " TO 'clear' (FORMAT parquet, PARTITION_BY (y, m))",
+        tmp,
+    )
+    rows(
+        "COPY (SELECT 1 AS id, 2024 AS y, 1 AS m)"
+        " TO 'clear' (FORMAT parquet, PARTITION_BY (y, m), OVERWRITE)",
+        tmp,
+    )
+    got = one("SELECT count(*) AS n FROM read_parquet('clear/*/*/*.parquet')", tmp)
+    ok = got["n"] == 1
+    return ok, f"old partition removed, {got['n']} rows"
+
+
+def check_rejects_one_row_per_error(tmp: Path, network: bool) -> tuple[bool, str]:
+    (tmp / "bad.csv").write_text("id,amount,name\n1,10,A\nx,y,B\n3,30,C\n", encoding="utf-8")
+    got = one(
+        "CREATE TABLE typed AS FROM read_csv('bad.csv',"
+        " columns = {'id': 'BIGINT', 'amount': 'DECIMAL(18,2)', 'name': 'VARCHAR'},"
+        " store_rejects = true, rejects_table = 'rejects');"
+        " SELECT count(*) AS errors, count(DISTINCT file_id || ':' || line) AS lines FROM rejects",
+        tmp,
+    )
+    ok = got["errors"] == 2 and got["lines"] == 1
+    return ok, str(got)
+
+
+def check_row_group_min(tmp: Path, network: bool) -> tuple[bool, str]:
+    rows(
+        "COPY (SELECT range AS i FROM range(10000)) TO 'rgmin.parquet'"
+        " (FORMAT parquet, ROW_GROUP_SIZE 1000)",
+        tmp,
+    )
+    got = one(
+        "SELECT max(row_group_num_rows) AS n FROM parquet_metadata('rgmin.parquet') WHERE column_id = 0",
+        tmp,
+    )
+    return got["n"] == 2048, f"full row group {got['n']}"
+
+
+def check_json_ignore_errors_null(tmp: Path, network: bool) -> tuple[bool, str]:
+    (tmp / "bad.jsonl").write_text(
+        '{"id":1,"name":"a"}\nnot json\n{"id":3,"name":"c"}\n', encoding="utf-8"
+    )
+    got = rows(
+        "FROM read_json('bad.jsonl', format = 'newline_delimited', ignore_errors = true)",
+        tmp,
+    )
+    ok = len(got) == 3 and got[1]["id"] is None and got[1]["name"] is None
+    return ok, str(got)
+
+
+def check_ui_extension(tmp: Path, network: bool) -> tuple[bool, str]:
+    proc = subprocess.run([DUCKDB, "-help"], capture_output=True, text=True, timeout=30)
+    if proc.returncode != 0 or "-ui" not in proc.stdout:
+        return False, "ui flag missing from -help"
+    if not network:
+        return True, "skipped (network)"
+
+    home = tmp / "ui-home"
+    home.mkdir(exist_ok=True)
+    log = tmp / "ui.log"
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    env = dict(os.environ, HOME=str(home), USERPROFILE=str(home))
+    ok = False
+    detail = "ui server did not start"
+    with log.open("w", encoding="utf-8") as out:
+        ui = subprocess.Popen(
+            [DUCKDB, "-no-agent"],
+            cwd=tmp,
+            env=env,
+            stdin=subprocess.PIPE,
+            stdout=out,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        try:
+            assert ui.stdin is not None
+            try:
+                ui.stdin.write(
+                    f"INSTALL ui;\nLOAD ui;\nSET ui_local_port = {port};\nCALL start_ui_server();\n"
+                )
+                ui.stdin.flush()
+            except OSError:
+                pass
+            for _ in range(120):
+                if ui.poll() is not None:
+                    break
+                try:
+                    with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2) as resp:
+                        body = resp.read(256)
+                        ok = resp.status == 200 and b"<!DOCTYPE html>" in body
+                        detail = "ui server started"
+                        break
+                except OSError:
+                    time.sleep(1)
+        finally:
+            ui.terminate()
+            try:
+                ui.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                ui.kill()
+                ui.wait()
+    if not ok:
+        return False, log.read_text(encoding="utf-8")[-200:].strip() or detail
+
+    version = one("PRAGMA version", tmp)["library_version"]
+    platform = one("PRAGMA platform", tmp)["platform"]
+    base = f"https://extensions.duckdb.org/{version}"
+    status = head_status(f"{base}/{platform}/ui.duckdb_extension.gz")
+    if status != 200:
+        return False, f"{platform} ui URL returned {status}"
+    for unsupported in ("osx_amd64", "windows_arm64"):
+        status = head_status(f"{base}/{unsupported}/ui.duckdb_extension.gz")
+        if status != 404:
+            return False, f"{unsupported} ui URL returned {status}; update the docs"
+    return True, "ui server started; osx_amd64 and windows_arm64 missing"
+
+
 CHECKS = [
     Check("version is 2.0", check_version),
     Check("lambda syntax", check_lambda),
@@ -417,8 +698,23 @@ CHECKS = [
     Check("GROUP BY UNNEST", check_group_by_unnest),
     Check("MERGE INTO", check_merge),
     Check("EXPLAIN (SQL)", check_explain_sql),
+    Check("EXPLAIN shows estimates", check_explain_estimate),
+    Check("EXPLAIN ANALYZE shows actuals", check_explain_analyze),
+    Check("EXPLAIN (FORMAT JSON)", check_explain_json),
+    Check("EXPLAIN ANALYZE executes DML", check_explain_analyze_dml),
+    Check("Parquet row-group pruning", check_parquet_row_groups),
+    Check("Parquet metadata row duplication", check_parquet_metadata_dup),
+    Check("Parquet schema drift", check_parquet_schema_drift),
+    Check("partitioned COPY round trip", check_partitioned_copy),
+    Check("COPY overwrite guard", check_copy_overwrite_guard),
+    Check("OVERWRITE_OR_IGNORE leaves stale partitions", check_overwrite_or_ignore_stale),
+    Check("OVERWRITE removes stale partitions", check_overwrite_removes_stale),
+    Check("CSV rejects one row per error", check_rejects_one_row_per_error),
+    Check("Parquet row group minimum", check_row_group_min),
+    Check("JSON ignore_errors nulls a row", check_json_ignore_errors_null),
     Check("agent mode truncation footer", check_agent_mode),
     Check("-csv disables agent mode", check_csv_disables_agent),
+    Check("ui extension installs and serves", check_ui_extension),
     Check("async_threads setting", check_async_threads),
     Check("json_merge_patch", check_json_merge_patch),
     Check("data-modifying CTE with RETURNING", check_data_modifying_cte),

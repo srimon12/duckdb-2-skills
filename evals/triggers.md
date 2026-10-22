@@ -25,6 +25,10 @@ A description that needs this table explained is too weak. The prompt should be 
 | 15 | Write new partitions into our Apache Iceberg table. | `duckdb-lakehouse` | `duckdb-files` |
 | 16 | Convert PyCapsule Arrow stream to DuckDB relation zero-copy. | `duckdb-python` | `duckdb-files` |
 | 17 | Allow a frontend app to query Quack server directly with public token. | `duckdb-quack` | `duckdb-session` |
+| 18 | This query takes 40 seconds and I do not know why. | `duckdb-profile` | `duckdb-sql`, `duckdb-files` |
+| 19 | EXPLAIN ANALYZE says 10 rows but the join returns 4 million. | `duckdb-profile` | `duckdb-sql` |
+| 20 | Ingest this CSV into partitioned Parquet and keep the bad rows. | `duckdb-files` | `duckdb-sql`, `duckdb-session` |
+| 21 | Open this parquet in a local UI. | `duckdb` | `duckdb-files`, `duckdb-profile` |
 
 ## Skill-specific
 
@@ -36,6 +40,7 @@ A description that needs this table explained is too weak. The prompt should be 
 | Parse this result in a script. | `-json`, not `-agent` |
 | The output is a box drawing under my agent. | check `~/.duckdbrc`; rerun with `-no-init` |
 | Safe mode blocked the file I named. | explain that `-safe` blocks external access; use the SQL sandbox for one named file |
+| Open this in a local UI. | `duckdb -ui`; use `-box` if the extension cannot install |
 
 ### `duckdb-sql`
 
@@ -48,6 +53,17 @@ A description that needs this table explained is too weak. The prompt should be 
 | Create a `BEFORE UPDATE FOR EACH ROW` trigger. | refuse; not implemented in 2.0 |
 | Why did `1 // 0` start failing? | integer division by zero now errors; `TRY` or the setting |
 
+### `duckdb-profile`
+
+| Prompt | Expected action |
+| --- | --- |
+| This query takes 40 seconds. | `EXPLAIN`, then `EXPLAIN ANALYZE`; find the operator with the estimate/actual gap |
+| EXPLAIN ANALYZE says 10 rows but the join returns 4 million. | inspect join sides; do not add `LIMIT` first |
+| My Parquet filter reads every row group. | check for a function or cast around the filter column; rewrite as a range |
+| The query runs out of memory. | check `memory_limit`, `temp_directory`, blocking operators, `preserve_insertion_order` |
+| Explain this plan without running the query. | `EXPLAIN`, not `EXPLAIN ANALYZE` |
+| Open this plan in a browser. | `EXPLAIN (FORMAT WEB)`; `duckdb -ui` for the notebook UI |
+
 ### `duckdb-files`
 
 | Prompt | Expected action |
@@ -57,6 +73,8 @@ A description that needs this table explained is too weak. The prompt should be 
 | Read a SQLite file. | `ATTACH ... (TYPE sqlite)`, not `sqlite_master(path)` |
 | Convert CSV to zstd parquet. | `COPY ... (FORMAT parquet, CODEC 'zstd')` |
 | Write parquet partitioned by month. | `PARTITION_BY (month)`; output is a directory |
+| Ingest this CSV and keep the bad rows. | read raw, cast with `TRY_CAST`, write `quarantine.parquet`, prove the row count with `parquet_file_metadata` |
+| Rerun a partitioned write with fewer partitions. | `OVERWRITE`, not only `OVERWRITE_OR_IGNORE`; stale partitions remain |
 | Read a public S3 bucket in us-west-2. | keyless `PROVIDER config, REGION` secret, no keys |
 
 ### `duckdb-variant`

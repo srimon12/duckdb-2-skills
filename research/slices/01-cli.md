@@ -26,7 +26,7 @@ Sources: `research/sources/duckdb-2.0/` (below, abbreviated `S/`); `https://duck
 | F16 | `-markdown` is a plain output mode: Markdown table, no row/byte caps, no hash footer, no JSON errors. It is not agent mode. | Probe | Probed |
 | F17 | `-agent` forces agent **framing** (banner, JSON errors, estimates, progress) and renders Markdown when no output-mode flag is present. With `-json`/`-csv` it keeps that mode's result format but keeps agent framing. | Probes `-agent -json`, `-agent -csv`; `S/clients/cli/agent_mode.md` | Probed |
 | F18 | `-no-agent` forces framing off, but a `~/.duckdbrc` `.mode` can still change the rendered format (e.g. Markdown from an rc file with `-no-agent`). | Probe; `S/clients/cli/agent_mode.md` | Probed |
-| F19 | `-ui` loads and starts the UI extension, installing it if absent, and opens the browser. Default port 4213; `-ui -readonly` is unsupported. | `S/core_extensions/ui.md`; `S/clients/cli/arguments.md` | Documented |
+| F19 | `-ui` loads and starts the UI extension, installing it if absent, and opens the browser. Default port 4213; `-ui -readonly` is unsupported. | `S/core_extensions/ui.md`; `S/clients/cli/arguments.md` | Documented; server startup probed |
 | F20 | `-format` formats SQL read from stdin to stdout without executing it and without validating it (`SELEC 1` passes through, exit 0). `-format-file FILE` does the same for a file. | Probe; `S/clients/cli/arguments.md` | Probed |
 | F21 | `-manual FUNCTION` prints signatures, description, and examples to stdout and exits 0; it needs no database. The manual documents wildcards (`.manual list_%`). | Probe; `S/clients/cli/dot_commands.md` | Probed / Documented |
 | F22 | `-unredacted` sets `allow_unredacted_secrets=true` at startup. In 2.0.0 `duckdb_secrets().secret_string` still showed `secret=redacted`; the flag's observable effect was not found. `SET allow_unredacted_secrets` fails at runtime. | Probe; `S/clients/cli/arguments.md`; `S/operations_manual/securing_duckdb/overview.md` | Probed / Uncertain |
@@ -360,4 +360,4 @@ Invalid Configuration Error: Log storage 'shell_log_storage' does not support th
 - Does `.log FILE` do anything observable in a normal terminal session? Piped and pty probes were inconclusive (the pty run hung and was killed). A controlled pty test with `.log` plus a later `.exit` would settle it.
 - Is the `.help`/`agent_mode.md` "10,000 bytes" the rendered-row budget or the raw cell budget? The 100×90/100×92 boundary points to rendered rows, but source would settle the exact accounting.
 - Does any code path emit a "query stopped early" footer? Timeout and mid-stream errors produced only JSON errors; source grep would settle whether the skill's phrase has any basis.
-- `-ui` was not launched (it installs an extension and opens a browser). Its docs behavior is recorded as Documented, not Probed.
+- `-ui` installs the extension and starts the server in `scripts/probe.py`; the browser interaction is not probed.

@@ -1,7 +1,7 @@
 # Slice: skill specification and cross-client packaging
 
 Status: complete, with unverified items called out in Open questions
-Scope: how the 12 skills are authored, structured, evaluated, and packaged so they load in Claude Code, Codex, Grok, Cursor, and other Agent Skills clients. No DuckDB fact audit.
+Scope: how the 2.0-pass skills are authored, structured, evaluated, and packaged so they load in Claude Code, Codex, Grok, Cursor, and other Agent Skills clients. No DuckDB fact audit.
 Sources: `https://agentskills.io/specification`; `https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview`; `.../best-practices`; `https://code.claude.com/docs/en/skills`; `https://code.claude.com/docs/en/plugins/manifest-reference`; `https://code.claude.com/docs/en/plugins/create-marketplace`; `https://code.claude.com/docs/en/plugin-evals`; `https://developers.openai.com/codex/build-skills`; `https://developers.openai.com/codex/agent-configuration/agents-md`; `https://developers.openai.com/plugins/build/plugins`; `https://docs.x.ai/build/features/skills-plugins-marketplaces`; `https://cursor.com/docs/context/skills`
 
 ## Verified facts
@@ -306,7 +306,7 @@ Shared: all 12 have exactly `name` + `description`; all end with `## References`
 - No reference-to-reference links, and no reference file that restates SKILL.md.
 - No duplicated deep tables for storage version, Overture schema, or extension install rules. Cross-link the owner.
 - No model-specific prose ("Claude should...", "Codex should..."). Write for any agent.
-- No 13th top-level skill. PLAN keeps 12.
+- No 13th top-level skill in the 2.0 pass. Superseded in the next-phase pass by `duckdb-profile`; a separate ingest skill was still rejected.
 
 ## Probe log
 
