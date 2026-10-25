@@ -79,41 +79,20 @@ The parent must exist. `USE sales.europe`, `SET search_path = 'sales.europe'`, a
 
 A trigger body is exactly one data-modifying statement: `INSERT`, `UPDATE`, `DELETE`, or `MERGE`, optionally prefixed by `WITH`. A `SELECT`, DDL, `COPY`, `CALL`, or `PRAGMA` body is a parser error. A body that modifies its own table raises `Recursive trigger chains are not yet supported`.
 
-| Shape | Status |
-| --- | --- |
-| `BEFORE INSERT/UPDATE/DELETE ... FOR EACH STATEMENT` | Works |
-| `AFTER INSERT ... FOR EACH STATEMENT REFERENCING NEW TABLE` | Works |
-| `AFTER UPDATE ... FOR EACH STATEMENT REFERENCING OLD TABLE, NEW TABLE` | Works |
-| `AFTER DELETE ... FOR EACH STATEMENT REFERENCING OLD TABLE` | Works |
-| `AFTER INSERT ... FOR EACH ROW` with `NEW.col` | Works |
-| `AFTER DELETE ... FOR EACH ROW` with `OLD.col` | Works |
-| `BEFORE ... FOR EACH ROW` | Not implemented |
-| `AFTER UPDATE ... FOR EACH ROW` | Not implemented |
-| Row trigger with `REFERENCING` | Binder error |
-| Transition tables on a `BEFORE` trigger | Binder error |
-| `UPDATE OF col` on a statement trigger | Works |
-| `UPDATE OF` with transition tables | Binder error |
-| `WHEN (...)` | Parser error |
-| `INSTEAD OF`, triggers on views | Not supported |
-| `CREATE TEMP TRIGGER` | Not supported |
-| Trigger on a temporary table | Works; `temporary = true` |
+A table cannot mix `FOR EACH STATEMENT` and `FOR EACH ROW` triggers. A trigger on a temporary table can reference only temporary objects. `BEFORE ... FOR EACH ROW`, `AFTER UPDATE ... FOR EACH ROW`, row triggers with `REFERENCING`, `WHEN`, `INSTEAD OF`, and `CREATE TEMP TRIGGER` are not supported.
 
-Statement-level audit:
+The support matrix, `RETURNING` rule, ordering, and inspection query are in [references/triggers.md](references/triggers.md).
 
-```sql
-CREATE TRIGGER trg_audit
-    AFTER UPDATE ON target
-    REFERENCING OLD TABLE AS o NEW TABLE AS n
-    FOR EACH STATEMENT
-        INSERT INTO audit
-        SELECT n.id, o.val, n.val
-        FROM o
-        JOIN n ON o.id = n.id;
-```
+## DML proof
 
-`RETURNING` is blocked per matching event. An `INSERT ... RETURNING` fails when the table has an `INSERT` row trigger, and a `DELETE ... RETURNING` fails with a `DELETE` row trigger. `UPDATE ... RETURNING` works with an `INSERT` row trigger. A table whose triggers are all statement-level allows `RETURNING`.
+For `UPDATE`, `DELETE`, or `MERGE`:
 
-All `BEFORE` triggers fire before all `AFTER` triggers; triggers on the same event fire in creation order. Names are unique per table. `CREATE OR REPLACE TRIGGER` and `IF NOT EXISTS` work, but not together. Inspect with `duckdb_triggers()`.
+1. `BEGIN`.
+2. Count the rows the predicate matches. Deduplicate the source for `MERGE` and `UPDATE ... FROM`; a target row that matches two source rows is an error for `MERGE` and an arbitrary choice for `UPDATE ... FROM`.
+3. Run the statement. A matching row trigger can block `RETURNING`; the event rule is in [references/triggers.md](references/triggers.md). If it is blocked, compare a count before and after or use the CLI `.changes`.
+4. `COMMIT`, then count again. A zero-row update is a result, not a success.
+
+Do not use `RETURNING` as the only proof when a row trigger exists. The trigger's event decides whether it is available.
 
 ## 2.0 syntax worth using
 
@@ -148,7 +127,7 @@ All `BEFORE` triggers fire before all `AFTER` triggers; triggers on the same eve
 | Integer versus string | `1 = '1.1'` is true; the string is cast and rounded | Cast explicitly and compare like types |
 | Decimal division | Any `/` involving `DECIMAL` returns `DOUBLE` | Use `decimal_division` |
 | Window frame | `sum(x) OVER (ORDER BY x)` shares a value across ties | Use `ROWS BETWEEN ...` for row-by-row |
-| `approx_count_distinct` | Roughly 0.5% low on 1M values | Use `count(DISTINCT x)` for user-visible numbers |
+| `approx_count_distinct` | Typically 1 to 2% low on 1M values; the error is data-dependent | Use `count(DISTINCT x)` for user-visible numbers |
 | Empty-group aggregate | `sum`, `list`, and `string_agg` return `NULL`; `count` returns `0` | `coalesce(sum(x), 0)` |
 | `sum` overflow | `sum(DECIMAL(38,0))` and `sum(HUGEINT)` can overflow | Cast deliberately to `DECIMAL(38,s)` |
 | Timestamps | Casting `DATE` to `TIMESTAMPTZ` uses the session zone | Store instants as `TIMESTAMPTZ`; set the zone explicitly |
@@ -158,12 +137,13 @@ All `BEFORE` triggers fire before all `AFTER` triggers; triggers on the same eve
 | `DISTINCT ON` without `ORDER BY` | Returns an arbitrary row | Add an `ORDER BY` starting with the `DISTINCT ON` keys |
 | `USING SAMPLE` | Written after `WHERE` but applied before it | Put the filter in a subquery before sampling |
 | `1 IN (0, NULL)` | Returns `NULL`; list `IN [0, NULL]` returns false | Use `IS NOT DISTINCT FROM` or `coalesce` |
+| `~`, `!~` | 2.0 matches a substring; 1.x matched the full string | Use `regexp_full_match` for the 1.x behavior; see `duckdb-migrate` |
 
 Friendly-SQL examples and the edge cases behind these rows are in [references/friendly-sql.md](references/friendly-sql.md).
 
 ## Parser
 
-The PEG parser is the default and errors carry `LINE n:` and a caret. If a query that worked on 1.5 fails to parse, `SET enable_legacy_parser = true;` autoloads the extension and switches for the session. The legacy parser rejects `NEAREST` and is not a semantic time machine. File an issue with the query, use the fallback only to unblock, and remove it from saved SQL.
+The PEG parser is the default and errors carry `LINE n:` and a caret. If a query that worked on 1.5 fails to parse, `SET enable_legacy_parser = true;` autoloads the extension and switches for the session. The legacy parser rejects the simplified `FROM ... NEAREST` form; an explicit `INNER JOIN ... NEAREST` still parses. It is a grammar fallback, not a semantic time machine. File an issue with the query, use the fallback only to unblock, and remove it from saved SQL.
 
 ## Before optimizing
 
@@ -183,7 +163,7 @@ Expect `[2, 3, 4]`, `NULL`, and `2.500000`.
 
 - [Friendly SQL](https://duckdb.org/docs/2.0/sql/dialect/friendly_sql.html) owns the clause list.
 - [Lambda functions](https://duckdb.org/docs/2.0/sql/functions/lambda.html) owns the syntax and function families.
-- [CREATE TRIGGER](https://duckdb.org/docs/2.0/sql/statements/create_trigger.html) owns the trigger contract.
+- [CREATE TRIGGER](https://duckdb.org/docs/2.0/sql/statements/create_trigger.html) owns the trigger contract. The support matrix and `RETURNING` rule are in [references/triggers.md](references/triggers.md).
 - [Nested schemas](https://duckdb.org/docs/2.0/sql/statements/create_schema.html) owns the path rules.
 - [FROM and JOIN](https://duckdb.org/docs/2.0/sql/query_syntax/from.html) owns `NEAREST`, `ASOF`, and `POSITIONAL`.
 - [WITH](https://duckdb.org/docs/2.0/sql/query_syntax/with.html) owns data-modifying CTEs.

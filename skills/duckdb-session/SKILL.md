@@ -25,7 +25,18 @@ Look in this order:
 
 If none exists, create `.duckdb/state.sql` (unless the project root is `$HOME`, where `.duckdb-skills/` avoids colliding with `~/.duckdb/`). Tell the user the path. If the file belongs outside the repo, use the home location. Offer to add `.duckdb/` to `.gitignore` when the file lives in the project.
 
-Append. Never replace the file. It may already hold secrets, macros, and `LOAD` statements.
+Reconcile first, then append. Never replace the file. It may already hold secrets, macros, and `LOAD` statements.
+
+## Reconcile the state file
+
+The file is append-only, so reconcile it before you append.
+
+1. Read the file. Collect `ATTACH`, `USE`, `LOAD`, `SET`, and `CREATE SECRET` references. Do not print secret values.
+2. For each `ATTACH`, resolve the absolute path and alias. Compare them with `duckdb_databases()`.
+3. Same alias and same path means skip. Same alias and a different path means stop and ask. `ATTACH IF NOT EXISTS` is keyed on the alias and would keep the old path silently.
+4. Run `test -f` before creating a missing path. A new file is storage version 69 and 1.x cannot open it.
+5. Append only the missing statements. Keep at most one `USE`. A second attach must not change the default.
+6. Verify in a fresh process. Open once without `-init`, then with `-init`, and check one row per alias. Checkpoint and detach on handoff if other processes need the file.
 
 ## Attach
 

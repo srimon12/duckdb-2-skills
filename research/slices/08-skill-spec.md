@@ -1,5 +1,7 @@
 # Slice: skill specification and cross-client packaging
 
+Historical note: this slice records the 2.0 rewrite. The current pack has ten references and one workflow script (`duckdb-profile/scripts/plan_lint.py`); see `research/08-skill-audit.md` and `docs/skill-design.md` for the current structure.
+
 Status: complete, with unverified items called out in Open questions
 Scope: how the 2.0-pass skills are authored, structured, evaluated, and packaged so they load in Claude Code, Codex, Grok, Cursor, and other Agent Skills clients. No DuckDB fact audit.
 Sources: `https://agentskills.io/specification`; `https://platform.claude.com/docs/en/agents-and-tools/agent-skills/overview`; `.../best-practices`; `https://code.claude.com/docs/en/skills`; `https://code.claude.com/docs/en/plugins/manifest-reference`; `https://code.claude.com/docs/en/plugins/create-marketplace`; `https://code.claude.com/docs/en/plugin-evals`; `https://developers.openai.com/codex/build-skills`; `https://developers.openai.com/codex/agent-configuration/agents-md`; `https://developers.openai.com/plugins/build/plugins`; `https://docs.x.ai/build/features/skills-plugins-marketplaces`; `https://cursor.com/docs/context/skills`

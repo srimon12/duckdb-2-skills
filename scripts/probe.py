@@ -438,6 +438,119 @@ def check_explain_json(tmp: Path, network: bool) -> tuple[bool, str]:
     return ok, detail
 
 
+def check_explain_json_shape(tmp: Path, network: bool) -> tuple[bool, str]:
+    proc = subprocess.run(
+        [DUCKDB, "-no-agent", "-json", "-c",
+         "CREATE TABLE t AS SELECT range AS id FROM range(1000);"
+         " EXPLAIN (FORMAT JSON) SELECT count(*) FROM t WHERE id < 10;"],
+        cwd=tmp, capture_output=True, text=True, timeout=120,
+    )
+    try:
+        tree = json.loads(proc.stdout)
+        node = tree[0]
+        ok = (
+            isinstance(tree, list)
+            and node["name"] == "UNGROUPED_AGGREGATE"
+            and "intermediate_rows" not in node
+            and "Estimated Cardinality" in node["extra_info"]
+        )
+        detail = f"array root={node['name']} no actuals"
+        return ok, detail if ok else str(tree)[:160]
+    except (json.JSONDecodeError, KeyError, IndexError) as exc:
+        return False, f"{type(exc).__name__}: {proc.stdout[:120]}"
+
+
+def check_explain_analyze_json_shape(tmp: Path, network: bool) -> tuple[bool, str]:
+    proc = subprocess.run(
+        [DUCKDB, "-no-agent", "-json", "-c",
+         "CREATE TABLE t AS SELECT range AS id FROM range(1000);"
+         " EXPLAIN ANALYZE (FORMAT JSON) SELECT count(*) FROM t WHERE id < 10;"],
+        cwd=tmp, capture_output=True, text=True, timeout=120,
+    )
+    try:
+        profile = json.loads(proc.stdout)
+        found: list[dict] = []
+
+        def visit(node: dict) -> None:
+            if node.get("type") == "TABLE_SCAN":
+                found.append(node)
+            for child in node.get("children") or []:
+                visit(child)
+
+        for root in profile["operator"]:
+            visit(root)
+        scan = found[0] if found else {}
+        ok = (
+            isinstance(profile, dict)
+            and {"operator", "query", "io", "system"} <= set(profile)
+            and scan.get("type") == "TABLE_SCAN"
+            and scan.get("intermediate_rows") == 10
+            and "rows_scanned" in scan
+        )
+        detail = f"object sections={sorted(profile)} scan_rows={scan.get('rows_scanned')}"
+        return ok, detail if ok else str(profile)[:160]
+    except (json.JSONDecodeError, KeyError, IndexError, TypeError) as exc:
+        return False, f"{type(exc).__name__}: {proc.stdout[:120]}"
+
+
+def check_explain_analyze_not_json(tmp: Path, network: bool) -> tuple[bool, str]:
+    proc = subprocess.run(
+        [DUCKDB, "-no-agent", "-json", "-c", "EXPLAIN ANALYZE SELECT 42 AS x;"],
+        cwd=tmp, capture_output=True, text=True, timeout=120,
+    )
+    ok = proc.returncode == 0 and "Total Time:" in proc.stdout
+    try:
+        json.loads(proc.stdout)
+        ok = False
+    except json.JSONDecodeError:
+        pass
+    return ok, "text profile, not JSON" if ok else proc.stdout[:160]
+
+
+def check_legacy_metrics_shape(tmp: Path, network: bool) -> tuple[bool, str]:
+    proc = subprocess.run(
+        [DUCKDB, "-no-agent", "-json", "-c",
+         "SET legacy_metrics_format=true;"
+         " EXPLAIN ANALYZE (FORMAT JSON) SELECT 42 AS x;"],
+        cwd=tmp, capture_output=True, text=True, timeout=120,
+    )
+    try:
+        text = proc.stdout[proc.stdout.find("{") :]
+        profile = json.loads(text)
+        ok = "latency" in profile and "children" in profile and "operator" not in profile
+        return ok, "legacy flat shape" if ok else str(profile)[:160]
+    except json.JSONDecodeError as exc:
+        return False, f"{type(exc).__name__}: {proc.stdout[:120]}"
+
+
+def check_profile_spill(tmp: Path, network: bool) -> tuple[bool, str]:
+    proc = subprocess.run(
+        [DUCKDB, "-no-agent", "-json", "-c",
+         "SET memory_limit='100MB'; SET temp_directory='spill'; SET threads=2;"
+         " EXPLAIN ANALYZE (FORMAT JSON)"
+         " SELECT range i, repeat('x', 100) s FROM range(2000000) ORDER BY i DESC;"],
+        cwd=tmp, capture_output=True, text=True, timeout=180,
+    )
+    try:
+        profile = json.loads(proc.stdout)
+        peak = profile["system"]["peak_temp_dir_size"]
+        ok = peak > 0
+        return ok, f"peak_temp_dir_size={peak}" if ok else str(profile.get("system"))
+    except (json.JSONDecodeError, KeyError, TypeError) as exc:
+        return False, f"{type(exc).__name__}: {proc.stderr[:120]}"
+
+
+def check_plan_lint_selftest(tmp: Path, network: bool) -> tuple[bool, str]:
+    script = ROOT / "skills/duckdb-profile/scripts/plan_lint.py"
+    proc = subprocess.run(
+        [sys.executable, str(script), "--self-test"],
+        cwd=tmp, capture_output=True, text=True, timeout=300,
+        env={**os.environ, "DUCKDB": DUCKDB},
+    )
+    ok = proc.returncode == 0 and "PASS cross join" in proc.stdout
+    return ok, proc.stdout.strip().splitlines()[-1] if ok else (proc.stderr or proc.stdout)[-160:]
+
+
 def check_explain_analyze_dml(tmp: Path, network: bool) -> tuple[bool, str]:
     db = tmp / "dml.duckdb"
     db.unlink(missing_ok=True)
@@ -637,7 +750,7 @@ def check_ui_extension(tmp: Path, network: bool) -> tuple[bool, str]:
                 if ui.poll() is not None:
                     break
                 try:
-                    with urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2) as resp:
+                    with urllib.request.urlopen(f"http://localhost:{port}/", timeout=2) as resp:
                         body = resp.read(256)
                         ok = resp.status == 200 and b"<!DOCTYPE html>" in body
                         detail = "ui server started"
@@ -667,6 +780,185 @@ def check_ui_extension(tmp: Path, network: bool) -> tuple[bool, str]:
     return True, "ui server started; osx_amd64 and windows_arm64 missing"
 
 
+def check_cli_cmd_after_c(tmp: Path, network: bool) -> tuple[bool, str]:
+    proc = subprocess.run(
+        [DUCKDB, "-no-agent", "-json", "-c", "SELECT 1 AS a", "-cmd", "SELECT 2 AS b"],
+        cwd=tmp, capture_output=True, text=True, timeout=120,
+    )
+    ok_c = proc.returncode == 0 and '"a":1' in proc.stdout and '"b":2' in proc.stdout
+    (tmp / "cmd.sql").write_text("SELECT 3 AS c;\n", encoding="utf-8")
+    proc_f = subprocess.run(
+        [DUCKDB, "-no-agent", "-json", "-f", "cmd.sql", "-cmd", "SELECT 4 AS d"],
+        cwd=tmp, capture_output=True, text=True, timeout=120,
+    )
+    ok_f = proc_f.returncode == 0 and '"c":3' in proc_f.stdout and '"d":4' in proc_f.stdout
+    return ok_c and ok_f, "trailing -cmd runs after -c and -f" if ok_c and ok_f else (proc.stderr + proc_f.stderr)[:160]
+
+
+def check_agent_footer_thresholds(tmp: Path, network: bool) -> tuple[bool, str]:
+    def footer(n: int) -> str:
+        proc = subprocess.run(
+            [DUCKDB, "-agent", "-c", f"SELECT * FROM range({n})"],
+            cwd=tmp, capture_output=True, text=True, timeout=120,
+        )
+        return proc.stdout
+
+    zero, five, ten = footer(0), footer(5), footer(10)
+    ok = "0 rows" in zero and "hash" in zero and "hash" not in five and "10 rows" in ten and "hash" in ten
+    return ok, "0/10 hash, 5 no hash" if ok else f"0={zero[-60:]!r} 5={five[-60:]!r} 10={ten[-60:]!r}"
+
+
+def check_friendly_from_first(tmp: Path, network: bool) -> tuple[bool, str]:
+    got = one(
+        "CREATE TABLE events(kind VARCHAR, user_id INTEGER);"
+        " INSERT INTO events VALUES ('click', 1), ('view', 2);"
+        " FROM events SELECT user_id, count(*) AS clicks"
+        " WHERE kind = 'click' GROUP BY ALL ORDER BY clicks DESC",
+        tmp,
+    )
+    return got == {"user_id": 1, "clicks": 1}, str(got)
+
+
+def check_friendly_unpack_struct(tmp: Path, network: bool) -> tuple[bool, str]:
+    struct_rows = rows("SELECT s.* FROM (SELECT {'x': 1, 'y': 2} AS s)", tmp)
+    unpacked = one(
+        "CREATE TABLE flags(flag_a BOOLEAN, flag_b BOOLEAN);"
+        " INSERT INTO flags VALUES (true, false);"
+        " SELECT greatest(UNPACK(COLUMNS('^flag_'))) AS any_flag FROM flags",
+        tmp,
+    )
+    ok = struct_rows == [{"x": 1, "y": 2}] and unpacked == {"any_flag": True}
+    return ok, f"struct={struct_rows} unpack={unpacked}"
+
+
+def check_trigger_mixing(tmp: Path, network: bool) -> tuple[bool, str]:
+    return expect_error(
+        "CREATE TABLE t(id INTEGER); CREATE TABLE a(id INTEGER);"
+        " CREATE TRIGGER s AFTER INSERT ON t FOR EACH STATEMENT INSERT INTO a VALUES (1);"
+        " CREATE TRIGGER r AFTER INSERT ON t FOR EACH ROW INSERT INTO a VALUES (NEW.id)",
+        tmp,
+        "Mixing FOR EACH STATEMENT and FOR EACH ROW",
+    )
+
+
+def check_trigger_temp_catalog(tmp: Path, network: bool) -> tuple[bool, str]:
+    return expect_error(
+        "CREATE TEMP TABLE t(id INTEGER); CREATE TABLE a(id INTEGER);"
+        " CREATE TRIGGER x AFTER INSERT ON t FOR EACH ROW INSERT INTO a VALUES (NEW.id)",
+        tmp,
+        "different catalog",
+    )
+
+
+def check_legacy_parser_nearest(tmp: Path, network: bool) -> tuple[bool, str]:
+    ok, detail = expect_error(
+        "SET enable_legacy_parser = true; CREATE TABLE p(id INTEGER, e DOUBLE[3]);"
+        " CREATE TABLE q(id INTEGER, e DOUBLE[3]);"
+        " SELECT * FROM q NEAREST 1 BY SIMILARITY array_cosine_similarity(q.e, p.e)",
+        tmp,
+        "syntax error",
+    )
+    if not ok:
+        return ok, detail
+    got = rows(
+        "SET enable_legacy_parser = true; CREATE TABLE p(id INTEGER, e DOUBLE[3]);"
+        " CREATE TABLE q(id INTEGER, e DOUBLE[3]);"
+        " INSERT INTO p VALUES (1, [1,0,0]); INSERT INTO q VALUES (10, [1,0,0]);"
+        " SELECT q.id AS qid, p.id AS pid FROM q INNER JOIN p NEAREST 1 BY SIMILARITY"
+        " array_cosine_similarity(q.e, p.e)",
+        tmp,
+    )
+    return len(got) == 1 and got[0]["qid"] == 10 and got[0]["pid"] == 1, str(got)
+
+
+def check_read_duckdb_multi_table(tmp: Path, network: bool) -> tuple[bool, str]:
+    rows(
+        "ATTACH 'multi.duckdb' AS m; CREATE TABLE m.a AS SELECT 1 AS x;"
+        " CREATE TABLE m.b AS SELECT 2 AS y",
+        tmp,
+    )
+    ok, detail = expect_error("SELECT * FROM read_duckdb('multi.duckdb')", tmp, "multiple tables")
+    if not ok:
+        return ok, detail
+    got = one("SELECT x FROM read_duckdb('multi.duckdb', table_name = 'a')", tmp)
+    return got["x"] == 1, str(got)
+
+
+def check_copy_unrelated_target(tmp: Path, network: bool) -> tuple[bool, str]:
+    rows("ATTACH 'mig_src.duckdb' AS s; CREATE TABLE s.t AS SELECT 1 AS x", tmp)
+    rows("ATTACH 'mig_dst.duckdb' AS d; CREATE TABLE d.other AS SELECT 9 AS z", tmp)
+    got = one(
+        "ATTACH 'mig_src.duckdb' AS s (READ_ONLY); ATTACH 'mig_dst.duckdb' AS d;"
+        " COPY FROM DATABASE s TO d;"
+        " SELECT (SELECT count(*) FROM d.other) AS other, (SELECT count(*) FROM d.t) AS t",
+        tmp,
+    )
+    return got == {"other": 1, "t": 1}, str(got)
+
+
+def check_import_unrelated_target(tmp: Path, network: bool) -> tuple[bool, str]:
+    rows("CREATE TABLE t AS SELECT 1 AS x; EXPORT DATABASE 'exp'", tmp)
+    rows("ATTACH 'imp.duckdb' AS i; CREATE TABLE i.other AS SELECT 9 AS z", tmp)
+    got = one(
+        "ATTACH 'imp.duckdb' AS i; USE i; IMPORT DATABASE 'exp';"
+        " SELECT (SELECT count(*) FROM other) AS other, (SELECT count(*) FROM t) AS t",
+        tmp,
+    )
+    return got == {"other": 1, "t": 1}, str(got)
+
+
+def check_ingest_reject_invariant(tmp: Path, network: bool) -> tuple[bool, str]:
+    (tmp / "inv.csv").write_text("a,b\n1,2\nBAD,3\n4,5\n", encoding="utf-8")
+    got = one(
+        "CREATE TABLE typed AS FROM read_csv('inv.csv',"
+        " columns = {'a': 'INTEGER', 'b': 'INTEGER'},"
+        " store_rejects = true, rejects_table = 'rejects');"
+        " SELECT (SELECT count(*) FROM typed) AS typed,"
+        " (SELECT count(DISTINCT file_id || ':' || line) FROM rejects) AS rejected_lines",
+        tmp,
+    )
+    ok = got["typed"] == 2 and got["rejected_lines"] == 1 and got["typed"] + got["rejected_lines"] == 3
+    return ok, str(got)
+
+
+def check_storage_pin_14(tmp: Path, network: bool) -> tuple[bool, str]:
+    got = one(
+        "ATTACH 'pinned14.duckdb' AS d;"
+        " SELECT tags['storage_version'] AS v FROM duckdb_databases() WHERE database_name = 'd'",
+        tmp,
+        ("-storage-version", "v1.4.0"),
+    )["v"]
+    return got.startswith("v1.4.0"), got
+
+
+def check_python_connection_config(tmp: Path, network: bool) -> tuple[bool, str]:
+    try:
+        import duckdb  # type: ignore
+    except Exception:
+        return True, "skipped (duckdb Python package not importable)"
+    if not getattr(duckdb, "__version__", "").startswith("2."):
+        return True, f"skipped (duckdb {getattr(duckdb, '__version__', '?')})"
+    db = tmp / "py-connection.duckdb"
+    db.unlink(missing_ok=True)
+    first = duckdb.connect(str(db))
+    try:
+        first.execute("CREATE TABLE t(x INTEGER)")
+        second = duckdb.connect(str(db))
+        try:
+            second.execute("INSERT INTO t VALUES (1)")
+        finally:
+            second.close()
+        try:
+            third = duckdb.connect(str(db), read_only=True)
+        except Exception as exc:  # noqa: BLE001 - the message is the assertion
+            ok = "different configuration" in str(exc)
+            return ok, f"read-only rejected: {str(exc)[:100]}" if ok else str(exc)[:160]
+        third.close()
+        return False, "read-only connection opened alongside a writer"
+    finally:
+        first.close()
+
+
 CHECKS = [
     Check("version is 2.0", check_version),
     Check("lambda syntax", check_lambda),
@@ -676,6 +968,7 @@ CHECKS = [
     Check("nested schema USE rejected", check_nested_schema),
     Check("default storage version", check_storage_default),
     Check("pinned storage version", check_storage_pinned),
+    Check("pinned 1.4 storage version", check_storage_pin_14),
     Check("VARIANT functions and 1-based index", check_variant),
     Check("VARIANT index 0 rejected", check_variant_index_base),
     Check("VARIANT out-of-range returns NULL", check_variant_out_of_range),
@@ -691,16 +984,28 @@ CHECKS = [
     Check("checkpoint_on_detach enum", check_checkpoint_on_detach),
     Check("row trigger", check_trigger_row),
     Check("BEFORE row trigger rejected", check_trigger_before_row),
+    Check("trigger levels cannot mix", check_trigger_mixing),
+    Check("temp trigger body stays in temp catalog", check_trigger_temp_catalog),
     Check("sqlite_master absent", check_sqlite_master),
     Check("read_duckdb", check_read_duckdb),
+    Check("read_duckdb multi-table", check_read_duckdb_multi_table),
     Check("COPY FROM DATABASE", check_copy_database),
+    Check("COPY to unrelated target", check_copy_unrelated_target),
+    Check("IMPORT into unrelated target", check_import_unrelated_target),
     Check("NEAREST join", check_nearest),
+    Check("legacy parser NEAREST forms", check_legacy_parser_nearest),
     Check("GROUP BY UNNEST", check_group_by_unnest),
     Check("MERGE INTO", check_merge),
     Check("EXPLAIN (SQL)", check_explain_sql),
     Check("EXPLAIN shows estimates", check_explain_estimate),
     Check("EXPLAIN ANALYZE shows actuals", check_explain_analyze),
     Check("EXPLAIN (FORMAT JSON)", check_explain_json),
+    Check("EXPLAIN (FORMAT JSON) has no actuals", check_explain_json_shape),
+    Check("EXPLAIN ANALYZE (FORMAT JSON) shape", check_explain_analyze_json_shape),
+    Check("EXPLAIN ANALYZE ignores -json", check_explain_analyze_not_json),
+    Check("legacy metrics flat shape", check_legacy_metrics_shape),
+    Check("profile reports spill", check_profile_spill),
+    Check("plan linter self-test", check_plan_lint_selftest),
     Check("EXPLAIN ANALYZE executes DML", check_explain_analyze_dml),
     Check("Parquet row-group pruning", check_parquet_row_groups),
     Check("Parquet metadata row duplication", check_parquet_metadata_dup),
@@ -710,15 +1015,21 @@ CHECKS = [
     Check("OVERWRITE_OR_IGNORE leaves stale partitions", check_overwrite_or_ignore_stale),
     Check("OVERWRITE removes stale partitions", check_overwrite_removes_stale),
     Check("CSV rejects one row per error", check_rejects_one_row_per_error),
+    Check("ingest reject invariant", check_ingest_reject_invariant),
     Check("Parquet row group minimum", check_row_group_min),
     Check("JSON ignore_errors nulls a row", check_json_ignore_errors_null),
     Check("agent mode truncation footer", check_agent_mode),
+    Check("agent footer thresholds", check_agent_footer_thresholds),
+    Check("friendly FROM-first example", check_friendly_from_first),
+    Check("friendly UNPACK and struct expansion", check_friendly_unpack_struct),
     Check("-csv disables agent mode", check_csv_disables_agent),
+    Check("trailing -cmd runs", check_cli_cmd_after_c),
     Check("ui extension installs and serves", check_ui_extension),
     Check("async_threads setting", check_async_threads),
     Check("json_merge_patch", check_json_merge_patch),
     Check("data-modifying CTE with RETURNING", check_data_modifying_cte),
     Check("temporary secret creation", check_secret_manager),
+    Check("Python connection configuration", check_python_connection_config),
     Check("docs index versions", check_docs_index),
 ]
 

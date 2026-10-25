@@ -39,6 +39,16 @@ New files created by 2.0 use storage version 69. DuckDB before 2.0 cannot read t
 
 DuckDB 2.0 can read and write older files, and those writes keep the old storage version. Opening a 1.x file does not upgrade it.
 
+Choose the pin from the oldest reader:
+
+| Reader | New file pin | Tag | Storage |
+| --- | --- | --- | --- |
+| 2.0 only | default or `latest` | `v2.0.0+` | 69 |
+| 1.5.6 | `-storage-version v1.5.6` | `v1.5.0+` | 68 |
+| 1.4 | `-storage-version v1.4.0` | `v1.4.0+` | 67 |
+
+A 1.4 reader cannot open a 68 file. A 1.5 reader cannot open a 69 file.
+
 Read the version you actually have:
 
 ```sql
@@ -54,16 +64,16 @@ Create a file that 1.5.6 can still open:
 duckdb my.db -storage-version v1.5.6 -c "CREATE TABLE t (x INT);"
 ```
 
-The same choice inside SQL:
+Use `-storage-version v1.4.0` when the oldest reader is 1.4. The same choice inside SQL:
 
 ```sql
 SET storage_compatibility_version = 'v1.5.6';
 ATTACH 'file.db' (STORAGE_VERSION 'v1.5.6');
 ```
 
-`latest` means version 69. Python uses `config={"storage_compatibility_version": "v1.5.0"}`. The string is a minimum version, not a promise that every 1.5 patch shares one storage number. After the first write, check `tags['storage_version']`.
+`latest` means version 69. Python uses `config={"storage_compatibility_version": "v1.5.0"}` for a 1.5 reader, or `"v1.4.0"` for a 1.4 reader. The string is a minimum version, not a promise that every 1.5 patch shares one storage number. After the first write, check `tags['storage_version']`.
 
-`SET storage_compatibility_version` affects later attaches, not the already-open main database. `-storage-version` affects the main file and new files attached in that session, but it is ignored for an existing main file. Place it before the file path, not in a `-c` command after the file is open.
+`SET storage_compatibility_version` affects later attaches, not the already-open main database. `-storage-version` affects the main file and new files attached in that session, but it is ignored for an existing main file. Use it at startup, not in a `-c` command after the file is open.
 
 Move an existing file onto 2.0 storage only when the user asks, and only after a backup:
 
@@ -76,7 +86,7 @@ duckdb mydata.new.db -c "IMPORT DATABASE 'tmp'"
 
 `ATTACH existing (STORAGE_VERSION 'latest')` followed by a write upgrades the file to 69. A lower `STORAGE_VERSION` on an existing file errors; the version cannot be lowered in place.
 
-`COPY FROM DATABASE` is the other documented method. The target must be attached and empty, and its `STORAGE_VERSION` controls the output:
+`COPY FROM DATABASE` is the other documented method. The target must be attached. It may contain unrelated objects; any same-named object aborts. Its `STORAGE_VERSION` controls the output:
 
 ```sql
 ATTACH 'old.db' AS old (READ_ONLY);
@@ -86,7 +96,9 @@ COPY FROM DATABASE old TO new;
 
 A clean exit checkpoints and removes the WAL. `CHECKPOINT` and `FORCE CHECKPOINT` flush it manually. `checkpoint_on_detach` takes `ENABLED`, `DISABLED`, or `DEFAULT`, not a boolean.
 
-`EXPORT DATABASE` writes CSV by default. Add `(FORMAT parquet)` when Parquet is expected. The directory should be empty, and `IMPORT DATABASE` needs a fresh database.
+`EXPORT DATABASE` writes CSV by default. Add `(FORMAT parquet)` when Parquet is expected. The export directory should be empty. `IMPORT DATABASE` may target a database with unrelated objects; any same-named object aborts.
+
+`COPY FROM DATABASE` preserves schema, constraints, indexes, sequences, macros, and data. `EXPORT DATABASE` plus `IMPORT DATABASE` is the portable path across versions. Both need a target with no same-named objects.
 
 ## SQL text
 
@@ -114,7 +126,7 @@ The legacy parser is a grammar fallback, not a semantic one:
 SET enable_legacy_parser = true;
 ```
 
-The setting autoloads the extension. It rejected `NEAREST` in probing, and the manual's listed legacy quirks did not reproduce. Use it only to unblock a specific query, file the query, and remove it from saved SQL.
+The setting autoloads the extension. It rejects the simplified `FROM ... NEAREST` form; an explicit `INNER JOIN ... NEAREST` still parses. It is a grammar fallback, not a semantic time machine. Use it only to unblock a specific query, file the query, and remove it from saved SQL.
 
 ## CLI and deployment
 

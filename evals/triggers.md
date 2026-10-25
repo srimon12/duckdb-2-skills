@@ -29,6 +29,8 @@ A description that needs this table explained is too weak. The prompt should be 
 | 19 | EXPLAIN ANALYZE says 10 rows but the join returns 4 million. | `duckdb-profile` | `duckdb-sql` |
 | 20 | Ingest this CSV into partitioned Parquet and keep the bad rows. | `duckdb-files` | `duckdb-sql`, `duckdb-session` |
 | 21 | Open this parquet in a local UI. | `duckdb` | `duckdb-files`, `duckdb-profile` |
+| 22 | How do I migrate our DuckLake 1.0 catalog to 1.1? | `duckdb-lakehouse` | `duckdb-docs` |
+| 23 | Distance in meters between two lon/lat points. | `duckdb-spatial` | `duckdb-docs` |
 
 ## Skill-specific
 
@@ -39,6 +41,7 @@ A description that needs this table explained is too weak. The prompt should be 
 | Run `SELECT 42` so I can read the result. | `duckdb -agent -c`, not `-csv` |
 | Parse this result in a script. | `-json`, not `-agent` |
 | The output is a box drawing under my agent. | check `~/.duckdbrc`; rerun with `-no-init` |
+| The footer says `first 20 and last 20 of 1001 rows`. Is that the full answer? | no; it is a sample. Run `count(*)` or an aggregate |
 | Safe mode blocked the file I named. | explain that `-safe` blocks external access; use the SQL sandbox for one named file |
 | Open this in a local UI. | `duckdb -ui`; use `-box` if the extension cannot install |
 
@@ -52,6 +55,7 @@ A description that needs this table explained is too weak. The prompt should be 
 | Create an audit trigger for updates. | statement-level `AFTER UPDATE ... REFERENCING OLD/NEW TABLE` |
 | Create a `BEFORE UPDATE FOR EACH ROW` trigger. | refuse; not implemented in 2.0 |
 | Why did `1 // 0` start failing? | integer division by zero now errors; `TRY` or the setting |
+| Update every row from a source table that has duplicate keys. | deduplicate the source, count matches, run, then verify; `UPDATE ... FROM` picks one unspecified row |
 
 ### `duckdb-profile`
 
@@ -60,8 +64,10 @@ A description that needs this table explained is too weak. The prompt should be 
 | This query takes 40 seconds. | `EXPLAIN`, then `EXPLAIN ANALYZE`; find the operator with the estimate/actual gap |
 | EXPLAIN ANALYZE says 10 rows but the join returns 4 million. | inspect join sides; do not add `LIMIT` first |
 | My Parquet filter reads every row group. | check for a function or cast around the filter column; rewrite as a range |
-| The query runs out of memory. | check `memory_limit`, `temp_directory`, blocking operators, `preserve_insertion_order` |
+| The query runs out of memory. | check the blocking operator before `memory_limit`; then check `temp_directory` and `preserve_insertion_order` |
 | Explain this plan without running the query. | `EXPLAIN`, not `EXPLAIN ANALYZE` |
+| Give me a ranked diagnosis of this plan, with evidence. | capture `EXPLAIN ANALYZE (FORMAT JSON)` and run the plan linter; report findings, not an operator lecture |
+| Should I raise memory_limit? | only after the blocking operator's rows are reduced; show `system.peak_temp_dir_size` first |
 | Open this plan in a browser. | `EXPLAIN (FORMAT WEB)`; `duckdb -ui` for the notebook UI |
 
 ### `duckdb-files`
@@ -74,6 +80,7 @@ A description that needs this table explained is too weak. The prompt should be 
 | Convert CSV to zstd parquet. | `COPY ... (FORMAT parquet, CODEC 'zstd')` |
 | Write parquet partitioned by month. | `PARTITION_BY (month)`; output is a directory |
 | Ingest this CSV and keep the bad rows. | read raw, cast with `TRY_CAST`, write `quarantine.parquet`, prove the row count with `parquet_file_metadata` |
+| The parser rejects a line before my typed read. | persist `rejects.parquet`; prove `input = good + bad + distinct(file_id,line)` |
 | Rerun a partitioned write with fewer partitions. | `OVERWRITE`, not only `OVERWRITE_OR_IGNORE`; stale partitions remain |
 | Read a public S3 bucket in us-west-2. | keyless `PROVIDER config, REGION` secret, no keys |
 
@@ -84,6 +91,7 @@ A description that needs this table explained is too weak. The prompt should be 
 | Extract the second element of a variant array. | `variant_extract(v, 2)`; indexes are 1-based |
 | List the keys of a variant object. | `variant_keys` |
 | Make this JSON queryable without keeping the text. | `::JSON::VARIANT` |
+| Is this field missing or JSON null? | `variant_typeof` returns `VARIANT_NULL`; `variant_exists` separates absent from present |
 | Speed up a variant column in Parquet. | `SHREDDING` on `COPY`, or `variant_minimum_shredding_size` for database storage |
 
 ### `duckdb-quack`
@@ -93,6 +101,7 @@ A description that needs this table explained is too weak. The prompt should be 
 | Expose this database on 0.0.0.0 so my colleague can connect. | refuse direct exposure; localhost plus a TLS reverse proxy |
 | Connect this session to Quack. | `ATTACH 'quack:...'`, `CONNECT` |
 | Run this query on Postgres without copying the table. | `CONNECT 'postgres:...'` and pushdown |
+| Return only tenant 7 rows from a shared Quack server. | `quack_authorization_function` returning VARCHAR SQL, not a regex on the query text |
 | Put the token in `state.sql`. | refuse; use a named secret |
 
 ### `duckdb-lakehouse`
@@ -100,6 +109,8 @@ A description that needs this table explained is too weak. The prompt should be 
 | Prompt | Expected action |
 | --- | --- |
 | Create a DuckLake catalog. | `ATTACH 'ducklake:...'`, not a native file |
+| Here is a table path, which format is it? | identify `_delta_log`, Iceberg metadata, or DuckLake before attaching |
+| A plain Parquet directory with no catalog. | `duckdb-files`, not a lakehouse extension |
 | Upgrade the catalog to 1.1. | back up, check `ducklake_default_version`, `AUTOMATIC_MIGRATION true` |
 | Read an Iceberg REST catalog. | `ATTACH ... (TYPE iceberg)`, `URI` not `ENDPOINT` |
 | Delete a row from a Delta table. | refuse; the extension does not support `DELETE` |
@@ -147,13 +158,15 @@ A description that needs this table explained is too weak. The prompt should be 
 | `fetch_arrow_table` warns after `execute`. | `con.sql(...).to_arrow_table()` |
 | Print a relation in a notebook twice. | explain lazy re-execution; use `execute` or `materialize` |
 | Two threads share one connection. | one `cursor()` per thread |
+| Open a read-only connection alongside a writer in the same process. | refuse; read-only is for another process or before a writer; use a cursor |
 | A failed `execute` inside a transaction. | `rollback()` before more SQL |
 
 ### `duckdb-spatial`
 
 | Prompt | Expected action |
 | --- | --- |
-| Distance in meters between two lon/lat points. | `ST_Distance_Spheroid` with `POINT_2D` |
+| Distance in meters between two lon/lat points. | `ST_Distance_Sphere` for fast approximate meters, `ST_Distance_Spheroid` for exact ellipsoid meters |
+| Polygon that intersects the bbox but starts outside it. | full bbox overlap on both axes, then `ST_Intersects`; min-corner is points only |
 | Filter Overture places by bbox. | `bbox.xmin`/`bbox.ymin` `BETWEEN` before `ST_*` |
 | Get the latest Overture release. | read `latest` from the STAC catalog |
 | Read a GeoJSON file. | `ST_Read` or `read_json(..., geojson := true)` |

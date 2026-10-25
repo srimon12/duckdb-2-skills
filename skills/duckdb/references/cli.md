@@ -53,7 +53,7 @@ Each process starts empty unless a database path or an init file is given. `ATTA
 | `-connect [quack[:SECRET]]` | Connect to a remote Quack server. Cannot be combined with a local database path. |
 | `-version`, `-h`, `-help` | Version or help. |
 
-`-agent` and an output flag can be combined. The flag picks the renderer; `-agent` still forces the agent contract, so errors stay JSON and the banner still prints. It does not apply the row, byte, or cell caps. `-agent -json` returns the whole JSON array. Without an explicit `-agent`, any output flag turns automatic agent mode off. In batch execution, note that a trailing `-cmd` after the final `-c` does not run.
+`-agent` and an output flag can be combined. The flag picks the renderer; `-agent` still forces the agent contract, so errors stay JSON and the banner still prints. It does not apply the row, byte, or cell caps. `-agent -json` returns the whole JSON array. Without an explicit `-agent`, any output flag turns automatic agent mode off. `-cmd` runs in argv order after the init file, including after the last `-c` or a successful `-f`. A `-f` error exits before later calls.
 
 `-ui` installs the `ui` extension from `core` on first run. The extension ships separately and can lag a release, so a fresh release may return HTTP 404 until it is promoted from `core_nightly`. Retry later. The 2.0.0 `ui` build has no binary for `osx_amd64` or `windows_arm64`. The page assets load from `https://ui.duckdb.org`, while the queries run in the local process. Use `-box` or `EXPLAIN (FORMAT WEB)` when the UI is unavailable.
 

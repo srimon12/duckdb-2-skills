@@ -10,6 +10,7 @@ Binary: v2.0.0 (Cyanoptera) d54cbbe3df
 - **PASS** nested schema USE rejected: `USE rejected; nested schema is visible through parent_schema`
 - **PASS** default storage version: `v2.0.0+`
 - **PASS** pinned storage version: `v1.5.0+`
+- **PASS** pinned 1.4 storage version: `v1.4.0+`
 - **PASS** VARIANT functions and 1-based index: `{'t': 'INT32', 'c': 'OBJECT', 'i': 10}`
 - **PASS** VARIANT index 0 rejected: `rejected as documented`
 - **PASS** VARIANT out-of-range returns NULL: `{'v': None}`
@@ -25,16 +26,28 @@ Binary: v2.0.0 (Cyanoptera) d54cbbe3df
 - **PASS** checkpoint_on_detach enum: `{'v': 'ENABLED'}`
 - **PASS** row trigger: `{'n': 1}`
 - **PASS** BEFORE row trigger rejected: `rejected as documented`
+- **PASS** trigger levels cannot mix: `rejected as documented`
+- **PASS** temp trigger body stays in temp catalog: `rejected as documented`
 - **PASS** sqlite_master absent: `rejected as documented`
 - **PASS** read_duckdb: `{'a': 42}`
+- **PASS** read_duckdb multi-table: `{'x': 1}`
 - **PASS** COPY FROM DATABASE: `{'x': 1}`
+- **PASS** COPY to unrelated target: `{'other': 1, 't': 1}`
+- **PASS** IMPORT into unrelated target: `{'other': 1, 't': 1}`
 - **PASS** NEAREST join: `[{'id': 12}, {'id': 10}]`
+- **PASS** legacy parser NEAREST forms: `[{'qid': 10, 'pid': 1}]`
 - **PASS** GROUP BY UNNEST: `[{'tag': 'a', 'n': 1}, {'tag': 'b', 'n': 3}, {'tag': 'c', 'n': 1}]`
 - **PASS** MERGE INTO: `{'v': 20}`
 - **PASS** EXPLAIN (SQL): `SELECT CAST(42 AS INTEGER) AS "42"`
 - **PASS** EXPLAIN shows estimates: `estimate present`
 - **PASS** EXPLAIN ANALYZE shows actuals: `actual rows and timing present`
 - **PASS** EXPLAIN (FORMAT JSON): `PROJECTION`
+- **PASS** EXPLAIN (FORMAT JSON) has no actuals: `array root=UNGROUPED_AGGREGATE no actuals`
+- **PASS** EXPLAIN ANALYZE (FORMAT JSON) shape: `object sections=['io', 'operator', 'optimizer', 'parser', 'physical_planner', 'planner', 'query', 'system'] scan_rows=1000`
+- **PASS** EXPLAIN ANALYZE ignores -json: `text profile, not JSON`
+- **PASS** legacy metrics flat shape: `legacy flat shape`
+- **PASS** profile reports spill: `peak_temp_dir_size=108396544`
+- **PASS** plan linter self-test: `PASS metadata-only count: ['no_profile']`
 - **PASS** EXPLAIN ANALYZE executes DML: `inserted 3 rows during ANALYZE`
 - **PASS** Parquet row-group pruning: `1 of 10 row groups`
 - **PASS** Parquet metadata row duplication: `{'file_rows': 10, 'chunk_rows': 30}`
@@ -44,15 +57,21 @@ Binary: v2.0.0 (Cyanoptera) d54cbbe3df
 - **PASS** OVERWRITE_OR_IGNORE leaves stale partitions: `stale partition remains, 2 rows`
 - **PASS** OVERWRITE removes stale partitions: `old partition removed, 1 rows`
 - **PASS** CSV rejects one row per error: `{'errors': 2, 'lines': 1}`
+- **PASS** ingest reject invariant: `{'typed': 2, 'rejected_lines': 1}`
 - **PASS** Parquet row group minimum: `full row group 2048`
 - **PASS** JSON ignore_errors nulls a row: `[{'id': 1, 'name': 'a'}, {'id': None, 'name': None}, {'id': 3, 'name': 'c'}]`
 - **PASS** agent mode truncation footer: `truncation footer present`
+- **PASS** agent footer thresholds: `0/10 hash, 5 no hash`
+- **PASS** friendly FROM-first example: `{'user_id': 1, 'clicks': 1}`
+- **PASS** friendly UNPACK and struct expansion: `struct=[{'x': 1, 'y': 2}] unpack={'any_flag': True}`
 - **PASS** -csv disables agent mode: `plain CSV`
+- **PASS** trailing -cmd runs: `trailing -cmd runs after -c and -f`
 - **PASS** ui extension installs and serves: `ui server started; osx_amd64 and windows_arm64 missing`
 - **PASS** async_threads setting: `{'v': 16}`
 - **PASS** json_merge_patch: `{'v': {'a': 1, 'b': 2}}`
 - **PASS** data-modifying CTE with RETURNING: `{'n': 2}`
 - **PASS** temporary secret creation: `{'type': 's3', 'provider': 'config'}`
+- **PASS** Python connection configuration: `skipped (duckdb Python package not importable)`
 - **PASS** docs index versions: `[{'version': '2.0', 'n': 2689}, {'version': 'blog', 'n': 999}]`
 
-52/52 passed
+71/71 passed

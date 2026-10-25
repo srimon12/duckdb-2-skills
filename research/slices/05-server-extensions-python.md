@@ -3,9 +3,7 @@
 Status: complete
 Scope: Quack server and client, `CONNECT`, PostgreSQL/MySQL attach and pushdown, extension install/update/repositories, and the Python client on DuckDB 2.0.0. Manual paths are relative to `research/sources/duckdb-2.0/`. Probe IDs map to the log below.
 Sources: `quack/{overview,reference,security,troubleshooting}.md`, `quack/setup/{overview,deployment,reverse_proxy,quack_wasm}.md`; `sql/statements/connect.md`; `core_extensions/{quack,postgres/*,mysql}.md`; `clients/cli/{arguments,dot_commands}.md`; `extensions/*.md`; `operations_manual/securing_duckdb/securing_extensions.md`; `clients/python/*.md`; `guides/python/*.md`; local `duckdb v2.0.0 (Cyanoptera) d54cbbe3df`; Python `duckdb 2.0.0`; https://duckdb.org/quack/faq.html; https://duckdb.org/2026/08/17/duckdb-20-highlights; `tools/shell/include/shell_state.hpp` at `v2.0.0`.
-
 ## Verified facts
-
 ### 1. Quack server
 
 | # | Claim | Evidence | Confidence |
@@ -23,7 +21,6 @@ Sources: `quack/{overview,reference,security,troubleshooting}.md`, `quack/setup/
 | Q11 | `-serve [quack[:SECRET]]` and `-connect [TYPE[:SECRET]]` exist. Only `quack` can be served. `-connect` cannot be combined with a local database path. | P2/P3; `clients/cli/arguments.md` | Probed |
 | Q12 | `-serve quack:analytics` uses the named secret and prints its token as `auth_token`; `-connect quack:analytics` connects with `(SECRET 'analytics')`; an unknown secret errors `Secret with name "nope" not found`. | P3 | Probed |
 | Q13 | Default `.serve_command` is `CALL quack_serve(create_secret_if_not_exists=true{serve_secret\|})`. Default `.connect_command` is `CONNECT '{type\|quack}:'{connect_secret\|}`. Placeholders are `{parameter\|default}`; `-serve quack:analytics` injects `, secret='analytics'`, `-connect` injects ` (SECRET 'analytics')`. | P3; `tools/shell/include/shell_state.hpp`; `shell_command_line_option.cpp` | Probed |
-
 ### 2. Quack client
 
 | # | Claim | Evidence | Confidence |
@@ -40,7 +37,6 @@ Sources: `quack/{overview,reference,security,troubleshooting}.md`, `quack/setup/
 | C10 | The attached catalog exposes `name.query('SELECT ...')`, e.g. `FROM qk.query('SELECT 42')`; this is valid. The preview's bare `remote.query($$...$$)` is not the 2.0 form. | P1; `quack/overview.md` | Probed |
 | C11 | `ATTACH` binds all remote table definitions up front. One un-bindable table (e.g. an Iceberg lazy table reported as `UNKNOWN`) fails the whole attachment; use `quack_query()` or attach Iceberg with `TABLE_RESOLUTION 'eager'` on the server. | `quack/troubleshooting.md` | Documented |
 | C12 | Reverse proxy requirements: nginx `client_max_body_size 256M`, `proxy_read_timeout/proxy_send_timeout 600s`, HTTP/1.1 keep-alive, `proxy_buffering off`; Caddy `flush_interval -1`, `request_body max_size 256MB`. Clients must name port 443 explicitly because Quack's default remains 9494. | `quack/setup/reverse_proxy.md`; P20 | Documented |
-
 ### 3. PostgreSQL and MySQL
 
 | # | Claim | Evidence | Confidence |
@@ -56,7 +52,6 @@ Sources: `quack/{overview,reference,security,troubleshooting}.md`, `quack/setup/
 | PG9 | PostgreSQL pooling: `pg_pool_max_connections` default is `4 <= cpu_count * 1.5 <= 32` (12 on the 8-core probe host), `pg_pool_acquire_mode='force'`, `pg_pool_idle_timeout_millis=60000`, reaper on. `postgres_configure_pool()` lists or changes a pool; `pg_connection_cache` and `pg_connection_limit` are deprecated. | P9; `postgres/connection_pool.md`; `postgres/functions.md` | Probed |
 | PG10 | MySQL pooling uses `mysql_pool_size` (12 on the probe host), `mysql_pool_acquire_mode`, idle/lifetime timeouts and reaper settings. | P9; `core_extensions/mysql.md` | Probed |
 | PG11 | Secrets: `CREATE SECRET (TYPE postgres, HOST ..., PORT ..., DATABASE ..., USER ..., PASSWORD ...)`; then `ATTACH '' AS db (TYPE postgres)` or `(TYPE postgres, SECRET name)`. MySQL uses the same shape with `TYPE mysql`. Persistent secrets need `CREATE PERSISTENT SECRET`. Passwords in a connection string can leak in errors. | `postgres/secrets.md`; `core_extensions/mysql.md` | Documented |
-
 ### 4. Quack security and stability
 
 | # | Claim | Evidence | Confidence |
@@ -67,30 +62,29 @@ Sources: `quack/{overview,reference,security,troubleshooting}.md`, `quack/setup/
 | S4 | Mitigation: start the server, then `SET enable_external_access=false; SET lock_configuration=true`. Remote file reads/writes then fail with `file system operations are disabled by configuration`, and a remote `SET enable_external_access=true` fails because the configuration is locked. | P6 | Probed |
 | S5 | Locking **before** `quack_serve` is not equivalent: `quack_serve` tries to read `~/.duckdb/stored_secrets` and fails `Cannot access directory ... stored_secrets`. Start the server first, then lock. | P6 | Probed |
 | S6 | Defaults are conservative: random token, localhost-only bind, no TLS on localhost, HTTPS with a self-signed cert for non-local URIs. Direct internet exposure is explicitly discouraged; use a TLS-terminating reverse proxy. | `quack/security.md`; `quack/setup/reverse_proxy.md` | Documented |
-| S7 | Authentication is `quack_check_token(sid, client_token, server_token) -> BOOLEAN`; authorization is `quack_nop_authorization(sid, query) -> BOOLEAN`. Both are global settings and run on a fresh server-side connection. SQL macros and extension-registered scalar functions work; Python UDFs from `create_function` do not. | `quack/security.md`; `quack/reference.md` | Documented |
+| S7 | Authentication is `quack_check_token(sid, client_token, server_token) -> BOOLEAN`; authorization is `quack_nop_authorization(sid, query) -> BOOLEAN` or `-> VARCHAR`, where VARCHAR is the SQL to execute. The VARCHAR form is the supported row-filter hook. Both are global settings and run on a fresh server-side connection. SQL macros and extension-registered scalar functions work; Python UDFs from `create_function` do not. | `quack/security.md`; `quack/reference.md` | Documented |
 | S8 | The manual's read-only authorization example is a prefix regex and is explicitly **not** a robust filter: `WITH x AS (SELECT 1) INSERT ...` starts with `WITH`. Use a read-only attached database or inspect the parsed statement type. | `quack/security.md` | Documented |
 | S9 | A server process runs SQL as the OS user that started DuckDB, including writes and extension installation. An agent must not treat a token as tenant isolation. | `quack/security.md`; P6 | Probed |
 | S10 | An agent must refuse: binding `0.0.0.0` or a public interface without an explicit request and a TLS proxy; `developer_mode_auth` or permissive authorization on a shared server; running untrusted SQL against a default server; loading community/unsigned extensions on a shared server; calling Quack production-ready. | `quack/security.md`; `extensions/community_extensions.md`; P6 | Documented + Probed |
-
 ### 5. Extensions
 
 | # | Claim | Evidence | Confidence |
 |---|---|---|---|
 | E1 | Syntax: `INSTALL name`, `INSTALL name FROM {core, community, core_nightly, 'url'}`, `INSTALL name VERSION 'vX.Y.Z'`, `FORCE INSTALL ...`, `INSTALL AND LOAD ...`, `FORCE INSTALL AND LOAD ...`. `FORCE` goes before `INSTALL`. | P10; `sql/statements/load_and_install.md`; `extensions/versioning_of_extensions.md` | Probed |
 | E2 | `INSTALL` without `FORCE` is a no-op when the extension is already installed, so a changed `VERSION` or `FROM` is ignored. Use `FORCE INSTALL` to switch version or repository. | P10 | Probed |
-| E3 | `UPDATE EXTENSIONS` updates from each extension's source repository. Columns are `extension_name`, `repository`, `update_result`, `previous_version`, `current_version`. `UPDATE EXTENSIONS (httpfs, azure)` limits the set. | P10; `sql/statements/update_extensions.md` | Probed |
+| E3 | `UPDATE EXTENSIONS` updates from each extension's source repository. Columns are `extension_name`, `repository`, `update_result`, `previous_version`, `current_version`. `UPDATE EXTENSIONS (httpfs, azure)` limits the set. Only `REPOSITORY` installs are updated. The statement force-installs the repository's current build, so it replaces a pinned version; `CUSTOM_PATH` installs return `NOT_A_REPOSITORY`. Re-pin with `FORCE INSTALL ... VERSION` after an update. | P10; `sql/statements/update_extensions.md`; source `extension_helper.cpp` | Probed + Source |
 | E4 | `UPDATE EXTENSIONS` does not reload anything. Extensions cannot be unloaded or reloaded; restart the process to use a new binary. | `sql/statements/update_extensions.md`; `extensions/installing_extensions.md` | Documented |
 | E5 | Statically linked extensions are not updated by `UPDATE EXTENSIONS`. In the local CLI: `autocomplete`, `core_functions`, `icu`, `json`, `parquet`, `shell`, all `v2.0.0`. | P10; `sql/statements/update_extensions.md` | Probed |
-| E6 | `duckdb_extensions()` columns: `extension_name`, `loaded`, `installed`, `install_path`, `description`, `aliases`, `extension_version`, `install_mode`, `installed_from`, `signature_key_fingerprint`. `install_mode` is `STATICALLY_LINKED`, `REPOSITORY`, or `NOT_INSTALLED`. | P10; `extensions/overview.md` | Probed |
+| E6 | `duckdb_extensions()` columns: `extension_name`, `loaded`, `installed`, `install_path`, `description`, `aliases`, `extension_version`, `install_mode`, `installed_from`, `signature_key_fingerprint`. `install_mode` is `STATICALLY_LINKED`, `REPOSITORY`, `CUSTOM_PATH`, `NOT_INSTALLED`, or `UNKNOWN`. `installed_from` is a repository name for `REPOSITORY` and a source path for `CUSTOM_PATH`. | P10; `extensions/overview.md`; source `extension_install_info.hpp` | Probed + Source |
 | E7 | Installation and loading are separate. Install once into `~/.duckdb/extensions/<version>/<platform>/`; load every process. The setting is `extension_directories` (a list): install into the first, load from all. `extension_directory` (singular) is deprecated and warns. | P10; `extensions/installing_extensions.md` | Probed |
-| E8 | In Python, `duckdb.connect(config={"extension_directory": ...})` is silently accepted but leaves `extension_directories=[]`; use `config={"extension_directories": ["..."]}`. | P18 | Probed |
+| E8 | In Python, `duckdb.connect(config={"extension_directory": ...})` is accepted and sets the deprecated singular setting; `extension_directories` stays `[]`, so it looks ignored. Use `config={"extension_directories": ["..."]}`. | P18 | Probed |
 | E9 | Autoload/autoinstall defaults are true: `autoinstall_known_extensions=true`, `autoload_known_extensions=true`. `LOAD` autoinstalls a known extension. Autoload applies only to core extensions; disable both and `lock_configuration` for untrusted SQL. | P10; `extensions/overview.md`; `operations_manual/securing_duckdb/securing_extensions.md` | Probed |
 | E10 | A plain name comes from `core`; `FROM community` is the third-party repository; `core_nightly` exists. Community extensions are built and signed by DuckDB CI but not audited, and run with DuckDB's privileges. | `extensions/community_extensions.md`; `extensions/installing_extensions.md` | Documented |
 | E11 | Platforms: core supports `linux_amd64`, `linux_arm64`, `osx_amd64`, `osx_arm64`, `windows_amd64`, `windows_arm64`. Community supports all except `osx_amd64` in 2.0; 2.1 drops `osx_amd64` entirely. HTTP probe: community `h3` for `osx_amd64` = 404, core `spatial` for `osx_amd64` = 200. | P12; `extensions/overview.md`; `extensions/extension_distribution.md` | Probed |
 | E12 | Core and community extensions are signed; `signature_key_fingerprint` exposes the SHA-256 key. Unsigned extensions require `allow_unsigned_extensions=true` at startup (`duckdb -unsigned`), cannot be enabled while running, and are a code-execution risk. `strip` corrupts the metadata footer and makes an extension unloadable. | P10; `extensions/extension_distribution.md`; `operations_manual/securing_duckdb/securing_extensions.md` | Probed |
-| E13 | Offline install: `INSTALL '/abs/path/name.duckdb_extension'`; gzipped files must be decompressed first; `LOAD '/abs/path/name.duckdb_extension'` skips the installed copy. The file basename determines the extension name (`quack_copy.duckdb_extension` installs as `quack_copy`, not `quack`). | P13; `extensions/advanced_installation_methods.md` | Probed |
+| E13 | Offline install: `INSTALL '/abs/path/name.duckdb_extension'`. A `.duckdb_extension.gz` file is accepted and decompressed by `INSTALL`; decompress it manually only if the installer rejects it. `LOAD '/abs/path/name.duckdb_extension'` skips the installed copy. The file basename determines the extension name (`quack_copy.duckdb_extension` installs as `quack_copy`, not `quack`). | P10 (gzip probe); P13; `extensions/advanced_installation_methods.md`; source `extension_install_dynamic.cpp` | Probed + Source |
 | E14 | Troubleshooting: HTTP 404 lists candidate extensions; HTTP 451 is a regional legal block; dev builds may have no repository build. `core`/`community` fall back to `extensions.duckdb-backup.org`; `custom_extension_repository` and explicit `FROM 'url'` do not. `latest_stable_version.txt` returned `2.0.0`. | P10; `extensions/troubleshooting.md`; `extensions/installing_extensions.md` | Probed |
-| E15 | `FORCE INSTALL spatial FROM core VERSION 'v1.1.8'` is syntactically valid but returned HTTP 404 for `v2.0.0/osx_arm64`; the syntax is not evidence that the version exists for the build. | P10 | Probed |
+| E15 | `FORCE INSTALL spatial FROM core VERSION 'v1.1.8'` is syntactically valid but returned HTTP 404 for `v2.0.0/osx_arm64`. `FORCE INSTALL httpfs VERSION '77392a7207'` also returned HTTP 404 for `v2.0.0/linux_amd64`. The syntax is not evidence that the version exists for the build; test a pin in a scratch `extension_directories` path before shipping it. | P10; probe 2026-10-26 | Probed |
 
 ### 6. Extension repositories (WIP)
 
@@ -124,9 +118,9 @@ Sources: `quack/{overview,reference,security,troubleshooting}.md`, `quack/setup/
 | A5 | `con.execute()` results retain `fetchone()`, `fetchmany()`, `fetchall()`, `fetch_df_chunk()`, `df()`, `fetchnumpy()`, `fetch_df()`. They no longer have `fetch_arrow_table()`, `fetch_record_batch()`, `arrow()` or `pl()`. | P15; `dbapi.md` | Probed |
 | A6 | `execute()` results have `to_arrow_table()` and `to_arrow_reader()`, but they copy all rows and emit a `UserWarning`; the reader does not stream. Use `con.sql(q)` for streaming Arrow/Polars. | P15/P17; `dbapi.md` | Probed |
 | A7 | `rel.fetch_record_batch()`, `rel.arrow()`, `rel.fetch_arrow_table()` remain as deprecated aliases on relations; `fetch_record_batch()` warns `DeprecationWarning`. | P15; `relational_api.md` | Probed |
-| A8 | `ResourceInUseException` is raised when another query runs while an `execute()` result or an Arrow reader is open. `con.complete()` drains the result; `con.abort()` cancels it; the next `execute()` replaces an open result. | P15; `dbapi.md` | Probed |
+| A8 | `ResourceInUseException` is raised when `con.sql()` or `con.query()` runs while a **streaming** `execute()` result or Arrow reader is open. A new `con.execute()` does not raise; it replaces the open result silently. Small results may be buffered, so the exception is not a reliable guard. `con.complete()` drains the result; `con.abort()` cancels it. | P15; P18; `dbapi.md` | Probed |
 | A9 | Inside `con.begin()`, a failed `execute()` aborts the transaction. Further statements raise `TransactionException` until `rollback()`; `commit()` rolls the aborted transaction back without raising. After `commit()` the transaction is closed, so a following `rollback()` errors `cannot rollback - no transaction is active`. | P19; `dbapi.md` | Probed |
-| A10 | One connection serves one call at a time. A concurrent call raises `ResourceInUseException`; each thread needs `con.cursor()`. A cursor has its own transaction and session settings. | P19; `overview.md` | Probed |
+| A10 | One connection serves one call at a time. A concurrent call raises `ResourceInUseException`; each thread needs `con.cursor()`. A cursor has its own transaction and connection-local settings such as `search_path`; some settings are database-global. Two read-write connections to one file in one process are legal under MVCC; a read-only connection alongside a writer fails with a different-configuration error. | P19; P18; `overview.md` | Probed |
 | A11 | `ColumnExpression("t.x")` is the single column name `t.x`; `col("t", "x")` is qualified. A bare string in an expression is a value; `col("s") == "x"` compares to text and warns when `x` is also a column. | P16; `expression.md` | Probed |
 | A12 | `rel.update(set={"a": "x"})` raises `TypeError`; use `col("x")` or `lit("x")`. `fn("upper", col("s"))` builds a function call. | P16 | Probed |
 | A13 | `con.values({1: "a"})` becomes `MAP(INTEGER, VARCHAR)`; string keys become `STRUCT`. | P16; `conversion.md` | Probed |
@@ -141,12 +135,13 @@ Sources: `quack/{overview,reference,security,troubleshooting}.md`, `quack/setup/
 | # | Claim | Evidence | Confidence |
 |---|---|---|---|
 | N1 | `duckdb.connect(database, read_only, config)`; `config` takes settings such as `threads`, `memory_limit`, `temp_directory`, `storage_compatibility_version`. A read-only connection does not create a missing file and rejects writes. | P18; `dbapi.md`; `overview.md` | Probed |
-| N2 | `config={"extension_directories": ["..."]}` works; `config={"extension_directory": "..."}` is silently ignored (no warning, `extension_directories=[]`). | P18 | Probed |
+| N2 | `config={"extension_directories": ["..."]}` works. `config={"extension_directory": "..."}` is deprecated but still effective for the load path; `current_setting('extension_directories')` stays `[]`, so it looks ignored. Prefer the plural list. | P18 | Probed |
 | N3 | `check_same_thread` is not a 2.0 Python option: `duckdb.connect(check_same_thread=False)` raises `TypeError`; `config={"check_same_thread": False}` raises `InvalidInputException: options were not recognized`. | P18 | Probed |
 | N4 | `:memory:` is a fresh database; `:memory:name` shares a named in-memory database; `:default:` and `duckdb.default_connection()` return the module default; `set_default_connection(con)` replaces it. | P19; `dbapi.md` | Probed |
 | N5 | `from_df`, `from_arrow`, `from_query`/`query`/`sql`, `read_csv`, `read_parquet`, `read_json`, `table`, `values`, `view` create relations. `duckdb.from_df` is the module form of `con.from_df`. | P19; `relational_api.md` | Probed |
-| N6 | Use the appender for Python-produced rows, not `executemany`. `with con.appender("t") as app:` flushes on success; `action` one of `insert`, `upsert`, `update`, `delete`, `columns=`, `key=`, `query_appender`; `flush()`/`clear()`, no `close()`. | P19; `appender.md` | Probed |
-| N7 | `max_temp_directory_size` passed in `config` is ignored; `current_setting()` shows it but writes exceed it. Set it with `SET` after connecting. | `known_issues.md` | Documented |
+| N6 | Use the appender for Python-produced rows, not `executemany`. `with con.appender("t") as app:` flushes on success; `action` one of `insert`, `upsert`, `update`, `delete`; `update` and `delete` take a list `key`, while `upsert` uses the PK/unique constraint and rejects `key`. `columns` is a list; `query_appender(statement, columns, source=...)` takes a dict and reads `appender_data` (the source reads `appender_buffer`). `flush()`/`clear()`, no `close()`. | P19; `appender.md` | Probed |
+| N7 | `max_temp_directory_size` passed in `config` is ignored for enforcement; `current_setting()` shows it but writes exceed it. Set it with `SET` after connecting. | `known_issues.md`; P18 | Documented / Probed |
+| N8 | In one process, two read-write connections to one file work under MVCC. A read-only connection opened after a read-write connection to the same file fails: `ConnectionException: Can't open a connection to same database file with a different configuration than existing connections`. | P18 | Probed |
 
 ## Existing skill audit
 
@@ -167,7 +162,7 @@ Sources: `quack/{overview,reference,security,troubleshooting}.md`, `quack/setup/
 | quack | Omission: reverse proxy numbers (256M body, 600s timeouts, no buffering, HTTP/1.1 keep-alive, port 443). | Thin | Add the required proxy settings, not just “do not buffer”. |
 | extensions | “An extension installed by 1.5 is the wrong build for 2.0.” | Correct | Keep. |
 | extensions | “`INSTALL AND LOAD` is `INSTALL`, then `LOAD`. It accepts `FORCE`, `FROM`, and `VERSION`.” | Correct | Keep; exact order is `FORCE INSTALL AND LOAD`. |
-| extensions | “`FORCE INSTALL spatial FROM core VERSION 'v1.1.8';`” | Correct syntax, bad example | On 2.0.0/osx_arm64 this exact command returns HTTP 404. Use a verified version or mark it illustrative. |
+| extensions | “`FORCE INSTALL spatial FROM core VERSION 'v1.1.8';`” | Correct syntax, bad example | On 2.0.0/osx_arm64 this exact command returns HTTP 404. The skill now uses a placeholder and says to test a pin in a scratch `extension_directories` path. |
 | extensions | “From 2.0 community extensions are not built for `osx_amd64`. Core still are. 2.1 drops `osx_amd64`.” | Correct | Keep; HTTP probe confirms 404 community / 200 core. |
 | extensions | “The statement does not reload… Statically linked extensions including `json`, `parquet`, `icu` are not updated this way. Result columns…” | Correct | Keep; add `autocomplete`, `core_functions`, `shell` to the local static list if enumerating. |
 | extensions | “`allow_extension_repositories` is `undecided` by default… `allowed` permits adds… `forbidden` blocks adds and distrusts…” | Correct | Keep; add that the value can only move toward `allowed`/`forbidden`, never back. |
@@ -182,7 +177,7 @@ Sources: `quack/{overview,reference,security,troubleshooting}.md`, `quack/setup/
 | python | “`rel.write_csv(path, overwrite=False)` … raise if the file exists. Omit `overwrite` to replace.” | Correct | Keep; add partition-directory nuance. |
 | python | “`Decimal("1E+2")` … 100 as DECIMAL(3,0)” and “Arrow batch 131072.” | Correct | Keep; add >38 digits -> DOUBLE. |
 | python | “2.0 can open a 1.5 file; a 2.0 default file cannot be opened by 1.5. Pin with `storage_compatibility_version: v1.5.0`.” | Correct | Probe confirms version 69 vs 64–68 and that the pinned file opens in 1.5.6. |
-| python | Omission: connection config, `extension_directory` singular silently ignored, `check_same_thread` rejected, default connection, `from_df`/`from_arrow`/`from_query`, appender. | Thin | Add a short “connection and ingestion” section; full appender/UDF details stay a reference. |
+| python | Omission: connection config, `extension_directory` singular deprecated but effective, `check_same_thread` rejected, default connection, `from_df`/`from_arrow`/`from_query`, appender. | Thin | Add a short “connection and ingestion” section; full appender/UDF details stay a reference. |
 
 ## Gaps worth adding
 
@@ -190,9 +185,9 @@ Sources: `quack/{overview,reference,security,troubleshooting}.md`, `quack/setup/
 |---|---|---|---|
 | 1 | Quack exposes the server's filesystem and extension installation; lock with `enable_external_access=false` + `lock_configuration=true` **after** `quack_serve`. | A token otherwise means read/write of server files and code execution as the server user. | SKILL.md, security section |
 | 2 | Direct `CONNECT 'quack:host:port'` with `(TOKEN ...)`, and exact secret `SCOPE` matching. | The skill teaches only `ATTACH` + `CONNECT`; agents will use a broader `SCOPE 'quack:'` and fail auth. | SKILL.md |
-| 3 | Python `extension_directory` (singular) is silently ignored; use `extension_directories`. | Agents configuring an extension directory will think it worked and load from the wrong path. | SKILL.md |
+| 3 | Python `extension_directory` (singular) is deprecated but still effective for the load path; `extension_directories` stays `[]`. Prefer `extension_directories`. | The plural list is the supported configuration; the singular alias can disappear in a later release. | SKILL.md |
 | 4 | DDL/DML through `con.sql()` runs once; printing the relation does not rerun it. | The current skill overstates the rerun and may push agents away from `con.sql()` unnecessarily. | SKILL.md, migration table |
-| 5 | `FORCE INSTALL ... VERSION 'v1.1.8'` is not a working 2.0.0/osx_arm64 example; core/community platform split. | Copying the example yields HTTP 404. | SKILL.md |
+| 5 | No unverified pin example. `FORCE INSTALL ... VERSION 'v1.1.8'` is not a working 2.0.0/osx_arm64 example, and the `httpfs` hash also 404s. | Copying an unverified example yields HTTP 404. The skill now uses a placeholder and a scratch-directory test. | SKILL.md |
 | 6 | Extension repository trust is global and the trust directory is startup-only; `USING PUBLIC KEY` pins without network. | An agent may expect per-database trust or try to change the directory at runtime. | reference (repository page is WIP and long) |
 | 7 | `quack_stop` is local-only; `-serve` creates `__default_quack`, bare `CALL` does not. | Agents will try to stop a remote server or expect a SQL call to create the CLI secret. | SKILL.md |
 | 8 | `postgres_scan`/`postgres_scan_pushdown` are absent in 2.0.0; `mysql_scan` never existed; use `postgres_query`/`postgres_execute`/`mysql_query`/`mysql_execute`. | Agents hallucinate scan functions from older docs. | SKILL.md |
@@ -212,9 +207,9 @@ Sources: `quack/{overview,reference,security,troubleshooting}.md`, `quack/setup/
 | `CALL quack_stop(...)` from a client process | Returns `No server found listening...`; the remote server stays up. | Stop it in the serving process, or terminate that process. | P1 |
 | Locking configuration before `quack_serve` | `quack_serve` cannot read `~/.duckdb/stored_secrets`; server fails to start. | Start server first, then `SET enable_external_access=false; SET lock_configuration=true`. | P6 |
 | Default Quack server + token holder | Can read `/etc/hosts` and write files as the server user; can install extensions. | Treat the token as OS-user access; lock external access or run in a sandbox. | P6 |
-| `FORCE INSTALL spatial FROM core VERSION 'v1.1.8'` | HTTP 404 for `v2.0.0/osx_arm64`. | Verify the version exists for the build; do not copy an unverified pin. | P10 |
+| `FORCE INSTALL spatial FROM core VERSION 'v1.1.8'` | HTTP 404 for `v2.0.0/osx_arm64`. | Verify the version exists for the build; do not copy an unverified pin. The skill now ships no pin example. | P10 |
 | `SET extension_directory='...'` | Warning: deprecated; singular is removed in a future release. | `SET extension_directories=['...']`. | P10 |
-| Python `config={"extension_directory": "..."}` | Accepted silently; `extension_directories` stays `[]`. | Use `extension_directories`. | P18 |
+| Python `config={"extension_directory": "..."}` | Accepted; deprecated singular sets the load path while `extension_directories` stays `[]`. | Use `extension_directories`. | P18 |
 | `UPDATE EXTENSIONS` then use the extension | Old binary remains loaded until restart; extensions cannot reload. | Restart the process. | P10 |
 | Python `con.sql("INSERT ...")` then print relation | Prints `Count 1`; does not insert twice. | Use `con.execute()` for DDL/DML; `con.sql()` for read relations. | P15 |
 | Python transaction commit after failed statement | `commit()` rolls back and closes the transaction; a following `rollback()` errors. | Call `rollback()` before more SQL, or accept `commit()` as the rollback. | P19 |
@@ -351,6 +346,11 @@ WARNING: The 'extension_directory' setting is deprecated...
 $ SET extension_directories=['scratch/05/a','scratch/05/b'];
 [scratch/05/a, scratch/05/b]
 $ INSTALL h3 FROM community;  h3 | v1.5.6 | community | REPOSITORY | sha256:b9aa...
+$ FORCE INSTALL 'scratch/05/spatial.duckdb_extension.gz'; LOAD spatial; SELECT ST_Point(1,2) IS NOT NULL;
+true
+$ duckdb_extensions(): spatial | a3dbcd1781 | CUSTOM_PATH | scratch/05/spatial.duckdb_extension.gz
+$ FORCE INSTALL httpfs VERSION '77392a7207';
+HTTP Error ... /httpfs/77392a7207/v2.0.0/linux_amd64/httpfs.duckdb_extension.gz (HTTP 404)
 $ duckdb_settings(): autoinstall_known_extensions=true, autoload_known_extensions=true,
   allow_community_extensions=true, allow_unsigned_extensions=false
 P11  extension repository
@@ -418,7 +418,8 @@ P18  Python config, read_only, storage, check_same_thread
 $ duckdb.connect(config={"threads":2}).sql("SELECT current_setting('threads')") -> 2
 $ config memory_limit='1GB' -> 953.6 MiB; temp_directory -> scratch/05/tmp2
 $ config={"extension_directories":["scratch/05/ext"]} -> set
-$ config={"extension_directory":"scratch/05/ext2"} -> accepted; current_setting('extension_directories') -> []
+$ config={"extension_directory":"scratch/05/ext2"} -> accepted; current_setting('extension_directory') -> scratch/05/ext2; current_setting('extension_directories') -> []
+$ c1=RW, c2=RW same file -> INSERT succeeds; c2=read_only=True -> ConnectionException: different configuration
 $ duckdb.connect(check_same_thread=False) -> TypeError: connect(): incompatible function arguments
 $ config={"check_same_thread":False} -> InvalidInputException: options were not recognized
 $ read_only=True: SELECT works; CREATE -> InvalidInputException
@@ -443,7 +444,7 @@ quack/setup/reverse_proxy.md: nginx 256M, 600s, proxy_buffering off; Caddy flush
 ## Open questions
 
 - Is direct `CONNECT 'quack:host:port' (TOKEN ...)` a supported public form? It works in 2.0.0 but `sql/statements/connect.md` shows only `CONNECT {attached_database | 'connection_string'}` with no options. The syntax page or release notes would settle whether the option clause is frozen.
-- Is Python `config={"extension_directory": ...}` silently ignored by design, or a bug? The SQL setting warns; the Python path neither warns nor applies. A GitHub issue or the 2.0.1 notes would settle it.
+- Python `config={"extension_directory": ...}` is deprecated but still effective for the load path; the plural list is the supported form. No further probe needed unless 2.1 removes the alias.
 - Why does the 2.0.0 binary lack `postgres_scan`/`postgres_scan_pushdown` while the manual still documents them as deprecated? The extension release notes would settle removal versus documentation lag.
 - Does `CREATE EXTENSION REPOSITORY` without `USING PUBLIC KEY` fetch a repository key file at a fixed path? The extension-template repository format is the source of truth; not probed.
 - What is the exact boundary of Quack's file access when `enable_external_access=false` but `autoinstall_known_extensions=true`? The locked probe blocked both file access and extension installation; a separate `autoinstall_known_extensions=false` probe would separate the two.

@@ -20,7 +20,7 @@ Sources: `research/sources/duckdb-2.0/core_extensions/spatial/{overview,function
 | 10 | `ST_X`/`ST_Y` on a generic `GEOMETRY` work only if the runtime subtype is `POINT`; a polygon raises `ST_X only supports POINT geometries`. | P4 | Probed |
 | 11 | A CRS-typed geometry cannot cast directly to `POINT_2D`: `GEOMETRY('OGC:CRS84') -> POINT_2D` raises `Unimplemented type for cast`. Strip the CRS first (`::GEOMETRY::POINT_2D`) or rebuild with `ST_Point(ST_X(g), ST_Y(g))::POINT_2D`. | P4; Overture probe P11 | Probed |
 | 12 | `ST_Distance_Spheroid` has exactly `(p1 POINT_2D, p2 POINT_2D)`. Untyped `GEOMETRY` implicitly casts; CRS-typed Overture geometry does not. | `functions.md`; P4, P11 | Documented, Probed |
-| 13 | `ST_Area_Spheroid` accepts `GEOMETRY` or `POLYGON_2D`; `ST_Length_Spheroid` accepts `GEOMETRY` or `LINESTRING_2D`. They do **not** take `POINT_2D`. | `functions.md`; P3 | Documented, Probed |
+| 13 | `ST_Area_Spheroid` accepts `GEOMETRY` or `POLYGON_2D`; `ST_Length_Spheroid` accepts `GEOMETRY` or `LINESTRING_2D`. A `POINT_2D` cast is accepted and returns `0.0`, so pass a polygon or line for a real measure. | `functions.md`; P3; probe 2026-10-26 | Documented, Probed |
 | 14 | `ST_MakeEnvelope(xmin,ymin,xmax,ymax)` returns `GEOMETRY` (a polygon); `ST_MakeBox2D(point,point)` returns `BOX_2D`. | P4 | Probed |
 | 15 | `ST_Point` returns `GEOMETRY`; `ST_Point2D` returns `POINT_2D`; `ST_Point3D` returns `POINT_3D`. | P4 | Probed |
 | 16 | `ST_GeomFromText(VARCHAR)` and `ST_AsText(GEOMETRY)` are the WKT pair; `ST_GeomFromGeoJSON(JSON or VARCHAR)` and `ST_AsGeoJSON(GEOMETRY)` are the GeoJSON pair. `ST_AsGeoJSON` returns `JSON`, not `VARCHAR`. | `functions.md`; P4 | Documented, Probed |
@@ -62,7 +62,7 @@ Sources: `research/sources/duckdb-2.0/core_extensions/spatial/{overview,function
 | 52 | Addresses: point, `street,number,unit,postcode,postal_city,address_levels,country,sources,version,bbox`. Base `land_use` geometry may be Point, LineString, Polygon, or MultiPolygon. | schema/addresses, schema/base pages | Documented |
 | 53 | A keyless secret works: `CREATE SECRET (TYPE s3, PROVIDER config, REGION 'us-west-2');` read the public bucket with no keys. | P10-P13 | Probed |
 | 54 | Overture geometry is CRS-typed. `geometry::POINT_2D` fails; `ST_Point(ST_X(geometry), ST_Y(geometry))::POINT_2D` works. The skill's exact expression returned `36.885 m` to the first Starbucks. | P11 | Probed |
-| 55 | `bbox` is `STRUCT(xmin,xmax,ymin,ymax)`. For points `xmin=xmax` and `ymin=ymax`, so `bbox.xmin BETWEEN ... AND bbox.ymin BETWEEN ...` is exact for points. For polygons it is only a coarse prefilter and must be followed by `ST_Intersects`. | P11-P13; schema/places page | Probed, Documented |
+| 55 | `bbox` is `STRUCT(xmin,xmax,ymin,ymax)`. For points `xmin=xmax` and `ymin=ymax`, so `bbox.xmin BETWEEN ... AND bbox.ymin BETWEEN ...` is exact for points. For lines and polygons, min-corner containment drops a feature that starts outside the query but intersects it. Use full overlap on both axes (`bbox.xmax >= qxmin AND bbox.xmin <= qxmax AND bbox.ymax >= qymin AND bbox.ymin <= qymax`), then `ST_Intersects`. | P11-P13; schema/places page; probe 2026-10-26 | Probed, Documented |
 | 56 | Worked places query: bbox + `taxonomy.primary='coffee_shop'` + spheroid distance, `ORDER BY m` inside a `MATERIALIZED` CTE, returned 5 rows (Starbucks 36.9 m, Dunkin' 59.5 m) in 25.5 s. | P11 | Probed |
 | 57 | Worked buildings query: 0.002° bbox around the Empire State Building + `ST_Intersects`, `count(*)=18`, `avg(height)=45.5 m`, `max(height)=73.3 m`; runtime 2:36 with all 512 building files in the glob. | P12 | Probed |
 | 58 | Worked divisions query: `country='US' AND subtype='region' AND is_land` on `division_area` returned Hawaii `a2a08395-...` (US-HI), Texas, Arizona, New Mexico, Oklahoma in 14 s. The US country row is `f39eb4af-5206-481b-b19e-bd784ded3f05`, `admin_level=0`. | P13 | Probed |
@@ -74,6 +74,7 @@ Sources: `research/sources/duckdb-2.0/core_extensions/spatial/{overview,function
 | 64 | `h3_cell_to_latlng(cell)` returns `DOUBLE[]` `[lat,lng]`, not a struct. `h3_cell_to_boundary_wkt` returns lon/lat WKT; `ST_GeomFromWKB(h3_cell_to_boundary_wkb(cell))` works. | P15 | Probed |
 | 65 | `h3_grid_disk(cell, 1)` returns 7 cells including the center. `h3_cell_area` units are `'m^2'` and `'km^2'`; `'m2'` and `'km2'` raise `Invalid unit`. Res 9 cell area is `105,884.83 m²`; res 15 is `0.90 m²`. | P15 | Probed |
 | 66 | Polygon fill: `h3_polygon_wkt_to_cells`, `h3_polygon_wkb_to_cells`, and `h3_cells_to_multi_polygon_wkt` exist. Use the WKT/WKB bridge to `GEOMETRY`. | P15 function list | Probed |
+| 67 | `ST_Distance_Sphere` exists and is setting-sensitive. It returns Haversine meters and accepts a per-call `always_xy` boolean; `ST_Distance_Spheroid` returns ellipsoid meters and is slower. P3 measured 5,566,411.6 m with `always_xy=true` and 8,244,712.5 m with `false` for the same lon/lat input. | P3; probe 2026-10-26 | Probed |
 
 ## Existing skill audit
 
@@ -84,9 +85,9 @@ Sources: `research/sources/duckdb-2.0/core_extensions/spatial/{overview,function
 | `duckdb-spatial` | "Real-world distance and area use the spheroid functions, and those functions want `POINT_2D`." | **Wrong** | Only `ST_Distance_Spheroid` wants two `POINT_2D`. `ST_Area_Spheroid` takes `GEOMETRY`/`POLYGON_2D`; `ST_Length_Spheroid` takes `GEOMETRY`/`LINESTRING_2D`. |
 | `duckdb-spatial` | Overture geometry is generic; "Extract coordinates, then cast" + `ST_Point(ST_X(geometry), ST_Y(geometry))::POINT_2D` | Correct, and necessary | Direct `geometry::POINT_2D` fails on `GEOMETRY('OGC:CRS84')`. Keep the rebuild; explain that the rebuild strips the CRS type. |
 | `duckdb-spatial` | "`ST_Distance` on lon/lat is a planar number, not meters." | Correct | Keep. Add `ST_Distance_Sphere` (Haversine, faster) vs `ST_Distance_Spheroid` (ellipsoid, slowest). |
-| `duckdb-spatial` | "Filter with `bbox.xmin` and `bbox.ymin` before any `ST_*` call." | Correct but thin | Keep. Add: for polygons it is a coarse prefilter, not exact; follow with `ST_Intersects`. |
+| `duckdb-spatial` | "Filter with `bbox.xmin` and `bbox.ymin` before any `ST_*` call." | Correct for points, wrong for lines and polygons | Keep for point themes. For lines and polygons use full overlap on both axes, then `ST_Intersects`. |
 | `duckdb-spatial` | "For point data the partition column is the min corner." | **Wrong terminology** | `bbox` is a per-row struct, not a partition column. Hive partitions are `theme=`/`type=`. For points the bbox min corner equals the point. |
-| `duckdb-spatial` | "A predicate on `xmax` and `ymax` drops edge partitions." | **Wrong if generalized** | For points it is redundant; for polygons it can drop a feature that starts left/below but intersects the box. Do not use `xmax`/`ymax` as an inclusion filter for polygons. |
+| `duckdb-spatial` | "A predicate on `xmax` and `ymax` drops edge partitions." | **Wrong if generalized** | For points it is redundant. For lines and polygons, `xmin`/`ymin` drops features that start outside and `xmax`/`ymax` drops features that end outside. Use full overlap on both axes. |
 | `duckdb-spatial` | `ST_Read('file.geojson')`; Shapefile, GeoPackage, GPX use the same function | Correct | Keep. Add `OGC_FID`; GPX **writing** is schema-limited (only GPX fields). GPX reading was not exercised. |
 | `duckdb-spatial` | `COPY ... (FORMAT GDAL, DRIVER 'GeoJSON')` | Correct | Keep, but note native `COPY ... (FORMAT GEOJSON)` is new in 2.0, simpler, and avoids single-threaded GDAL. Prefer native for GeoJSON; GDAL for GPKG/FGB/SHP. |
 | `duckdb-spatial` | `INSTALL h3 FROM community`; no API details | Correct but thin | Add `h3_latlng_to_cell(lat,lng,res)`, `h3_cell_to_boundary_wkt`, `h3_grid_disk`, `h3_cell_area(...,'m^2')`, resolution 0-15. |
@@ -105,7 +106,7 @@ Sources: `research/sources/duckdb-2.0/core_extensions/spatial/{overview,function
 | 1 | Current Overture schema: places/taxonomy, divisions/division_area, buildings, transportation, addresses, base; exact theme/type paths | The old `categories.primary` and `places`-only mental model produces binder errors and wrong filters | `references/overture.md` |
 | 2 | `geometry_always_xy` is mandatory in 2.0 and errors, not silently flips | An agent that omits it gets a hard failure on the first transform or spheroid call | SKILL.md |
 | 3 | CRS-typed geometry cannot cast to `POINT_2D`; rebuild via `ST_Point(ST_X,ST_Y)` | Direct cast is the obvious simplification and it fails on real Overture data | SKILL.md |
-| 4 | `bbox` prefilter is exact for points, coarse for polygons; pair with `ST_Intersects` | Prevents both missed rows and expensive full scans | SKILL.md |
+| 4 | `bbox` prefilter is exact for points. For lines and polygons use full overlap on both axes, then `ST_Intersects`. | Prevents both missed rows and expensive full scans | SKILL.md |
 | 5 | R-tree in 2.0: `ST_DWithin` and spatial joins use it; `ST_Distance` does not | Agents choose the wrong predicate or skip indexing | SKILL.md |
 | 6 | Native GeoJSON/GeoParquet paths vs GDAL; `ST_Write` absent | Prevents inventing `ST_Write` and needless GDAL serialization | SKILL.md + `references/overture.md` |
 | 7 | CRS type + `ST_Transform(geom,target)` + `duckdb_coordinate_systems()` | Agents can transform typed data without repeating source CRS | SKILL.md |
@@ -125,7 +126,7 @@ Sources: `research/sources/duckdb-2.0/core_extensions/spatial/{overview,function
 | `ST_X`/`ST_Y` on any geometry | `ST_X only supports POINT geometries` | Guard with `ST_GeometryType(g)='POINT'` or use the point column | P4 |
 | `ST_Contains` for a boundary point | Returns false | Use `ST_Covers` or `ST_Intersects` when the boundary counts | P5 |
 | `ST_Distance` for a radius search | Plan is `Seq Scan`; no R-tree | `ST_DWithin(geom, point, d)` or bbox first | P7 |
-| Using `xmax`/`ymax` to filter polygons | Can drop a polygon that starts left/below but intersects the box | Use `xmin`/`ymin` as a coarse prefilter, then `ST_Intersects` | Fact 55; schema/places |
+| Using a single bbox bound to filter lines or polygons | `xmin`/`ymin` drops features that start outside; `xmax`/`ymax` drops features that end outside | Use full overlap on both axes, then `ST_Intersects` | Fact 55; probe 2026-10-26 |
 | `ORDER BY distance` on bbox-filtered Overture places | `INTERNAL Error: Vector::Reference ... STRUCT ... referenced DOUBLE` | Wrap the filtered scan in `WITH ... AS MATERIALIZED`, then order | P14 |
 | Assuming GeoParquet geometry stats prune row groups | DuckDB 2.0 writes `stats_min_value = NULL` for `GEOMETRY`; `&&` scanned 10/10 row groups | Add a `bbox` struct column or filter on a scalar column; use a real bbox column for pruning | P16 |
 | Downloading a whole theme | Places ~5.5M rows; buildings 512 files; a 0.002° building bbox took 2:36 just in footers | Always bbox-filter; for repeated work make a regional extract | P12; fact 45 |
@@ -260,6 +261,7 @@ P12 $ SELECT count(*) AS buildings, round(avg(height),1) AS avg_h, max(height) A
       AND bbox.ymin BETWEEN 40.747 AND 40.749
       AND ST_Intersects(geometry, ST_MakeEnvelope(-73.986,40.747,-73.984,40.749));
     18 | 45.5 | 73.3       -- 2:36 total; 512 building files
+    -- min-corner is safe only for points; use full overlap for buildings
 
 P13 $ SELECT division_id, names.primary, country, region, admin_level, is_land, is_territorial
     FROM read_parquet('.../theme=divisions/type=division_area/*.parquet')
@@ -297,6 +299,17 @@ P17 $ for t in addresses base buildings divisions places transportation; fetch .
 P18 $ SELECT ST_CRS(geom) FROM ST_Read('pts.geojson') -> EPSG:4326
     SELECT ST_CRS(geometry) FROM read_json('pts.geojson', geojson:=true) -> NULL
     ST_AsGeoJSON(ST_Point(...)) -> JSON {"type":"Point","coordinates":[-73.985,40.748]}
+
+P19 $ SET geometry_always_xy=true;
+    WITH t AS (SELECT ST_MakeLine(ST_Point(-74.02,40.75), ST_Point(-74.0,40.75)) AS line)
+    SELECT ST_XMin(ST_Extent(line)), ST_Intersects(line, ST_MakeEnvelope(-74.01,40.72,-73.96,40.77)),
+           (ST_XMin(ST_Extent(line)) BETWEEN -74.01 AND -73.96) FROM t GROUP BY line;
+    -74.02 | true | false
+    SELECT ST_Area_Spheroid(ST_Point(10,20)::POINT_2D), ST_Length_Spheroid(ST_Point(10,20)::POINT_2D);
+    0.0 | 0.0
+    SELECT ST_Distance_Sphere(ST_Point(-73.985,40.748), ST_Point(-73.97,40.76)),
+           ST_Distance_Spheroid(ST_Point(-73.985,40.748)::POINT_2D, ST_Point(-73.97,40.76)::POINT_2D);
+    1837.62 | 1838.57
 ```
 
 ## Open questions

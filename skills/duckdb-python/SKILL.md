@@ -29,9 +29,21 @@ con = duckdb.connect("app.duckdb", read_only=True)
 con = duckdb.connect(config={"threads": 4, "memory_limit": "2GB"})
 ```
 
-`check_same_thread` is not a 2.0 option; it raises `TypeError`. Give each thread its own `con.cursor()`. A cursor has its own transaction and session settings; closing a connection closes all its cursors. `read_only=True` rejects writes and will not create a missing file. `config={"extension_directories": ["/path"]}` works; the singular `extension_directory` is silently ignored. Because `max_temp_directory_size` in `config` is ignored, set it with `SET` after connecting.
+`check_same_thread` is not a 2.0 option; it raises `TypeError`. Give each thread its own `con.cursor()`. A cursor has its own transaction and connection-local settings such as `search_path`; some settings are database-global. Closing a connection closes all its cursors. `read_only=True` rejects writes and will not create a missing file. `config={"extension_directories": ["/path"]}` works. The singular `extension_directory` is deprecated but still effective; prefer the plural list. Because `max_temp_directory_size` in `config` is ignored for enforcement, set it with `SET` after connecting.
 
-`duckdb.sql()` and `duckdb.execute()` use a module-level default connection. A second connection to the same file is a second writer and will conflict. Use one connection per process, or `read_only=True` for readers. When running Python functions inside SQL queries, use a separate `con.cursor()`.
+`duckdb.sql()` and `duckdb.execute()` use a module-level default connection. `duckdb.connect()` returns an explicit connection. Two read-write connections to one file in one process are legal under MVCC; a read-only connection alongside them fails with a different-configuration error. Use one connection plus cursors unless independent transactions are needed. See `duckdb-session` for the file-lock model. When running Python functions inside SQL queries, use a separate `con.cursor()`.
+
+## Connection and result lifecycle
+
+| Step | Rule |
+| --- | --- |
+| Scope | `duckdb.sql()` uses the module default. `duckdb.connect()` returns an explicit connection. Pick one and pass it. |
+| Read vs write | `read_only=True` rejects writes and does not create a missing file. Do not open a read-only connection in a process that already has the same file read-write. |
+| Concurrency | One connection plus `con.cursor()` per thread. Two read-write connections in one process are legal under MVCC. Cross-process is one writer or many readers. |
+| Relation vs execute | `con.sql` is lazy for reads and runs once for DDL/DML. `con.execute` runs now and holds a result. `materialize()` if a read relation is reused. |
+| Finish a result | Fetch to the end, `complete()`, or `abort()` before `con.sql`, `con.query`, or an appender `flush()`. A new `execute()` replaces an open result silently. |
+| Transaction | A failed statement aborts the transaction. `commit()` rolls back; `rollback()` after that commit errors. Start a new transaction before retrying. |
+| Appender | `flush()` on success, `clear()` to discard. No `close()`. `key` is for update and delete only; upsert uses the PK or unique constraint. |
 
 To keep a file readable by DuckDB 1.5:
 
@@ -68,7 +80,7 @@ Apply the row that matches the code you are editing.
 | `con.values({1: "a"})` | A dict with non-string keys becomes a `MAP`. For a `STRUCT`, use string keys. |
 | `rel.offset` when `offset` is a column | `rel["offset"]`. Relations gained methods named `offset`, `sample`, `head`, `rename`, `pivot`, `drop`, `unnest`, `unpivot`, `preview`, and `group_by`. |
 | `con.sql("CREATE TABLE ...")` | Runs once at the call. Printing the returned relation does not run the DDL or DML again. When you do not want a relation, use `con.execute()`. Only a read relation reruns. |
-| Another query while `execute()` rows are unread | `ResourceInUseException` until the result is consumed or you call `con.complete()` or `con.abort()`. The next `execute()` replaces the open result. |
+| Another query while a streaming `execute()` result is unread | `sql` and `query` raise `ResourceInUseException` until the result is consumed or ended with `con.complete()` or `con.abort()`. A new `execute()` replaces the open result silently. Small results may be buffered. |
 | Several threads calling one connection | `ResourceInUseException`. Give each thread `con.cursor()`. |
 | A failed `execute()` inside `con.begin()` | Aborts the transaction. `commit()` rolls back and closes it. Call `rollback()` before more SQL, or accept `commit()` as the rollback; a `rollback()` after that `commit()` errors. |
 | `rel.write_csv(path, overwrite=False)` and `write_parquet(..., overwrite=False)` | Raise `IOException` if the file exists. Omit `overwrite` to replace the file. With `partition_by`, only `overwrite=True` writes into a non-empty directory. |
@@ -76,7 +88,7 @@ Apply the row that matches the code you are editing.
 | Arrow batches of 1,000,000 rows | Default batch size is 131072. Pass `batch_size`. |
 | A file written for DuckDB 1.5 | 2.0 can open it. A file 2.0 writes in the default format cannot be opened by 1.5. Pin it with `storage_compatibility_version`. |
 
-When rows remain unread after `con.execute().fetchone()`, calling `con.sql()`, `con.query()`, or an appender `flush()` on that connection raises `ResourceInUseException`. A subsequent `con.execute()` replaces the open result. To clear an open result, consume all rows, call `con.complete()`, call `con.abort()`, or use a separate cursor.
+When rows remain unread after `con.execute().fetchone()`, a streaming result makes `con.sql()`, `con.query()`, or an appender `flush()` raise `ResourceInUseException`. A new `con.execute()` replaces the open result silently. Small results may be buffered, so do not rely on the exception as a guard. To clear an open result, consume all rows, call `con.complete()`, call `con.abort()`, or use a separate cursor.
 
 ## Arrow, pandas, and Polars
 
@@ -110,7 +122,7 @@ with con.appender("people") as appender:
     appender.append_rows([(2, "Grace"), (3, "Edsger")])
 ```
 
-The appender also supports `action="upsert"`, `"update"`, and `"delete"` with a `key`, a `columns` subset, and `con.query_appender(statement, columns, source=...)` for custom SQL. The appender has no `close()` method; call `clear()` to discard buffered rows. Do not share an appender across threads. Finish open `execute()` results before calling `flush()`. A `with` block flushes on success and discards buffered rows on an exception. Outside a `with` block, call `flush()`.
+The appender supports `action="insert"`, `"upsert"`, `"update"`, and `"delete"`. `update` and `delete` take `key`, a list of key columns. `upsert` uses the table's primary key or unique constraint and rejects `key`. `columns` is a list, and `con.query_appender(statement, columns, source=...)` takes a dict of column names to types. The statement reads `appender_data`; the optional source query reads `appender_buffer`. The appender has no `close()` method; call `clear()` to discard buffered rows. Do not share an appender across threads. Finish open `execute()` results before calling `flush()`. A `with` block flushes on success and discards buffered rows on an exception. Outside a `with` block, call `flush()`.
 
 ## Verify
 

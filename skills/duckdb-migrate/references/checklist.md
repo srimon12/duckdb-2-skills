@@ -32,7 +32,7 @@ List every service, cron job, notebook, and library that opens a `.duckdb` file.
 
 ## Phase 1: pin the storage format
 
-If any process stays on 1.4 or 1.5, create new files with a compatible version.
+If any process stays on 1.4 or 1.5, create new files with a compatible version. Use `v1.5.6` for a 1.5 reader (68, tag `v1.5.0+`) and `v1.4.0` for a 1.4 reader (67, tag `v1.4.0+`). A 1.4 reader cannot read 68.
 
 ```bash
 duckdb my.db -storage-version v1.5.6 -c "CREATE TABLE t (x INT);"
@@ -47,6 +47,7 @@ In Python:
 
 ```python
 duckdb.connect("my.db", config={"storage_compatibility_version": "v1.5.0"})
+# For a 1.4 reader, use "v1.4.0" instead.
 ```
 
 **Gate:** `tags['storage_version']` reports the expected floor, not `v2.0.0+`, for every file an older process reads.
@@ -93,11 +94,9 @@ Arrow syntax also appears in JSON and in C code. Review each hit.
 
 ## Phase 3: settings and CLI
 
-- Replace `-csv` with `-agent` for output a model reads, and `-json` for output a parser reads.
 - Replace removed settings.
-- Verify `max_execution_time` uses milliseconds.
-- Check `~/.duckdbrc` for a mode or startup setting that hides agent mode. Use `-no-init` to test without it.
 - Check scripts that parse errors. Agent mode writes JSON to stderr; `-json` writes text errors to stderr and can leave a partial `[` on stdout.
+- Use `duckdb` for output mode, `max_execution_time`, and `~/.duckdbrc` checks.
 
 **Gate:** a representative command produces the expected output under the new binary.
 
@@ -125,9 +124,9 @@ duckdb mydata.old.db -c "EXPORT DATABASE 'tmp'"
 duckdb mydata.new.db -c "IMPORT DATABASE 'tmp'"
 ```
 
-`EXPORT DATABASE` writes CSV by default; add `(FORMAT parquet)` if you expect Parquet. The export directory should be empty, and `IMPORT DATABASE` needs a fresh database.
+`EXPORT DATABASE` writes CSV by default; add `(FORMAT parquet)` if you expect Parquet. The export directory should be empty. `IMPORT DATABASE` may target a database with unrelated objects; any same-named object aborts.
 
-To copy between attached databases, ensure the target is empty. The target storage version controls the output:
+To copy between attached databases, the target may hold unrelated objects; any same-named object aborts. The target storage version controls the output:
 
 ```sql
 ATTACH 'old.db' AS old (READ_ONLY);

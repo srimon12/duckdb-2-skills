@@ -78,7 +78,8 @@ Then close every process using the cache, `mv /absolute/cache.tmp "$HOME/.duckdb
 | Storage | DuckDB line | 2.0 read/write | 1.5.6 read |
 |---|---|---|---|
 | 64, 65, 66 | 0.9-1.3; 64 is the default for 1.0-1.5 | yes | yes |
-| 67, 68 | 1.4, 1.5 (68 is opt-in) | yes | yes |
+| 67 | 1.4 | yes | yes |
+| 68 | 1.5 (opt-in) | yes | yes |
 | 69 | 2.0 default | yes | no |
 | 999 | 2.0 header sentinel, not a version | n/a | 69 (1.5.6) / 999 (1.5.5) |
 
@@ -137,7 +138,7 @@ Then close every process using the cache, `mv /absolute/cache.tmp "$HOME/.duckdb
 | # | Phase | Concrete action | Gate |
 |---|---|---|---|
 | 70 | Inventory | `duckdb --version`; `which -a duckdb`; `SELECT version();`; `duckdb_databases()` tags/paths; `duckdb_extensions()`; `duckdb_settings()`; list every process, service, notebook, and client. | Every shared file has an owner and a binary/version. |
-| 71 | Compatibility pin | If any reader stays on 1.4/1.5, create new files with `-storage-version v1.5.6` or `ATTACH ... (STORAGE_VERSION 'v1.5.6')` **at creation**. Never `ATTACH` an existing file with `latest` unless an upgrade is intended. | `tags` shows the expected floor (`v1.5.0+`), not `v2.0.0+`. |
+| 71 | Compatibility pin | If any reader stays on 1.4/1.5, create new files with the oldest reader's pin at creation: 1.4 uses `v1.4.0` (67, tag `v1.4.0+`), 1.5 uses `v1.5.6` (68, tag `v1.5.0+`). A 1.4 reader cannot read 68. Never `ATTACH` an existing file with `latest` unless an upgrade is intended. | `tags` shows the expected floor, not `v2.0.0+`. |
 | 72 | Backup | Stop writers, `CHECKPOINT`, copy the `.db` and any `.wal`; optionally `EXPORT DATABASE 'backup' (FORMAT parquet)`; open the backup read-only and count rows. | Restore tested, not just written. |
 | 73 | Shadow copy | Run the real workload against the backup/copy with 2.0; compare row counts, aggregates, `SUMMARIZE`, plans, extensions. | Every difference explained. |
 | 74 | Test | Application suite, Python 3.11+, extension loads, storage tags, views/indexes/constraints/sequences/macros, agent-mode output. | Suite passes on the shadow. |

@@ -1,15 +1,15 @@
 ---
 name: duckdb-docs
 description: >
-  Answer DuckDB and DuckLake questions from the official full-text search
+  Look up exact DuckDB 2.0 and DuckLake manual text in the official full-text
   indexes. Covers index versions, the BM25 query, caching, and URL handling.
-  Use when a 2.0 function signature, setting, or behavior needs the current
-  manual instead of a guess.
+  Use when a signature, setting, or page needs the current manual and no task
+  skill owns the procedure.
 ---
 
 # Docs search
 
-Before guessing a signature, query the hosted index. Answer from the returned chunks, and cite the page.
+Before guessing a signature, query the hosted index. Use this skill only when no task skill owns the procedure. Answer from the returned chunks, and cite the page.
 
 ## Index versions
 
@@ -79,7 +79,7 @@ duckdb -readonly "$HOME/.duckdb/docs/duckdb-docs.duckdb" -c \
   "LOAD fts; SELECT version, count(*) FROM docs_chunks GROUP BY version;"
 ```
 
-Expect `2.0` and `blog`, with no `lts` or `current` row. A missing or empty result means the cache is stale or the copy failed. On 2026-10-22 the counts were `2.0=2695`, `blog=999`, and DuckLake `stable=198`. A count change is a refresh signal; a missing `2.0` or `stable` row is decisive.
+Expect `2.0` and `blog`, with no `lts` or `current` row. Expect roughly 2,700 `2.0` chunks, 1,000 `blog` chunks, and about 198 DuckLake `stable` chunks. A missing `2.0` or `stable` row is decisive; a count change is a refresh signal.
 
 ## References
 
@@ -87,4 +87,4 @@ Expect `2.0` and `blog`, with no `lts` or `current` row. A missing or empty resu
 - [DuckLake search index](https://ducklake.select/data/docs-search.duckdb) is the stable DuckLake manual.
 - [Full-text search extension](https://duckdb.org/docs/2.0/core_extensions/full_text_search.html) owns the `match_bm25` signature.
 - [What's new in the 2.0 docs](https://duckdb.org/docs/2.0/whats_new_in_the_docs.html) is a useful fallback when a term is new.
-- Index counts and the BM25 subquery were checked on 2026-10-22 against DuckDB 2.0.0. The current counts live in `research/09-verified-facts.md`.
+- The index schema and the BM25 subquery were checked against DuckDB 2.0.0.

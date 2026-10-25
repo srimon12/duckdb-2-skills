@@ -10,7 +10,7 @@ Probe IDs refer to the probe log. `P*` = run on the local binary; `Documented` =
 
 | # | Claim | Evidence | Confidence |
 |---|---|---|---|
-| F1 | `FROM t WHERE x > 10` is valid, selects all columns, and composes with `GROUP BY` / `ORDER BY`. | P1; `sql/query_syntax/from.md` §FROM-first; `sql/dialect/friendly_sql.md` | Probed |
+| F1 | `FROM t WHERE x > 10` is valid, selects all columns, and composes with `GROUP BY` / `ORDER BY`. A `WHERE` before an explicit `SELECT` is a parser error; put `SELECT` before `WHERE`. | P1; `sql/query_syntax/from.md` §FROM-first; `sql/dialect/friendly_sql.md` | Probed |
 | F2 | `GROUP BY ALL` infers groups from non-aggregate select expressions; `ORDER BY ALL` orders by every output column. | P1; `sql/query_syntax/groupby.md`, `orderby.md` | Probed |
 | F3 | `SELECT * EXCLUDE (a,b)` and `SELECT * REPLACE (expr AS a)` work; `EXCEPT` is an exact synonym for `EXCLUDE` in a star expression as of 2.0. | P1; `sql/expressions/star.md` §EXCLUDE | Probed |
 | F4 | `count()` with no argument is `count(*)`; `count() FILTER (WHERE ...)` works. | P1; `sql/functions/aggregates.md` | Probed |
@@ -51,7 +51,7 @@ Probe IDs refer to the probe log. `P*` = run on the local binary; `Documented` =
 | F39 | `EXPLAIN` estimates without executing; `EXPLAIN ANALYZE` executes and reports actual cardinalities and operator timings. Profiling uses `SET enable_profiling` + `SET profiling_output`; `SET tracked_metrics=['query.*','operator.*']` filters metrics. Min-max zonemaps are automatic; ART indexes serve PK/UNIQUE and point lookups. | P14; `sql/statements/profiling.md`; `sql/indexes.md` | Probed |
 | F40 | `query('SELECT ...')` and `query_table('name')` work with literal/constant strings and prepared parameters; column references are rejected (`The function only supports literals as parameters`). | P10; `guides/sql_features/query_and_query_table_functions.md` | Probed |
 | F41 | The PEG parser is the default; `enable_peg_parser()` is gone. Errors include `LINE n:` and a caret. `SET enable_legacy_parser = true` autoloads `legacy_parser`; the setting alone is enough. | P12; `sql/peg_parser.md`; `core_extensions/legacy_parser.md` | Probed |
-| F42 | The legacy parser is not a strict 1.x dialect: it accepted `$x`, `FETCH FIRST`, data-modifying CTEs, backticks, `SHOW`, `CREATE TRIGGER`, and `SECURE VIEW` in probes, but rejected `NEAREST`. The documented legacy quirks (`~` full match, `B'0101'` as varchar, `ORDER BY true`) did not reproduce. | P12; `core_extensions/legacy_parser.md` | Probed, manual disagrees |
+| F42 | The legacy parser is not a strict 1.x dialect: it accepted `$x`, `FETCH FIRST`, data-modifying CTEs, backticks, `SHOW`, `CREATE TRIGGER`, and `SECURE VIEW` in probes. It rejected the simplified `FROM ... NEAREST` form; an explicit `INNER JOIN ... NEAREST` parsed. The documented legacy quirks (`~` full match, `B'0101'` as varchar, `ORDER BY true`) did not reproduce. | P12; `core_extensions/legacy_parser.md` | Probed, manual disagrees |
 | F43 | `USING SAMPLE` is written after `WHERE`/`GROUP BY` but applied to the `FROM` result before them, so `WHERE` filters the sample rather than sampling the filtered result. | `sql/query_syntax/sample.md`; `sql/dialect/sql_quirks.md` §USING SAMPLE | Documented |
 | F44 | Type facts: `VARIANT` is typed binary, keys sorted, with `variant_typeof` and dot extraction; `UNION` is a tagged union with `union_value(tag := expr)` and `union_tag`; `MAP` bracket lookup returns `NULL` for a missing key while `map_extract` returns `[]`; `ARRAY` is fixed-length, `LIST` variable-length, both 1-based; `ENUM` compares in declaration order. | P17; `sql/data_types/variant.md`, `union.md`, `map.md`, `array.md`, `list.md`, `enum.md` | Probed/Documented |
 | F45 | `QUALIFY` filters on window-function results in the same `SELECT`, so no extra subquery is needed. | P13; `sql/query_syntax/qualify.md` | Probed |
@@ -85,6 +85,8 @@ Every row was probed; “Transition” means `REFERENCING OLD TABLE` / `NEW TABL
 | any | view | any | any | fails | `CREATE TRIGGER requires a base table, not a view or subquery` |
 | any | any | any | `CREATE TEMP TRIGGER` | fails | `Parser Error: Temporary triggers are not supported` |
 | any | temp table | any | body uses temp objects | works | trigger is `temporary = true` in `duckdb_triggers()` |
+| any | temp table | any | body uses a main-catalog table | fails | `Binder Error: Trigger "x" cannot reference "a" from a different catalog ("memory")` |
+| any | any | mixed STATEMENT and ROW on one table | any | fails | `Not implemented Error: Mixing FOR EACH STATEMENT and FOR EACH ROW triggers on the same table is not yet supported` |
 | any | any | any | duplicate name on same table | fails | `Catalog Error: Trigger with name "trg" already exists!` |
 | any | any | any | `CREATE OR REPLACE` / `IF NOT EXISTS` | works | the two clauses cannot be combined |
 
@@ -181,7 +183,7 @@ Additional trigger facts: a trigger body is exactly one data-modifying statement
 | duckdb-sql | “`SET VARIABLE x = 7; SELECT $x;` ... `getvariable('x')` still works. Write `$x` in new SQL.” | thin | Add: `$undefined` raises, `getvariable` returns `NULL`; `$x` is a prepared parameter and can be a default for a named parameter. |
 | duckdb-sql | “2.0 syntax to look up before inventing a statement: `NEAREST` joins, data-modifying CTEs, `FETCH FIRST`, backtick-quoted identifiers, and `EXPLAIN (SQL)`.” | thin | The list is incomplete and the promised pages are not in the reference list. Add `MERGE`, `SHOW`, `SECURE VIEW`, `setval`, `regexp_extract` options, `GROUP BY UNNEST`, empty `STRUCT`, `TIMESTAMPTZ_NS`, `lttb`, `decimal_division`, no-arg `GROUPING_ID`, view rename, `query()`/`query_table()`. |
 | duckdb-sql | “The PEG parser is the default. A query that parsed on 1.x should still parse, and errors include a source location.” | thin | Default and locations are correct; “should still parse” is an intent, not a guarantee. Say “if it parsed on 1.5 and fails, file an issue before falling back”. |
-| duckdb-sql | “`INSTALL AND LOAD legacy_parser; SET enable_legacy_parser = true;`” | thin | Works, but `SET enable_legacy_parser=true` autoloads the extension; `INSTALL AND LOAD` is redundant. The legacy parser rejects `NEAREST` and did not reproduce the manual's listed quirks. |
+| duckdb-sql | “`INSTALL AND LOAD legacy_parser; SET enable_legacy_parser = true;`” | thin | Works, but `SET enable_legacy_parser=true` autoloads the extension; `INSTALL AND LOAD` is redundant. The legacy parser rejects the simplified `FROM ... NEAREST` form; an explicit `INNER JOIN ... NEAREST` parses. It did not reproduce the manual's listed quirks. |
 | duckdb-sql | “File the query if you need the fallback.” | wrong | Typo/incorrect instruction: file an issue against DuckDB; do not preserve a silent-semantics fallback. |
 | duckdb-sql | “Do not leave `legacy_parser` in a script you generate for someone else unless they asked.” | correct | Keep. |
 | duckdb-sql | Reference list of 7 links. | thin | Missing the pages for `NEAREST`, data-modifying CTEs, `FETCH FIRST`, backticks, `EXPLAIN (SQL)`, `SHOW`, `MERGE`, triggers beyond the one page, and nested-schema introspection. Add a compact “See also” block or move the friendly-SQL links into the new reference. |
@@ -212,7 +214,7 @@ Reference split: `SKILL.md` keeps decisions and traps (triggers, division, neste
 | Decimal division | Any division involving `DECIMAL` returns a floating-point type; `5::DECIMAL(10,2)/2` is `2.5` DOUBLE, and `5.5 // 2` is `2.75`. | Use `decimal_division(x,y)` or `decimal_average` for exact money/ratio arithmetic; `//` is only integer division when both operands are integers. | P8; `sql/data_types/numeric.md` §Division; `sql/functions/numeric.md` |
 | `//` negative values | `-5 // 2` is `-2` (truncation), while `fdiv(-5,2)` is `-3.0` (floor). | Choose `//` for truncation and `fdiv` for floor; document which one the business rule means. | P8 |
 | Window default frame | `sum(x) OVER (ORDER BY x)` uses `RANGE UNBOUNDED PRECEDING TO CURRENT ROW`, so tied `x` values all receive the same cumulative sum. | Use `ROWS BETWEEN ...` for a row-by-row running total; use `RANGE` only when peers should share the value. | P13 |
-| `APPROX_COUNT_DISTINCT` | On 1M values it returned `99467` vs exact `100000` (≈0.5% low). | Use `count(DISTINCT x)` when the number is user-visible or feeds a decision; use approximate only for exploration. | P13 |
+| `APPROX_COUNT_DISTINCT` | On 1M sequential values it returned `982272` vs exact `1000000` (1.77% low; the error is data-dependent). | Use `count(DISTINCT x)` when the number is user-visible or feeds a decision; use approximate only for exploration. | P13 |
 | Empty-group aggregates | `sum`, `list`, and `string_agg` return `NULL` on an empty group, not `0`/`[]`/`''`; `count` returns `0`. | `coalesce(sum(x), 0)` when a numeric zero is required; do not assume `sum` is zero on no rows. | P13; `sql/dialect/sql_quirks.md` §Aggregating Empty Groups |
 | `sum()` overflow | `sum(INT)`/`sum(BIGINT)` widen to `HUGEINT`, but `sum(DECIMAL(38,0))`/`sum(HUGEINT)` can overflow; `sum(DOUBLE)` is floating-point. | Cast to `DECIMAL(38,s)` deliberately or use `decimal_average`; don't assume “sum of integers cannot overflow” at the HUGEINT boundary. | P13 |
 | Timestamp time zones | `DATE -> TIMESTAMPTZ` uses the session time zone (epoch differs by zone); `TIMESTAMPTZ -> TIMESTAMP` returns local wall time; display follows the session zone. | Store instants as `TIMESTAMPTZ`, do date arithmetic in a chosen zone (`timezone('UTC', ts)`), and set the session zone explicitly in reproducible scripts. | P13; `guides/sql_features/timestamps.md` |
@@ -221,7 +223,7 @@ Reference split: `SKILL.md` keeps decisions and traps (triggers, division, neste
 | Simplified `UNPIVOT` | Drops rows whose value is `NULL`; `INCLUDE NULLS` is only in the SQL-standard `FROM ... UNPIVOT (...)` form. | Use the standard form with `INCLUDE NULLS` when NULL rows matter. | P10; `sql/statements/unpivot.md` |
 | `COPY` in a CTE | The file is written, but the outer query returns zero rows; the manual says the CTE returns the number of rows written. | Treat the `COPY` CTE as a side effect only; do not `SELECT rows_written` in 2.0.0. | P4; `sql/statements/copy.md` §COPY TO |
 | Trigger `RETURNING` | The restriction is per matching event: INSERT RETURNING fails with an INSERT row trigger, DELETE RETURNING fails with a DELETE row trigger, but UPDATE RETURNING works with an INSERT row trigger. | Check the trigger's event, not just “the table has a row trigger”. | P6 |
-| Legacy parser | `SET enable_legacy_parser=true` is a grammar fallback, not a semantic time machine: it rejected `NEAREST`; the manual's listed quirks did not reproduce. | Use it only to test a 1.5 query that fails on PEG, file an issue, and remove it from saved scripts. | P12 |
+| Legacy parser | `SET enable_legacy_parser=true` is a grammar fallback, not a semantic time machine: it rejects the simplified `FROM ... NEAREST` form, while an explicit `INNER JOIN ... NEAREST` parses; the manual's listed quirks did not reproduce. | Test the exact query. Use it only to unblock a 1.5 query that fails on PEG, file an issue, and remove it from saved scripts. | P12 |
 | Identifier-to-string | `glob(no_such_file.csv)` still works but logs a deprecation warning; `DISABLE_IMPLICIT_STRING` makes it a binder error. | Always quote file/table-function string arguments; the setting itself is deprecated. | P16; `sql/dialect/sql_quirks.md` §Implicit Conversion |
 | `USING SAMPLE` placement | Written after `WHERE`/`GROUP BY`, applied before them, so `WHERE` filters after sampling and can leave fewer rows than the percentage suggests. | Put the filter in a subquery/CTE before sampling, or use `TABLESAMPLE` on the table expression. | Documented; `sql/query_syntax/sample.md` |
 | `DISTINCT ON` without `ORDER BY` | DuckDB executes it as `first()` per group; the chosen row is arbitrary. | Always add `ORDER BY` that starts with the `DISTINCT ON` expressions. | P13; `sql/query_syntax/select.md` §DISTINCT ON |
@@ -385,7 +387,8 @@ P12 $ duckdb -no-agent -csv :memory: -c "..." (parser probes)
     SELECT 1 +; -> Parser Error: syntax error at or near ";" / LINE 1: SELECT 1 +; / caret
     PRAGMA enable_peg_parser / SELECT enable_peg_parser() -> Catalog Error: no such function
     SET enable_legacy_parser=true; SELECT 42 -> 42 (setting autoloads legacy_parser)
-    legacy + NEAREST -> Parser Error: syntax error at or near "1"
+    legacy + simplified FROM ... NEAREST -> Parser Error: syntax error at or near "1"
+    legacy + INNER JOIN ... NEAREST -> row returned
     legacy + 'abc' ~ '^b' / 'b' -> false,true (same as PEG); B'0101'::VARCHAR -> BIT
     legacy + ORDER BY true -> Binder Error: ORDER BY non-integer literal has no effect
     legacy + INSTALL AND LOAD json -> exit 0 (manual says newer syntax rejected)
@@ -397,7 +400,7 @@ P13 $ duckdb -no-agent -csv :memory: < research/scratch/02-sql/traps.sql; window
     1='1', 1=' 1', 1='01', 1='1.1', 1=true -> true,true,true,true,true
     5/2,5//2,5.0/2,5::DECIMAL(10,2)/2 -> 2.5,2,2.5,2.5; typeof -> DOUBLE, DOUBLE
     sum(INT)/sum(BIGINT) -> HUGEINT; sum(DECIMAL(10,2)) -> DECIMAL(38,2)
-    approx_count_distinct over 1M values 0..99999 -> 99467 vs count(DISTINCT)=100000
+    approx_count_distinct over 1M values 0..999999 -> 982272 vs count(DISTINCT)=1000000
     DISTINCT ON (g) ... ORDER BY g,v DESC -> a,2 / b,3; without ORDER BY -> arbitrary first
     QUALIFY rn=1 -> a,2 / b,3
     default sum(x) OVER (ORDER BY x) -> 1:2, 1:2, 2:4, 3:7; ROWS -> 1:1, 1:2, 2:4, 3:7

@@ -13,12 +13,23 @@ Object-storage secrets and plain Parquet or CSV on S3 live in `duckdb-files`. Th
 
 Run SQL with the `duckdb` skill. `INSTALL AND LOAD` the needed extension (`ducklake`, `iceberg`, `delta`, or `unity_catalog`). They autoload on first use when install is allowed.
 
+## Identify the path first
+
+Identify the path before choosing the extension. If no signal is present, list the directory and stop. Do not glob the data directory to decide; a catalog is authoritative.
+
+| Signal | Format | First move |
+| --- | --- | --- |
+| `_delta_log/` | Delta | `delta_scan` or `ATTACH ... (TYPE delta)` |
+| `metadata/version-hint.text` and `metadata/*.metadata.json` | Iceberg | `iceberg_scan` or a REST attach |
+| `ducklake:` URI or `ducklake_*` metadata tables | DuckLake | `ATTACH 'ducklake:...'` |
+| Parquet or CSV files only | Files | `duckdb-files` |
+
 ## Choose the format
 
 | Format | Concurrent writers | Catalog | Time travel | DuckDB write support | Best fit |
 | --- | --- | --- | --- | --- | --- |
 | Native `.duckdb` | One writer process | None | No | Full DDL and DML | Single-process analytics, app state |
-| DuckLake | Yes, through the catalog database | DuckDB file, SQLite, or PostgreSQL | Snapshot id or timestamp | Full DDL, DML, `MERGE`, transactions | DuckDB-native lakehouse, multi-writer ACID |
+| DuckLake | Yes, through the catalog database | DuckDB file, SQLite, or PostgreSQL | Snapshot id or timestamp | DDL and DML with the limits below, `MERGE`, transactions | DuckDB-native lakehouse, multi-writer ACID |
 | Iceberg | Yes, through a REST catalog | REST catalog for writes | Snapshot id or timestamp | Create, insert, update, delete, merge, alter; merge-on-read only | Cross-engine lakehouse with an existing catalog |
 | Delta | Optimistic log; Unity for managed tables | None for an external table by path | Table version or timestamp | Create and append only | Reading existing Delta, append-only ingestion |
 
@@ -61,7 +72,7 @@ SELECT ducklake_current_snapshot('lake');
 
 `VERSION` is a snapshot id. A timestamp before the first snapshot or in the future fails. The `AT` expression cannot contain a subquery.
 
-Inside `CHECKPOINT`, maintenance runs in this order: flush inlined data, expire snapshots, merge adjacent files, rewrite data files, cleanup old files, delete orphaned files. `CHECKPOINT` can expire history and delete files, so set retention and back up before the first run.
+Inside `CHECKPOINT`, maintenance runs in this order: flush inlined data, expire snapshots, merge adjacent files, rewrite data files, cleanup old files, delete orphaned files. Back up first. Set `rewrite_delete_threshold`, `expire_older_than`, and `delete_older_than` with `lake.set_option`; `auto_compact=false` skips compaction; `ducklake_target_file_size` overrides `target_file_size`. Dry-run cleanup and orphan deletion. Thresholds are in [references/catalogs.md](references/catalogs.md).
 
 ```sql
 CALL ducklake_merge_adjacent_files('lake', 'orders', schema => 'sales', max_compacted_files => 10);
@@ -135,6 +146,7 @@ Catalog-managed tables, including Unity Catalog managed tables, cannot be read t
 ## Unity Catalog
 
 ```sql
+CREATE SECRET (TYPE s3, PROVIDER config, REGION 'us-east-1');
 CREATE SECRET uc (
     TYPE unity_catalog,
     TOKEN '...',
@@ -144,6 +156,8 @@ CREATE SECRET uc (
 
 ATTACH 'my_catalog' AS uc (TYPE unity_catalog, DEFAULT_SCHEMA 'main');
 ```
+
+Create the storage secret for the table path before `ATTACH`; the catalog secret only authenticates the REST endpoint. `DEFAULT_SCHEMA` is required for Unity Catalog OSS. Time travel uses `AT (VERSION => 5)` or `AT (TIMESTAMP => ...)`.
 
 Unity Catalog reads, inserts, and creates tables. It does not support `UPDATE`, `DELETE`, `DROP TABLE`, `ALTER TABLE`, or view and schema DDL. Managed tables use catalog-managed commits. `CHECKPOINT` does not apply; use `unity_catalog_checkpoint_table`. `USE_IRC_SCAN_PLAN` uses Databricks server-side planning, but tables with equality deletes fail under it.
 
