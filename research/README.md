@@ -38,5 +38,6 @@ The snapshots are reference copies. The live pages remain the source of truth. E
 | `10-query-diagnostics.md` | Plan reading, pushdown, joins, Parquet layout, UI caveat | Complete |
 | `11-file-to-parquet.md` | Batch ingest contract, overwrite behavior, task case | Complete |
 | `12-diagnostics-engine.md` | Plan JSON shapes, spill, profiling metrics, plan linter | Complete |
+| `13-search-sharing-integrations.md` | FTS, VSS, pagination, views-only sharing, dbt, BI, MCP | Complete |
 
 `METHOD.md` is the contract every slice follows. `08-skill-audit.md` is the merged verdict. `09-verified-facts.md` is the claim registry with probe commands.

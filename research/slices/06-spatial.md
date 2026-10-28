@@ -74,7 +74,7 @@ Sources: `research/sources/duckdb-2.0/core_extensions/spatial/{overview,function
 | 64 | `h3_cell_to_latlng(cell)` returns `DOUBLE[]` `[lat,lng]`, not a struct. `h3_cell_to_boundary_wkt` returns lon/lat WKT; `ST_GeomFromWKB(h3_cell_to_boundary_wkb(cell))` works. | P15 | Probed |
 | 65 | `h3_grid_disk(cell, 1)` returns 7 cells including the center. `h3_cell_area` units are `'m^2'` and `'km^2'`; `'m2'` and `'km2'` raise `Invalid unit`. Res 9 cell area is `105,884.83 m²`; res 15 is `0.90 m²`. | P15 | Probed |
 | 66 | Polygon fill: `h3_polygon_wkt_to_cells`, `h3_polygon_wkb_to_cells`, and `h3_cells_to_multi_polygon_wkt` exist. Use the WKT/WKB bridge to `GEOMETRY`. | P15 function list | Probed |
-| 67 | `ST_Distance_Sphere` exists and is setting-sensitive. It returns Haversine meters and accepts a per-call `always_xy` boolean; `ST_Distance_Spheroid` returns ellipsoid meters and is slower. P3 measured 5,566,411.6 m with `always_xy=true` and 8,244,712.5 m with `false` for the same lon/lat input. | P3; probe 2026-10-26 | Probed |
+| 67 | `ST_Distance_Sphere` exists and is setting-sensitive. It returns Haversine meters and has no per-call `always_xy` argument in 2.0; `ST_Transform` does. `ST_Distance_Spheroid` returns ellipsoid meters and is slower. With `geometry_always_xy=true`, the probe returned 111.1949 m; with `false`, 30.6775 m for the same lon/lat input. | P3; probe 2026-10-26 | Probed |
 
 ## Existing skill audit
 
@@ -177,8 +177,8 @@ P3  $ SET geometry_always_xy=true;
     -- unset: Invalid Configuration Error for ST_Distance_Spheroid / ST_Area_Spheroid / ST_Length_Spheroid
     ST_Area_Spheroid('POLYGON((0 0,0 1,1 1,1 0,0 0))'::GEOMETRY) = 12308778361.469452
     ST_Length_Spheroid('LINESTRING(0 0,1 1)'::GEOMETRY) = 156899.56829134029
-    ST_Distance_Sphere(lon/lat, true) = 5566411.618444781
-    ST_Distance_Sphere(lon/lat, false) = 8244712.451626792
+    ST_Distance_Sphere(lon/lat) with geometry_always_xy=true = 111.19492664497623
+    ST_Distance_Sphere(lon/lat) with geometry_always_xy=false = 30.677457571771576
 
 P4  $ LINESTRING literal as ::LINESTRING
     Binder Error: Type with name LINESTRING does not exist! Did you mean "LINESTRING_2D"?

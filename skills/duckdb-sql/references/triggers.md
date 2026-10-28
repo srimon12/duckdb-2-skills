@@ -66,6 +66,31 @@ CREATE TRIGGER trg_audit
         JOIN n ON o.id = n.id;
 ```
 
+## Incremental average
+
+The announcement's `age_statistics` example maintains an average from `AFTER INSERT` and `AFTER DELETE` statement triggers. It has no update trigger, so an update leaves the average stale.
+
+Add an `AFTER UPDATE` statement trigger. This form assumes the nationality does not change:
+
+```sql
+CREATE TRIGGER people_update
+AFTER UPDATE ON people
+REFERENCING OLD TABLE AS o NEW TABLE AS n
+FOR EACH STATEMENT
+    MERGE INTO age_statistics s
+    USING (
+        SELECT o.nationality, sum(n.age - o.age) AS delta
+        FROM o JOIN n ON o.name = n.name
+        GROUP BY o.nationality
+    ) d
+    ON s.nationality = d.nationality
+    WHEN MATCHED THEN UPDATE SET
+        sum_age = s.sum_age + d.delta,
+        average_age = (s.sum_age + d.delta) / s.num_people;
+```
+
+A nationality change needs a decrement of the old group and an increment of the new group. `UPDATE ... FOR EACH ROW` is still unsupported. `MERGE INTO` cannot target a table with triggers.
+
 ## References
 
 - https://duckdb.org/docs/2.0/sql/statements/create_trigger.html

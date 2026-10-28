@@ -62,6 +62,37 @@ Numbers below are local to this pass and use the `D` prefix.
 | D18 | `ROW_GROUP_SIZE` rounds up to a 2,048 multiple | 2,049 -> 4,096; 3,000 -> 4,096 | groups 4,096 |
 | D19 | `FILE_SIZE_BYTES` overshoots | 100 KB target | 124,230 and 77,551 bytes |
 
+## Integration pass
+
+Numbers below use the `E` prefix. The full probe log and decisions are in `slices/13-search-sharing-integrations.md`.
+
+| # | Fact | Probe | Observed |
+| --- | --- | --- | --- |
+| E1 | FTS `incremental=1` covers `INSERT` and `DELETE`, not `UPDATE` | update a body, query old and new terms | old term 1, new term 0; delete+insert repaired it |
+| E2 | Incremental FTS needs a `NOT NULL` id | nullable `UNIQUE` id | `requires the document id column to be NOT NULL` |
+| E3 | A same-select `match_bm25` alias filter fails | `WHERE score IS NOT NULL` in the same select | `Alias "score" referenced - but the expression has side effects` |
+| E4 | HNSW needs the index metric to match the query function | cosine index, distance vs similarity | distance `Hnsw Index Scan`; similarity `Seq Scan` + `Top N` |
+| E5 | HNSW persistence flag gates creation, not reads; `LOAD` before `SET` | file DB create and reopen | create failed without flag; reopen worked without it |
+| E6 | HNSW ignores `OFFSET` on 2.0.0 | offsets 1, 5, 10, 50 | first page repeated |
+| E7 | HNSW memory is outside `memory_limit` | official limitations page | documented |
+| E8 | Bare `LIMIT/OFFSET` over Parquet can duplicate and drop rows | 30k rows, 6 groups, 3k pages, 4 threads, insertion order off | 30k total, 20,870 distinct, 9,130 duplicated and missing |
+| E9 | `file_row_number` range pagination is stable per file | 3k pages | 30k distinct; range resets per file |
+| E10 | A views-only catalog holds definitions, not data | 268 KB catalog over 100k Parquet | read-only attach and query; moved data breaks it |
+| E11 | dbt v2 has a built-in DuckDB adapter; bundled driver cannot load extensions | dbt docs and release | `dbc install duckdb` required; `dbt-duckdb` is v1 |
+| E12 | Metabase 1.5.6.0 and Grafana 0.4.6 bundle DuckDB 1.5.6; Superset caps below 2.0 | release assets, `pyproject.toml` | cannot read storage 69 |
+| E13 | `duckdb_mcp` 2.4.0 ships for 2.0; MotherDuck local server 1.1.0 pins 1.5.6 | extension page and releases | documented |
+| E14 | Async I/O covers Parquet, uncompressed CSV, and native storage; JSON is synchronous | official I/O page | documented |
+| E15 | NULL type, `X'…'`/`B'…'`, and factorial changed | probes | `"NULL"`; `BLOB`/`BIT`; `2 * 3!` = 12 |
+| E16 | `duckdb -serve` stores an unencrypted token and exposes writes | isolated HOME, remote write | token file mode 600; remote write succeeded |
+| E17 | `allowed_directories`, `allowed_paths`, `disabled_filesystems` differ | sandbox probes | tree, exact file, local-only block; HTTPS needs CA |
+| E18 | `VACUUM` does not reclaim; `CHECKPOINT` frees blocks | delete, vacuum, checkpoint | 394 to 211 used blocks; file size unchanged |
+| E19 | DuckDB-file DuckLake catalog is one writer; readers must all be `READ_ONLY` | two-process attach | lock conflict; two read-only attaches worked |
+| E20 | A `SELECT *` view blocks VARIANT extraction pushdown | 1M-row direct vs view | 3 ms direct, 149 ms view; extracted view restores pushdown |
+| E21 | Remote Parquet caches help repeated scans, not a cold query | 50-file HTTP range server | cold 101 requests either way; second query 202 vs 102 |
+| E22 | A filter inside `NEAREST ... BY DISTANCE` changes the ranking key | filtered nearest join vs CTE | non-nearest row; CTE returns the correct row |
+| E23 | Trigger average needs an `AFTER UPDATE` statement trigger | announcement example | insert/delete matches; update stays stale; statement update trigger fixes it |
+| E24 | ADBC DBAPI is not auto-commit; Ibis 12 does not support 2.0 | ADBC probe and Ibis guide | write lost without `commit()`; pin `duckdb<2` |
+
 ## Manual
 
 | # | Fact | Command | Observed |

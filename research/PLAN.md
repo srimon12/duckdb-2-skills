@@ -16,18 +16,19 @@ A reader can install the pack, pick the right skill from the router, and run the
 - [x] **5. Design.** Fix the information architecture: router, task skills, reference files, one owner per deep fact.
 - [x] **6. Rewrite.** Update all 12 skills. Add reference files only where depth earns it.
 - [x] **7. Encode.** Add `scripts/check-skills.py`, `scripts/probe.py`, and `scripts/fetch-docs.py` so the rules can be re-run.
-- [x] **8. Verify.** Run both scripts, check every relative link, re-run the probes, and compare the result to the definition of done. Structure and 71 probes pass.
+- [x] **8. Verify.** Run both scripts, check every relative link, re-run the probes, and compare the result to the definition of done. Structure and 75 probes pass.
 - [x] **9. Package.** Update `README.md`, `plugin.json`, `marketplace.json`, and `THIRD-PARTY-NOTICES.md`.
 - [x] **10. Diagnose and ingest.** Add `duckdb-profile`; move plan reading out of `duckdb-sql`; add the batch-ingest reference to `duckdb-files`; add the task case.
 - [x] **11. Domain audit.** Probe the core and data skills against the 2.0.0 source. Fix silent wrong answers, add `references/triggers.md` and `references/diagnosis.md`, add `scripts/plan_lint.py`, and add the workflow authoring guide at `docs/skill-design.md`.
+- [x] **12. Integration pass.** Recheck HN, Reddit, X, blogs, and official docs. Add `duckdb-search` and `duckdb-dbt`; add pagination, client, MCP, FTS, and VSS references; fix the async, security, migration, and sharing traps.
 
 ## Decisions
 
 | Decision | Reason |
 | --- | --- |
 | Snapshot the manual instead of fetching pages per claim | 461 pages over the network is slow and non-reproducible. A pinned commit makes every citation stable. |
-| Keep 13 skills, add `duckdb-profile` only | The next phase adds one job with a distinct trigger and enough depth to fill a page. A separate ingest skill would collide with `duckdb-files`; the workflow lives there as a reference. |
-| Add reference files only for CLI, friendly SQL, triggers, formats, ingest, plans, diagnosis, catalogs, Overture, migration | These are long tables or workflows an agent loads rarely. Everything else stays in `SKILL.md`. |
+| Keep 13 skills in the diagnostics pass, then add `duckdb-search` and `duckdb-dbt` when the shipped extensions and adapter cleared the bar | A separate ingest skill would still collide with `duckdb-files`; that workflow stays a reference. Search and dbt have distinct triggers, contracts, and proofs. |
+| Add reference files only for CLI, friendly SQL, triggers, formats, ingest, pagination, plans, diagnosis, catalogs, Overture, migration, clients, MCP, FTS, VSS | These are long tables or workflows an agent loads rarely. Everything else stays in `SKILL.md`. |
 | Research stays in `research/`, not in the skill text | Skills carry decisions. Evidence belongs where a maintainer can audit it without spending agent context. |
 | One owner per deep fact, one-line cross-links elsewhere | An agent that loads one skill must still be able to act. Detail is deduplicated; the minimum needed to recognize the situation is not. |
 | Frontmatter stays `name` + `description` | The pack targets multiple clients. Client-specific fields would narrow it. |

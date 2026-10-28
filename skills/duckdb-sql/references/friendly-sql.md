@@ -139,6 +139,16 @@ LEFT JOIN products p
 
 `k` must be a positive integer literal. `APPROX` goes before `NEAREST`. The distance functions accept fixed-size arrays such as `DOUBLE[768]` or `FLOAT[768]`, not variable-length `DOUBLE[]`. Cast the embedding columns to the model dimension.
 
+Filter the right side in a CTE before the join. A predicate appended to `BY DISTANCE` becomes part of the ranking key, and an outer `WHERE` filters after the top-k:
+
+```sql
+WITH red AS (SELECT * FROM products WHERE color = 'red')
+SELECT q.id, p.id
+FROM queries q
+INNER JOIN red p
+  NEAREST 1 BY DISTANCE array_distance(q.embedding, p.embedding);
+```
+
 ## Variables and prepared statements
 
 ```sql

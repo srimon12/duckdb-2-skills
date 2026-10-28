@@ -118,6 +118,8 @@ FORCE CHECKPOINT analytics;  -- wait for the checkpoint lock, then flush
 
 `CHECKPOINT` fails if a transaction is running. `FORCE CHECKPOINT` waits from 1.4 onward. A clean exit checkpoints and removes the WAL. `checkpoint_on_detach` takes `ENABLED`, `DISABLED`, or `DEFAULT`, not a boolean.
 
+`VACUUM` does not reclaim space. `CHECKPOINT` frees deleted-row blocks for reuse; it does not guarantee that the `.db` file shrinks. On older storage, checkpoint vacuum skips tables with ART indexes unless `vacuum_rebuild_indexes` is set at startup or attach time. That fallback is deprecated.
+
 `DETACH` releases the file lock. You cannot detach the default database; `USE` another one first.
 
 ```sql
@@ -138,6 +140,24 @@ For a file-format migration, use `duckdb-migrate`. For a backup, export into an 
 
 `COPY FROM DATABASE` needs an attached target with no conflicting table names. The target's storage version controls the output.
 
+## Share views, not data
+
+A views-only catalog is a tiny `.duckdb` file that holds view definitions over remote Parquet. Upload it and let consumers attach it read-only. The catalog carries the schema contract, not the data.
+
+Create it in a new file:
+
+```sql
+CREATE VIEW sales AS
+SELECT * FROM read_parquet('s3://bucket/sales/*.parquet');
+
+-- consumer
+LOAD httpfs;
+ATTACH 'https://example.com/catalog.duckdb' AS shared (READ_ONLY);
+SELECT * FROM shared.sales;
+```
+
+The consumer still needs access to every data source, including S3 credentials. A local path in the view works only when every consumer sees the same path. Use `duckdb-files` for secrets and `duckdb-quack` for a live writable endpoint.
+
 ## Verify
 
 ```bash
@@ -153,6 +173,8 @@ The alias appears once, with the expected storage version. A second run must not
 - [CHECKPOINT](https://duckdb.org/docs/2.0/sql/statements/checkpoint.html) owns WAL behavior.
 - [Concurrency](https://duckdb.org/docs/2.0/connect/concurrency.html) owns the one-writer rule.
 - [Storage](https://duckdb.org/docs/2.0/internals/storage.html) owns the version table.
+- [Views-only database](https://duckdb.org/docs/2.0/guides/network_cloud_storage/duckdb_views_only.html) owns catalog sharing.
+- [Reclaiming space](https://duckdb.org/docs/2.0/operations_manual/footprint_of_duckdb/reclaiming_space.html) owns checkpoint and vacuum behavior.
 - [duckdb_databases](https://duckdb.org/docs/2.0/sql/meta/duckdb_table_functions.html#duckdb_databases) owns the catalog columns. The live function has more columns than the manual table; use `DESCRIBE`.
 - `duckdb_secrets()` redacts `secret=` but still shows `key_id=`. Report names and types only, never the row.
 - The shared `state.sql` convention comes from the `attach-db` skill in https://github.com/duckdb/duckdb-skills (MIT). The default path here is `.duckdb/state.sql`.

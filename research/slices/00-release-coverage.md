@@ -139,7 +139,7 @@ Ranked by what an agent gets wrong without them.
 | Claim | What actually shipped | Evidence |
 | --- | --- | --- |
 | ART indexes become buffer-managed “later this year”. | Manual still warns ART indexes must fit in memory during creation; no buffer-managed PR in the 2.0.0 changelog. | Preview; `sql/indexes.md:25`; GH changelog grep |
-| Async I/O reaches DuckDB’s native file format. | 2.0 manual says Parquet and uncompressed CSV only; the native database format is synchronous. PR #24654 is in the changelog, but the documented behavior is narrower. | Preview; `data/io.md:15-22` |
+| Async I/O reaches DuckDB’s native file format. | The 2.0 manual lists Parquet, uncompressed seekable UTF-8 CSV, and native DuckDB storage. JSON stays synchronous. | Probed / documented; `data/io.md` |
 | New `MMAP` and `DIRECT_IO` modes. | Neither name appears in the 2.0 manual or the 2.0.0 changelog. | Preview; manual grep; GH changelog grep |
 | A large part of C API v2 will be stable and frozen. | C API v2 ships, but is explicitly not stable. | Preview; `migration.md:113-117` |
 | Triggers ship “in full”. | Row-level `BEFORE` and `UPDATE` are unsupported; `RETURNING` is blocked on row-trigger tables. | Preview; `create_trigger.md:126-137`; P2 |
@@ -153,7 +153,7 @@ Ranked by what an agent gets wrong without them.
 | Announcement: “Cinnamon Teal”. | GitHub release and binary: “Cyanoptera”. | Same species, different common name; the binary string is authoritative for version checks. |
 | Preview: “over 10,000 commits since 1.5”. | Announcement: “close to 20,000 commits since 1.5”. | Different publication dates (August vs October); do not quote a commit count as a 2.0 fact. |
 | Preview: triggers “in full”. | Announcement and manual: explicit limitations. | Manual and binary win; document the limitations. |
-| Preview: async I/O includes DuckDB’s native format. | Manual: native format is synchronous; only Parquet and uncompressed CSV are async. | Treat the manual as the shipped contract. |
+| Preview: async I/O includes DuckDB’s native format. | The shipped 2.0 manual also lists native storage as async. JSON is the synchronous case. | Treat the manual as the shipped contract. |
 | Preview: `CONNECT 'postgres://localhost/mydb'`. | Manual and `duckdb-quack`: `CONNECT 'postgres:dbname=mydb host=localhost'`. | Use the manual form; `postgres://` is a preview artifact. |
 | Manual: `decimal_division` “using exact decimal arithmetic”. | Binary: mixed DECIMAL/INTEGER arguments can return wrong or unstable results. | Binary wins; require both-DECIMAL casts and a scale, and flag the 2.0.0 bug. |
 | Manual: a `COPY` CTE “returns the number of rows written”. | Binary: the write happens but `SELECT rows_written FROM copied` returns no rows. | Do not rely on the count; use the write for its side effect only. |

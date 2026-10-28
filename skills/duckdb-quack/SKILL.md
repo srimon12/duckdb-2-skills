@@ -32,6 +32,8 @@ CALL quack_stop('quack:localhost');
 
 The token is at least 4 characters. If a default `quack` secret exists, its token is reused. Otherwise the server generates one and returns it in `auth_token`. Pass `create_secret_if_not_exists => true` to persist a generated token.
 
+`duckdb -serve` stores its token in a persistent, unencrypted `quack` secret, mode 600. Possession of the token grants full read and write access to every table in the session. Delete the default secret when the server stops, or use a named secret from a secret manager.
+
 | Parameter | Default | Use |
 | --- | --- | --- |
 | `listen_uri` | `quack:localhost` | Host and port. |
@@ -74,6 +76,10 @@ One ad-hoc query:
 ```sql
 FROM quack_query('quack:localhost', 'SELECT 42', token = 'my_token');
 ```
+
+One Quack connection per thread. `con.cursor()` shares the remote session and concurrent calls fail with `superseded by a new query`; use one attached connection per thread.
+
+Client-side parameter binding against a Quack table fails with `Values were not provided`. Stage values in a DataFrame or temp table. From a local session, `CONNECT` first and use SQL `PREPARE`/`EXECUTE`; Python DB-API binding still fails after `CONNECT`.
 
 `ATTACH` options:
 

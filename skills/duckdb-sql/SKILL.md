@@ -136,6 +136,7 @@ Do not use `RETURNING` as the only proof when a row trigger exists. The trigger'
 | Simplified `UNPIVOT` | Drops `NULL` values | Use the standard form with `INCLUDE NULLS` |
 | `DISTINCT ON` without `ORDER BY` | Returns an arbitrary row | Add an `ORDER BY` starting with the `DISTINCT ON` keys |
 | `USING SAMPLE` | Written after `WHERE` but applied before it | Put the filter in a subquery before sampling |
+| `NEAREST ... AND <filter>` | The filter joins the distance key and returns a non-nearest row | Filter the right side in a CTE first |
 | `1 IN (0, NULL)` | Returns `NULL`; list `IN [0, NULL]` returns false | Use `IS NOT DISTINCT FROM` or `coalesce` |
 | `~`, `!~` | 2.0 matches a substring; 1.x matched the full string | Use `regexp_full_match` for the 1.x behavior; see `duckdb-migrate` |
 

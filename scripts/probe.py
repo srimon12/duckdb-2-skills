@@ -540,6 +540,104 @@ def check_profile_spill(tmp: Path, network: bool) -> tuple[bool, str]:
         return False, f"{type(exc).__name__}: {proc.stderr[:120]}"
 
 
+def check_fts_freshness(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = str(tmp / "fts.duckdb")
+    rows(
+        "LOAD fts;"
+        " CREATE TABLE docs (id INTEGER NOT NULL, body VARCHAR);"
+        " INSERT INTO docs VALUES (1, 'alpha duck'), (2, 'beta cat');"
+        " PRAGMA create_fts_index('docs', 'id', 'body', incremental = 1);",
+        tmp,
+        (db,),
+    )
+    rows("DELETE FROM docs WHERE id = 2; INSERT INTO docs VALUES (2, 'quokka');", tmp, (db,))
+    new_term = one(
+        "SELECT count(*) AS n FROM ("
+        " SELECT id, fts_main_docs.match_bm25(id, 'quokka') AS score FROM docs"
+        ") WHERE score IS NOT NULL",
+        tmp,
+        (db,),
+    )
+    old_term = one(
+        "SELECT count(*) AS n FROM ("
+        " SELECT id, fts_main_docs.match_bm25(id, 'cat') AS score FROM docs"
+        ") WHERE score IS NOT NULL",
+        tmp,
+        (db,),
+    )
+    ok = new_term["n"] == 1 and old_term["n"] == 0
+    return ok, f"new={new_term['n']} old={old_term['n']}"
+
+
+def check_vss_hnsw(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = str(tmp / "vss.duckdb")
+    rows(
+        "LOAD vss;"
+        " SET hnsw_enable_experimental_persistence = true;"
+        " CREATE TABLE items (id INTEGER, emb FLOAT[3]);"
+        " INSERT INTO items VALUES (1, [1, 0, 0]), (2, [0, 1, 0]);"
+        " CREATE INDEX items_hnsw ON items USING HNSW (emb) WITH (metric = 'cosine');",
+        tmp,
+        (db,),
+    )
+    indexed = duckdb(
+        "LOAD vss; EXPLAIN SELECT id FROM items"
+        " ORDER BY array_cosine_distance(emb, [1, 0, 0]::FLOAT[3]) LIMIT 1;",
+        tmp,
+        (db,),
+    )
+    similarity = duckdb(
+        "LOAD vss; EXPLAIN SELECT id FROM items"
+        " ORDER BY array_cosine_similarity(emb, [1, 0, 0]::FLOAT[3]) DESC LIMIT 1;",
+        tmp,
+        (db,),
+    )
+    ok = (
+        indexed.returncode == 0
+        and "Hnsw Index Scan" in indexed.stdout
+        and similarity.returncode == 0
+        and "Hnsw Index Scan" not in similarity.stdout
+    )
+    return ok, "cosine index scan; similarity falls back"
+
+
+def check_parquet_pagination(tmp: Path, network: bool) -> tuple[bool, str]:
+    rows(
+        "COPY (SELECT range AS id FROM range(30000) ORDER BY id)"
+        " TO 'pages.parquet' (FORMAT parquet, ROW_GROUP_SIZE 5000);",
+        tmp,
+    )
+    seen: list[int] = []
+    for start in range(0, 30000, 1000):
+        page = rows(
+            "SET threads = 4; SET preserve_insertion_order = false;"
+            " SELECT id FROM read_parquet('pages.parquet', file_row_number = true)"
+            f" WHERE file_row_number >= {start} AND file_row_number < {start + 1000}"
+            " ORDER BY id;",
+            tmp,
+        )
+        seen.extend(row["id"] for row in page)
+    ok = seen == list(range(30000))
+    return ok, f"rows={len(seen)} distinct={len(set(seen))}"
+
+
+def check_2_0_parser_traps(tmp: Path, network: bool) -> tuple[bool, str]:
+    ok, detail = expect_error(
+        "CREATE TABLE t AS SELECT NULL AS x; INSERT INTO t VALUES (1);",
+        tmp,
+        "Unimplemented type for cast",
+    )
+    if not ok:
+        return ok, detail
+    got = one(
+        "SELECT typeof(X'4142') AS x, typeof(B'1010') AS b,"
+        " 2 * 3! AS product, (2 * 3)! AS parenthesized;",
+        tmp,
+    )
+    expected = {"x": "BLOB", "b": "BIT", "product": "12", "parenthesized": "720"}
+    return got == expected, str(got)
+
+
 def check_plan_lint_selftest(tmp: Path, network: bool) -> tuple[bool, str]:
     script = ROOT / "skills/duckdb-profile/scripts/plan_lint.py"
     proc = subprocess.run(
@@ -1010,6 +1108,10 @@ CHECKS = [
     Check("legacy metrics flat shape", check_legacy_metrics_shape),
     Check("profile reports spill", check_profile_spill),
     Check("plan linter self-test", check_plan_lint_selftest),
+    Check("FTS incremental freshness", check_fts_freshness),
+    Check("VSS HNSW metric match", check_vss_hnsw),
+    Check("Parquet stable pagination", check_parquet_pagination),
+    Check("2.0 parser traps", check_2_0_parser_traps),
     Check("EXPLAIN ANALYZE executes DML", check_explain_analyze_dml),
     Check("Parquet row-group pruning", check_parquet_row_groups),
     Check("Parquet metadata row duplication", check_parquet_metadata_dup),

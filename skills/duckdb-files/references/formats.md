@@ -101,7 +101,7 @@ COPY (FROM 'in.csv') TO 'out.jsonl' (FORMAT json, ARRAY false);
 | Parameter | Default | Use |
 | --- | --- | --- |
 | `schema` | NULL | Read as a supplied schema; map by field id or name. The value is a `MAP` of column names to `{name, type, default_value}` structs. |
-| `bound_schema` | NULL | Exact ordered output schema for `read_parquet` only. Requires explicit `hive_partitioning=true` or `false`; cannot combine with `schema` or `union_by_name`. |
+| `bound_schema` | NULL | Exact ordered output schema for `read_parquet` only. Requires explicit `hive_partitioning=true` or `false`; cannot combine with `schema`, `union_by_name`, or `allow_empty`. |
 | `union_by_name` | `false` | Align columns across files. |
 | `binary_as_string` | `false` | Treat legacy binary columns as strings. |
 | `filename` | false | Virtual column. |
@@ -112,11 +112,17 @@ COPY (FROM 'in.csv') TO 'out.jsonl' (FORMAT json, ARRAY false);
 | `int96_as` | `timestamp` | `timestamp`, `timestamp_ns`, `struct`. New in 2.0. |
 | `prefetch_strategy` | `auto` | `auto` or `whole_group`. New in 2.0. |
 | `utf8_validation` | `strict` | `strict`, `replace`, `ignore`. New in 2.0. |
-| `bound_schema` | unset | Exact ordered output schema. New in 2.0. |
 | `can_have_nan` | `false` | Keep min/max pushdown correct with NaN. |
 | `allow_empty` | `false` | Empty result for a no-match glob. New in 2.0. |
 
 `schema` cannot be combined with `union_by_name`.
+
+```sql
+SELECT * FROM read_parquet('t.parquet', schema = MAP {
+    'i': {name: 'renamed_i', type: 'BIGINT', default_value: NULL},
+    'j': {name: 'new_column', type: 'UTINYINT', default_value: 43}
+});
+```
 
 ## Metadata
 
@@ -235,7 +241,7 @@ FROM which_secret('s3://my-bucket/file.parquet', 's3');
 
 ## Async I/O
 
-Automatic for Parquet and uncompressed, seekable, UTF-8 CSV, including files read through DuckLake. JSON and native DuckDB files are synchronous.
+Automatic for Parquet, uncompressed seekable UTF-8 CSV, and native DuckDB storage, including files read through DuckLake. JSON is synchronous.
 
 | Setting | Default | Use |
 | --- | --- | --- |
@@ -245,7 +251,7 @@ Automatic for Parquet and uncompressed, seekable, UTF-8 CSV, including files rea
 | `http_retry_wait_ms` | 100 | Initial wait. |
 | `http_retry_backoff` | 4.0 | Backoff multiplier. |
 | `http_client_pool_capacity` | auto | Tracks `async_threads`; the cap applies to the default. |
-| `fsync_mode` | `STANDARD` | Local write flush, not async reads. |
+| `fsync_mode` | `STANDARD` | Local write flush. `FULL` flushes harder; `NONE` skips the OS flush and can lose data or corrupt the database on a crash. |
 
 Do not tune these before measuring. A remote Parquet scan already reads asynchronously.
 
