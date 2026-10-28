@@ -52,6 +52,8 @@ FROM parquet_file_metadata('path');
 
 Do not sum `row_group_num_rows` from `parquet_metadata`: it repeats once per column in a row group, so a 5-row 3-column file reports 15. Use `parquet_file_metadata`, `count(*)`, or `DISTINCT file_name, row_group_id, row_group_num_rows`.
 
+Do not page with bare `LIMIT/OFFSET` when `preserve_insertion_order=false` and multiple threads are active. Pages can duplicate and drop rows while the total still matches. Page on a unique key or `(filename, file_row_number)`. The contract and proof are in [references/pagination.md](references/pagination.md).
+
 For a directory or bucket, list names and sizes without downloading bodies:
 
 ```sql
@@ -106,20 +108,21 @@ LOAD httpfs;
 
 Do not put access keys in the URL. DuckDB 2.0 treats `?s3_access_key_id=...` as part of the object key. The old behavior is `SET s3_enable_deprecated_url_parameters = true` after `LOAD httpfs`.
 
-Async I/O is already on for Parquet and for uncompressed, seekable, UTF-8 CSV, including files read through DuckLake. JSON and native database files stay synchronous. Defaults are `async_threads` = four times `threads` (capped at 256), `read_ahead_depth = -1`, `http_retries = 3`, and `http_retry_backoff = 4.0`. Leave them alone unless the user asks to tune a fast network. The full option list is in [references/formats.md](references/formats.md).
+Async I/O is on for Parquet, uncompressed seekable UTF-8 CSV, and native DuckDB storage, including files read through DuckLake. JSON stays synchronous. Defaults are `async_threads` = four times `threads` (capped at 256), `read_ahead_depth = -1`, `http_retries = 3`, and `http_retry_backoff = 4.0`. Leave them alone unless the user asks to tune a fast network. The full option list is in [references/formats.md](references/formats.md).
 
 ## Sandbox a local file
 
 On a local file the user did not ask to join with the network, install and load every extension first, then restrict the process:
 
 ```sql
-SET allowed_paths = ['/absolute/file.csv'];
+SET allowed_directories = ['/absolute/input'];  -- one tree
+-- or one exact file: SET allowed_paths = ['/absolute/file.csv'];
 SET enable_external_access = false;
 SET allow_persistent_secrets = false;
 SET lock_configuration = true;
 ```
 
-`allowed_paths` must come before `enable_external_access = false`; afterward the setting is rejected. The same setting blocks remote reads too. Skip the local allow-list for `s3://`, `gs://`, `gcs://`, `r2://`, `az://`, `azure://`, `abfs://`, `abfss://`, `http://`, and `https://`, but do not assume remote is unrestricted after `enable_external_access=false`.
+`allowed_directories` allows a tree. `allowed_paths` allows exact files. Both must come before `enable_external_access = false`; afterward the setting is rejected. To block local disk but keep remote reads, use `SET disabled_filesystems = 'LocalFileSystem';`. Preload `httpfs` first; HTTPS still needs a readable CA bundle. `enable_external_access = false` also blocks remote reads. Skip the local allow-list for `s3://`, `gs://`, `gcs://`, `r2://`, `az://`, `azure://`, `abfs://`, `abfss://`, `http://`, and `https://`, but do not assume remote is unrestricted after `enable_external_access=false`.
 
 `-safe` is not a substitute. It blocks all external file access, including the file the user named, while still opening the database path on the command line. The full safety matrix and the `-safe` ordering rule are in `duckdb`.
 

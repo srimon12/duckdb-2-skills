@@ -11,6 +11,8 @@ description: >
 
 Before guessing a signature, query the hosted index. Use this skill only when no task skill owns the procedure. Answer from the returned chunks, and cite the page.
 
+This skill queries the hosted docs index. To build an FTS index on a user table, read `duckdb-search`.
+
 ## Index versions
 
 | Index | URL | Versions |

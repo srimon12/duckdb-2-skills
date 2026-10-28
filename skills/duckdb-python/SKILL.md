@@ -33,6 +33,8 @@ con = duckdb.connect(config={"threads": 4, "memory_limit": "2GB"})
 
 `duckdb.sql()` and `duckdb.execute()` use a module-level default connection. `duckdb.connect()` returns an explicit connection. Two read-write connections to one file in one process are legal under MVCC; a read-only connection alongside them fails with a different-configuration error. Use one connection plus cursors unless independent transactions are needed. See `duckdb-session` for the file-lock model. When running Python functions inside SQL queries, use a separate `con.cursor()`.
 
+Quack is the exception to the cursor rule. A cursor shares the remote Quack session, so concurrent calls fail with `superseded by a new query`. Use one attached connection per thread. See `duckdb-quack`.
+
 ## Connection and result lifecycle
 
 | Step | Rule |
@@ -124,6 +126,22 @@ with con.appender("people") as appender:
 
 The appender supports `action="insert"`, `"upsert"`, `"update"`, and `"delete"`. `update` and `delete` take `key`, a list of key columns. `upsert` uses the table's primary key or unique constraint; it needs exactly one conflict target, and rejects `key`. `columns` is a list, and `con.query_appender(statement, columns, source=...)` takes a dict of column names to types. The statement reads `appender_data`; the optional source query reads `appender_buffer`. The appender has no `close()` method; call `clear()` to discard buffered rows. Do not share an appender across threads. Finish open `execute()` results before calling `flush()`. A `with` block flushes on success and discards buffered rows on an exception. Outside a `with` block, call `flush()`.
 
+## Other Python entry points
+
+The ADBC Python DBAPI does not auto-commit. `adbc_ingest` writes are lost when the connection closes unless you commit:
+
+```python
+import pyarrow as pa
+from adbc_driver_duckdb import dbapi
+
+con = dbapi.connect("app.duckdb")
+with con.cursor() as cur:
+    cur.adbc_ingest("events", pa.table({"id": [1, 2]}))
+con.commit()
+```
+
+Ibis 12.0.0 and earlier do not support DuckDB 2.0. Pin `duckdb<2` until Ibis supports it.
+
 ## Verify
 
 ```python
@@ -146,5 +164,7 @@ Run it in a venv with `duckdb==2.0.0` and `pyarrow` for the Arrow line.
 - https://duckdb.org/docs/2.0/clients/python/relational_api.html
 - https://duckdb.org/docs/2.0/clients/python/expression.html
 - https://duckdb.org/docs/2.0/clients/python/appender.html
+- https://duckdb.org/docs/2.0/clients/adbc.html
+- https://duckdb.org/docs/2.0/guides/python/ibis.html
 - https://duckdb.org/docs/2.0/operations_manual/migration.html
 - The API changes and the open-result behavior were run against `duckdb==2.0.0` on Python 3.14.3.

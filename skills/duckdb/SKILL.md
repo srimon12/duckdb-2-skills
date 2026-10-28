@@ -96,6 +96,8 @@ A file created by 2.0 with default settings uses storage version 69. DuckDB 1.x 
 | Attach a database and keep it across calls | `duckdb-session` |
 | Read, convert, or batch-ingest a file, or query object storage | `duckdb-files` |
 | `VARIANT` or semi-structured columns | `duckdb-variant` |
+| Full-text search, BM25, HNSW, or vector search | `duckdb-search` |
+| dbt v2 project, profile, or dbt-duckdb migration | `duckdb-dbt` |
 | Serve a database, `CONNECT`, Postgres or MySQL pushdown | `duckdb-quack` |
 | DuckLake, Iceberg, Delta | `duckdb-lakehouse` |
 | Install or update extensions | `duckdb-extensions` |
@@ -103,6 +105,8 @@ A file created by 2.0 with default settings uses storage version 69. DuckDB 1.x 
 | Move a 1.x deployment to 2.0 | `duckdb-migrate` |
 | Python client code | `duckdb-python` |
 | Geodata, distances, Overture | `duckdb-spatial` |
+
+For a Model Context Protocol client or server, read [references/mcp.md](references/mcp.md). The `duckdb_mcp` extension ships against 2.0; the MotherDuck local server pins 1.5.6.
 
 When an error names a feature, load the owner instead of guessing:
 
@@ -134,4 +138,5 @@ The first must print `v2.0`. The second must print a Markdown table. The third m
 - [Migration guide](https://duckdb.org/docs/2.0/operations_manual/migration.html) owns the storage break.
 - [Install](https://duckdb.org/install/) owns the platform commands.
 - The full flag, dot-command, and setting tables are in [references/cli.md](references/cli.md).
+- MCP setup and security are in [references/mcp.md](references/mcp.md).
 - Release checked against DuckDB 2.0.0 `d54cbbe3df`. Agent-mode limits and the JSON error split were run locally.

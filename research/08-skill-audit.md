@@ -1,6 +1,6 @@
 # Skill audit
 
-Date: 2026-10-22, diagnostics pass 2026-10-26. Binary: DuckDB 2.0.0 `d54cbbe3df`. Evidence: `research/slices/`. The diagnostics probes ran on Linux x86_64; the first-pass probes ran on macOS arm64.
+Date: 2026-10-22, diagnostics pass 2026-10-26, integration pass 2026-10-28. Binary: DuckDB 2.0.0 `d54cbbe3df`. Evidence: `research/slices/`. The diagnostics and integration probes ran on Linux x86_64; the first-pass probes ran on macOS arm64.
 
 ## Verdicts
 
@@ -40,17 +40,36 @@ A second audit ran on 2026-10-26 against the same binary and the v2.0.0 source. 
 | `duckdb-extensions` | `install_mode` and gzip were wrong; the pin example was a 404. | Listed all five modes; gzip is accepted; the pin example is now a verified-value placeholder. |
 | `duckdb-docs` | The trigger claimed all DuckDB and DuckLake questions; index counts were stale. | Narrowed the trigger to manual lookup; counts are now a range, not a target. |
 
+## Integration pass
+
+The 2026-10-28 pass rechecked HN, Reddit, X, ecosystem blogs, official docs, and the 2.0.0 binary. It changed the earlier scope decision because dbt v2, the FTS/VSS extensions, the views-only guide, and `duckdb_mcp` shipped.
+
+| Skill | Main issue found | Change |
+| --- | --- | --- |
+| `duckdb-search` | Missing. FTS and HNSW had no owner outside the docs index. | Added the skill and `references/fts.md` and `references/vss.md`, with freshness, metric, persistence, memory, and pagination stop rules. |
+| `duckdb-dbt` | Missing. The earlier dbt rejection predated the v2 adapter. | Added the skill for the `dbt`/`dbt-duckdb` split, `dbc install duckdb`, storage gate, catalogs, orchestration, and v1 migration. |
+| `duckdb` | No route to search, dbt, or MCP. | Added the routes and `references/mcp.md`. |
+| `duckdb-files` | Native async I/O was called synchronous; no pagination contract; sandbox missed directory and filesystem controls; `bound_schema` conflicts were incomplete. | Corrected async I/O; added `references/pagination.md`, the `LIMIT/OFFSET` trap, `allowed_directories`, `disabled_filesystems`, and the `allow_empty` conflict. |
+| `duckdb-session` | No space-reclaim path; no views-only sharing. | Added `VACUUM` versus `CHECKPOINT` and the views-only catalog contract. |
+| `duckdb-quack` | Default token storage was not called out; cursor and parameter behavior on Quack was missing. | Added the unencrypted `__default_quack` secret warning, one connection per thread, and the binding workaround. |
+| `duckdb-migrate` | NULL type, `X'…'`/`B'…'`, factorial, and client compatibility were missing. | Added the parser rows and `references/clients.md` for BI, dbt, Ibis, and MCP. |
+| `duckdb-sql` | `NEAREST` filter placement and the update branch of trigger-maintained averages were missing. | Added the CTE rule and the `AFTER UPDATE` statement trigger recipe. |
+| `duckdb-python` | ADBC commit, Ibis pin, and Quack cursor exception were missing. | Added all three. |
+| `duckdb-variant` | The `SELECT *` view regression was undocumented. | Added the Parquet layout and view rule. |
+| `duckdb-lakehouse` | Catalog choice omitted the all-readers-`READ_ONLY` condition. | Added it to `references/catalogs.md`. |
+| `duckdb-profile` | Remote footer requests and cache scope were missing. | Added the cold-query cache note to `references/diagnosis.md`. |
+
 ## Cross-cutting
 
 - Descriptions no longer contain slash commands. Plugin installs namespace the skill, Codex uses `$`, and a slash clause is not portable.
 - Every skill has `## Verify` and ends with `## References`.
-- Ten reference files: CLI, friendly SQL, trigger support, file formats, batch ingest, plan reading, diagnosis protocol, lakehouse catalogs, Overture, migration checklist.
-- The router owns the version gate and output mode. Storage, secrets, Overture, extension rules, and plan diagnosis have one owner each.
+- Fifteen reference files: CLI, friendly SQL, trigger support, file formats, batch ingest, stable pagination, plan reading, diagnosis protocol, lakehouse catalogs, Overture, migration checklist, client compatibility, MCP, FTS, and VSS.
+- The router owns the version gate and output mode. Storage, secrets, Overture, extension rules, search indexes, dbt, and plan diagnosis have one owner each.
 - The frontmatter stays `name` and `description`. Client-specific fields are omitted so the pack loads in Claude Code, Codex, Cursor, Grok, and other Agent Skills clients.
-- `scripts/check-skills.py` encodes the structure and runs with zero errors and zero warnings across all 13 skills in strict mode.
-- `scripts/probe.py` encodes executable claims across 71 automated probes, including plan estimates and actuals, plan-only versus analyzed JSON shapes, metadata-only plans, spill metrics, the legacy metrics shape, DML execution under `EXPLAIN ANALYZE`, trigger composition, the friendly-SQL examples, migration targets, multi-table `read_duckdb`, Parquet row-group pruning, metadata duplication, schema drift, partitioned writes, overwrite behavior, CSV rejects, the ingest reject invariant, and JSON `ignore_errors`.
+- `scripts/check-skills.py` encodes the structure and runs with zero errors and zero warnings across all 15 skills in strict mode.
+- `scripts/probe.py` encodes executable claims across 75 automated probes, including plan estimates and actuals, plan-only versus analyzed JSON shapes, metadata-only plans, spill metrics, the legacy metrics shape, DML execution under `EXPLAIN ANALYZE`, trigger composition, the friendly-SQL examples, migration targets, multi-table `read_duckdb`, Parquet row-group pruning, metadata duplication, schema drift, partitioned writes, overwrite behavior, CSV rejects, the ingest reject invariant, JSON `ignore_errors`, FTS freshness, HNSW metric matching, stable Parquet pagination, and the 2.0 parser traps.
 - `duckdb-profile/scripts/plan_lint.py` turns a plan into ranked findings. Its self-test covers a cross product, a non-sargable Parquet filter, a sargable point lookup, a metadata-only count, and a write-guard check.
-- `evals/triggers.md` covers routing, skill-specific prompts, and negative disambiguation triggers across all skills including `duckdb-profile` and `duckdb-files`.
+- `evals/triggers.md` covers routing, skill-specific prompts, and negative disambiguation triggers across all skills including `duckdb-search`, `duckdb-dbt`, `duckdb-profile`, and `duckdb-files`.
 - `evals/ingest` is a task case for the file-to-Parquet workflow, with a deterministic 60,000-row fixture and 25 grader checks. The first candidate smoke run found a nullable-column ambiguity; the contract now names it.
 
 ## What was rejected
@@ -62,7 +81,8 @@ A second audit ran on 2026-10-26 against the same binary and the v2.0.0 source. 
 - C API, Java, Rust, Node, Go, or R skills. Out of scope for this pack.
 - A function catalog or a full dot-command catalog. Both are lookup material and go stale.
 - A separate ingest skill. The workflow is `duckdb-files/references/ingest.md` because `duckdb-files` already owns the convert, partition, and COPY triggers.
-- A dbt, BI, VSS, Lambda, MotherDuck, or MCP skill. The community signal is query and file pain, not a new product surface.
+- A separate BI, MCP, WASM, or orchestration skill. The client matrix, MCP reference, and dbt orchestration section cover the actionable part.
+- `pg_duckdb`, Jev, MotherDuck hybrid mode, Lance, Vortex, and DuckPGQ. They embed an older DuckDB, are demo-only, or are too narrow for this pack.
 
 ## Evidence
 
@@ -79,6 +99,7 @@ A second audit ran on 2026-10-26 against the same binary and the v2.0.0 source. 
 - `slices/10-query-diagnostics.md`: plans, pushdown, joins, Parquet layout, UI caveat.
 - `slices/11-file-to-parquet.md`: ingest contract, overwrite behavior, task case.
 - `slices/12-diagnostics-engine.md`: plan JSON shapes, spill, profiling metrics, linter design.
+- `slices/13-search-sharing-integrations.md`: FTS, VSS, pagination, views-only sharing, dbt, BI, MCP, and the integration decisions.
 
 ## Open verification
 
@@ -96,3 +117,7 @@ A second audit ran on 2026-10-26 against the same binary and the v2.0.0 source. 
 - `ROW_GROUPS_PER_FILE` was exact in an unpartitioned write. Its interaction with `PARTITION_BY` was not tested.
 - A 1.5.x binary was not available, so the 1.4/1.5 reader pins come from the source and the existing 1.5 probes, not from a second binary.
 - The Unity storage secret is shown for S3. Azure and GCS paths need their own secret type and were not probed.
+- dbt, Metabase, Grafana, Superset, and Ibis were checked from official docs, releases, and package metadata, not executed.
+- HNSW `OFFSET` is a 2.0.0 behavior. Retest after 2.0.1 before keeping the stop rule.
+- The views-only catalog used Python's `http.server`, which lacks range requests. A range-capable server is the production path.
+- The MotherDuck MCP server pins DuckDB 1.5.6. Recheck before repeating that pin.

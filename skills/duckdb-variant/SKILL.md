@@ -132,6 +132,25 @@ DuckDB reads shredded `VARIANT` Parquet, including files Snowflake wrote. `SHRED
 
 Delta tables have a separate switch. See `duckdb-lakehouse`.
 
+## Parquet layout and views
+
+Variant extraction pushes into a Parquet scan only when the query names the field. A `SELECT *` view hides the projection and can lose that pushdown even on one homogeneous file.
+
+```sql
+CREATE VIEW v AS SELECT * FROM 'events.parquet';
+SELECT sum(length(data.payload.action::VARCHAR)) FROM v;          -- slow
+SELECT sum(length(data.payload.action::VARCHAR)) FROM 'events.parquet';  -- fast
+```
+
+Define the view with the extracted field instead:
+
+```sql
+CREATE VIEW v AS
+SELECT id, data.payload.action AS action FROM read_parquet('events/*.parquet');
+```
+
+One shape family per file helps direct reads when the field is uniformly shreddable. A file that omits the field or stores it as an object falls back to the unshredded `value`. The absolute timings are workload-dependent; the projection plan is the reliable signal.
+
 ## JSON mutation
 
 Mutation functions stay on the JSON type. Use them before the cast when the user needs to edit a document.
@@ -155,6 +174,7 @@ Expect `OBJECT(a)`, `20`, and `[a, b]`.
 ## References
 
 - [Variant type](https://duckdb.org/docs/2.0/sql/data_types/variant.html) owns storage, shredding, and Parquet.
+- [Parquet overview](https://duckdb.org/docs/2.0/data/parquet/overview.html) owns projection and variant extraction pushdown.
 - [Variant functions](https://duckdb.org/docs/2.0/sql/functions/variant.html) owns the signatures.
 - [JSON functions](https://duckdb.org/docs/2.0/data/json/json_functions.html) owns mutation on JSON text.
 - [Delta extension](https://duckdb.org/docs/2.0/core_extensions/delta.html) owns the Delta variant rules.

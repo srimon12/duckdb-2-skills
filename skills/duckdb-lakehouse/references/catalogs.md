@@ -31,7 +31,7 @@ When the skill needs an attach option, a maintenance signature, or a format limi
 
 `MIGRATE` is not an option. `ATTACH ... (MIGRATE true)` fails.
 
-A DuckDB-file catalog allows one writing process. SQLite allows multiple local clients with one writer at a time and retries. PostgreSQL allows multi-user and remote lakehouses. MySQL is not recommended. Quack is experimental.
+A DuckDB-file catalog allows one writing process. Other processes may attach it `READ_ONLY`. SQLite allows multiple local clients with one writer at a time and retries. PostgreSQL allows multi-user and remote lakehouses. MySQL is not recommended. Quack is experimental. Choose the catalog before the first attach; changing it later means a new catalog and a data copy.
 
 ## DuckLake 1.1
 

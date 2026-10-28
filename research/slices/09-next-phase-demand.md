@@ -36,3 +36,5 @@ Checked 2026-10-22. Hacker News is the only source with enough volume to rank th
 Build `duckdb-profile` as the one new top-level skill. Put the file-to-Parquet contract in `duckdb-files/references/ingest.md` because `duckdb-files` already owns the convert, partition, and COPY triggers. Add one task eval for the ingest contract. Do not add a separate ingest skill, dbt, BI, VSS, Lambda, MotherDuck, MCP, or a repo split.
 
 The UI is a handoff, not a dependency. `duckdb -ui` stays in `duckdb`; the profile skill says when it helps and what to use when the extension cannot install.
+
+Superseded in part by `13-search-sharing-integrations.md` on 2026-10-28. dbt v2, the FTS/VSS extensions, and `duckdb_mcp` changed the premise. The new pass adds `duckdb-search` and `duckdb-dbt`, and keeps BI, MCP, and WASM as references or watches.

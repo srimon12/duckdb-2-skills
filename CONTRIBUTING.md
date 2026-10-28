@@ -56,7 +56,7 @@ Add a reference file only when the content is long, tabular, and needed on a min
 - Open with one sentence that says when to read it.
 - Do not link a reference from another skill's reference. Link the owning skill.
 
-Current reference files: CLI flags, friendly SQL, trigger support, file formats, batch ingest, plan reading, diagnosis protocol, lakehouse catalogs, Overture, migration checklist.
+Current reference files: CLI flags, friendly SQL, trigger support, file formats, batch ingest, stable pagination, plan reading, diagnosis protocol, lakehouse catalogs, Overture, migration checklist, client compatibility, MCP, FTS, and VSS.
 
 ## Fact ownership
 
@@ -72,10 +72,16 @@ Current reference files: CLI flags, friendly SQL, trigger support, file formats,
 | Quack, `CONNECT`, Postgres and MySQL pushdown | `duckdb-quack` |
 | DuckLake, Iceberg, Delta, catalog choice | `duckdb-lakehouse` |
 | `INSTALL`, `LOAD`, `UPDATE EXTENSIONS`, repositories | `duckdb-extensions` |
-| Docs index versions, BM25 query, cache | `duckdb-docs` |
+| Docs index versions, hosted BM25 query, cache | `duckdb-docs` |
+| FTS indexes, HNSW, search freshness, vector metrics | `duckdb-search` |
+| dbt v2 adapter, profiles, extensions, catalogs, orchestration | `duckdb-dbt` |
 | Storage versions, compatibility, export/import, migration order | `duckdb-migrate` |
+| BI, dbt, Ibis, and MCP client compatibility | `duckdb-migrate` (`references/clients.md`) |
 | Python API changes, relations, threads, Arrow | `duckdb-python` |
 | Spatial setup, distance, bbox, Overture, H3 | `duckdb-spatial` |
+| Views-only catalog sharing | `duckdb-session` |
+| MCP client and server setup | `duckdb` (`references/mcp.md`) |
+| Stable Parquet pagination | `duckdb-files` (`references/pagination.md`) |
 
 ## Write for an agent
 
@@ -113,11 +119,11 @@ A claim without a source does not go in a skill. A source without a probe is lab
 
 ## Adding a skill
 
-A new skill needs a job an agent does repeatedly, a trigger that does not collide with an existing skill, and enough depth to fill a page. `duckdb-profile` cleared that bar in the next-phase pass. Its second pass turned the operator list into a diagnosis contract with a cost model, a failure-class catalog, and a plan linter. A separate ingest skill did not clear the bar. The workflow is `duckdb-files/references/ingest.md` because `duckdb-files` already owns the convert, partition, and COPY triggers.
+A new skill needs a job an agent does repeatedly, a trigger that does not collide with an existing skill, and enough depth to fill a page. `duckdb-profile` cleared that bar in the next-phase pass. Its second pass turned the operator list into a diagnosis contract with a cost model, a failure-class catalog, and a plan linter. In the 2026-10 integration pass, `duckdb-search` and `duckdb-dbt` cleared the bar after the FTS/VSS extensions and the dbt v2 adapter shipped. A separate ingest skill did not clear the bar. The workflow is `duckdb-files/references/ingest.md` because `duckdb-files` already owns the convert, partition, and COPY triggers.
 
 Rejected in the 2.0 pass: triggers, JSON beside `VARIANT`, separate Iceberg and Delta, C API and other clients, a `CREATE EXTENSION REPOSITORY` procedure.
 
-Rejected in the next-phase pass: a separate ingest skill, dbt-duckdb, Evidence or Rill, VSS or embedding workflows, Lambda or Cloud Run deployment, MotherDuck hybrid mode, an MCP server, and a Core/Lakehouse/AI repo split.
+Rejected earlier and revisited in the 2026-10 pass: dbt-duckdb, VSS or embedding workflows, and an MCP server. dbt v2 and the DuckDB search/MCP extensions changed the premise. Still rejected: a separate ingest skill, Evidence or Rill, Lambda or Cloud Run deployment, MotherDuck hybrid mode, and a Core/Lakehouse/AI repo split.
 
 ## Release checklist
 

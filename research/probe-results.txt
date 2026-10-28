@@ -46,8 +46,12 @@ Binary: v2.0.0 (Cyanoptera) d54cbbe3df
 - **PASS** EXPLAIN ANALYZE (FORMAT JSON) shape: `object sections=['io', 'operator', 'optimizer', 'parser', 'physical_planner', 'planner', 'query', 'system'] scan_rows=1000`
 - **PASS** EXPLAIN ANALYZE ignores -json: `text profile, not JSON`
 - **PASS** legacy metrics flat shape: `legacy flat shape`
-- **PASS** profile reports spill: `peak_temp_dir_size=120848384`
+- **PASS** profile reports spill: `peak_temp_dir_size=120684544`
 - **PASS** plan linter self-test: `write guard and 4 plan cases pass`
+- **PASS** FTS incremental freshness: `new=1 old=0`
+- **PASS** VSS HNSW metric match: `cosine index scan; similarity falls back`
+- **PASS** Parquet stable pagination: `rows=30000 distinct=30000`
+- **PASS** 2.0 parser traps: `{'x': 'BLOB', 'b': 'BIT', 'product': '12', 'parenthesized': '720'}`
 - **PASS** EXPLAIN ANALYZE executes DML: `inserted 3 rows during ANALYZE`
 - **PASS** Parquet row-group pruning: `1 of 10 row groups`
 - **PASS** Parquet metadata row duplication: `{'file_rows': 10, 'chunk_rows': 30}`
@@ -74,4 +78,4 @@ Binary: v2.0.0 (Cyanoptera) d54cbbe3df
 - **PASS** Python connection configuration: `read-only rejected: Connection Error: Can't open a connection to same database file with a different configuration than `
 - **PASS** docs index versions: `[{'version': '2.0', 'n': 2702}, {'version': 'blog', 'n': 1006}]`
 
-71/71 passed
+75/75 passed

@@ -47,7 +47,7 @@ Choose the pin from the oldest reader:
 | 1.5.6 | `-storage-version v1.5.6` | `v1.5.0+` | 68 |
 | 1.4 | `-storage-version v1.4.0` | `v1.4.0+` | 67 |
 
-A 1.4 reader cannot open a 68 file. A 1.5 reader cannot open a 69 file.
+A 1.4 reader cannot open a 68 file. A 1.5 reader cannot open a 69 file. The BI, dbt, Ibis, and MCP client matrix is in [references/clients.md](references/clients.md).
 
 Read the version you actually have:
 
@@ -117,6 +117,9 @@ Search application SQL for these. The replacement behavior is specified in `duck
 | `error_on_division_by_zero = false` | Works but deprecated | `TRY(expr)` |
 | `table_function_identifier_conversion` | Works but deprecated | Quote table-function arguments |
 | Unquoted `read_csv(file.csv)` | Implicit identifier conversion is deprecated | `read_csv('file.csv')` |
+| `CREATE TABLE t AS SELECT NULL AS x` | Column type is `"NULL"`; a later integer insert fails | `SELECT NULL::INTEGER AS x`; `legacy_disable_null_type` is deprecated |
+| `X'4142'`, `B'1010'` | `BLOB` and `BIT`, not `VARCHAR` | Cast explicitly; compare like types |
+| `2 * 3!` | `12`, not `720` | Parenthesize `(2 * 3)!` for the 1.x result |
 
 The regex change is easy to miss because the migration guide does not list it. A 1.x filter such as `WHERE msg ~ 'ERROR'` matched the whole string; on 2.0 it matches a substring and returns more rows.
 
@@ -175,4 +178,5 @@ The version must be 2.0, and the new file must report `v2.0.0+`. An in-memory da
 - [Python migration](https://duckdb.org/docs/2.0/clients/python/migration.html) owns the client changes.
 - [Regex functions](https://duckdb.org/docs/2.0/sql/functions/regular_expressions.html) owns the `~` change.
 - The grep checklist and phase gates are in [references/checklist.md](references/checklist.md).
+- The client and BI compatibility matrix is in [references/clients.md](references/clients.md).
 - Storage tags, the pinned 1.5 file, `COPY FROM DATABASE`, and agent-mode errors were probed on DuckDB 2.0.0.

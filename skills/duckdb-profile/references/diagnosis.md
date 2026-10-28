@@ -194,7 +194,8 @@ SET preserve_insertion_order = false;
 3. Confirm the partition filter targets the partition column. `year = 2024` prunes; `year(ordered_at) = 2024` does not. A foldable expression on the partition value, such as `year % 2 = 0`, can still prune files.
 4. Project only the columns the result needs.
 5. Check that the path glob did not open more files than intended.
-6. Tune `async_threads`, `read_ahead_depth`, and `http_retries` only after bytes and file count are under control.
+6. A tight filter over many files can spend its time on tiny footer range requests. `parquet_metadata_cache` and `enable_http_metadata_cache` default false; they help repeated scans in one process, not a cold query. Compact or partition before tuning `threads`.
+7. Tune `async_threads`, `read_ahead_depth`, and `http_retries` only after bytes and file count are under control.
 
 ### Parquet health check
 

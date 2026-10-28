@@ -6,7 +6,7 @@ This is an independent pack. It is not a fork of [duckdb/duckdb-skills](https://
 
 ## What this is
 
-Thirteen skills. One router, twelve task skills, ten lookup references, and a plan linter. The router checks the binary, picks the output mode, and points at the skill that owns the job. Each task skill is short enough to load whole and specific enough to change the next command.
+Fifteen skills. One router, fourteen task skills, fifteen lookup references, and a plan linter. The router checks the binary, picks the output mode, and points at the skill that owns the job. Each task skill is short enough to load whole and specific enough to change the next command.
 
 The pack was rewritten for 2.0. It is not a 1.x pack with a version string changed. DuckDB 2.0 changes the storage format, the lambda syntax, the parser, the CLI output contract, the lakehouse extensions, and the Python client. Each of those has a migration action.
 
@@ -79,13 +79,22 @@ Copy `skills/<name>/` into the client's skills root. The folder is the unit; the
 | [`duckdb-session`](skills/duckdb-session/SKILL.md) | Attach a database and keep it across calls | Attach, open, switch, or persist a native `.duckdb` file |
 | [`duckdb-files`](skills/duckdb-files/SKILL.md) | Read, preview, convert, and batch-ingest files | A CSV, Parquet, JSON, Avro, Excel, SQLite, HTTP, object-storage path, or batch load |
 | [`duckdb-variant`](skills/duckdb-variant/SKILL.md) | Store and query semi-structured values | `VARIANT`, shredded JSON, schema-less columns |
+| [`duckdb-search`](skills/duckdb-search/SKILL.md) | Build full-text and vector search indexes | BM25, keyword search, HNSW, embeddings, ranked search |
 | [`duckdb-quack`](skills/duckdb-quack/SKILL.md) | Serve a database or route a session | Quack, `-serve`, `-connect`, `CONNECT`, Postgres or MySQL pushdown |
 | [`duckdb-lakehouse`](skills/duckdb-lakehouse/SKILL.md) | Use DuckLake, Iceberg, Delta, Unity Catalog | A lakehouse catalog or an open table format decision |
 | [`duckdb-extensions`](skills/duckdb-extensions/SKILL.md) | Install, load, and update extensions | A missing extension, a community extension, or a custom repository |
 | [`duckdb-docs`](skills/duckdb-docs/SKILL.md) | Search the official docs index | A signature, setting, or page needs the current manual and no task skill owns the procedure |
 | [`duckdb-migrate`](skills/duckdb-migrate/SKILL.md) | Move a 1.4 or 1.5 deployment to 2.0 | Upgrade, storage version, export/import, or a 1.x reader |
 | [`duckdb-python`](skills/duckdb-python/SKILL.md) | Write or migrate Python client code | Code that imports `duckdb` |
+| [`duckdb-dbt`](skills/duckdb-dbt/SKILL.md) | Run dbt v2 on DuckDB | A dbt project, profile, `dbt-duckdb`, or dbt migration |
 | [`duckdb-spatial`](skills/duckdb-spatial/SKILL.md) | Answer location questions | Maps, lat/lng, GeoJSON, Overture, H3 |
+
+## 2026-10 integration pass
+
+- Added `duckdb-search` for FTS and HNSW indexes, with freshness and metric contracts.
+- Added `duckdb-dbt` for dbt v2, the `dbt`/`dbt-duckdb` split, and the extension driver gate.
+- Added stable Parquet pagination, views-only catalog sharing, MCP setup, and the BI client matrix.
+- Corrected native async I/O, the `-serve` token warning, the NULL type and parser traps, `NEAREST` filter placement, and VARIANT view pushdown.
 
 ## How the pack is organized
 
@@ -105,7 +114,7 @@ docs/                      authoring guide for maintainers
 CONTRIBUTING.md            the skill contract
 ```
 
-Load `duckdb` first when the task is not specific. It routes. The other twelve skills are written to stand alone for their job, but each deep fact has one owner. When a skill needs a fact another skill owns, it gives the one line needed to recognize the situation and links the owner.
+Load `duckdb` first when the task is not specific. It routes. The other fourteen skills are written to stand alone for their job, but each deep fact has one owner. When a skill needs a fact another skill owns, it gives the one line needed to recognize the situation and links the owner.
 
 `references/` is lookup material, not required reading. A skill links a reference at the point where the choice is made.
 
@@ -139,7 +148,7 @@ python3 skills/duckdb-profile/scripts/plan_lint.py --self-test
 
 `check-skills.py` checks frontmatter, name and directory agreement, descriptions, required sections, line budgets, relative links, script references, cross-skill names, and stale strings. `probe.py` runs the executable claims against the local binary. The ingest reference run proves the file-to-Parquet workflow with 25 checks. The plan linter self-test proves the diagnostic engine finds a cross product, a full scan, and a metadata-only count, leaves a sargable lookup alone, and rejects a hidden second statement.
 
-Checked here on 2026-10-26 with DuckDB 2.0.0 `d54cbbe3df` on Linux x86_64. The first pass was checked on macOS arm64 on 2026-10-22:
+Checked here on 2026-10-28 with DuckDB 2.0.0 `d54cbbe3df` on Linux x86_64. The first pass was checked on macOS arm64 on 2026-10-22:
 
 - Version gate, agent-mode truncation and footer, `-csv` behavior, JSON error split.
 - Lambda syntax, `$x`, integer division, nested schemas, trigger composition and DML proof, `MERGE`, `NEAREST`, `GROUP BY unnest`, and the friendly-SQL examples.
@@ -151,9 +160,10 @@ Checked here on 2026-10-26 with DuckDB 2.0.0 `d54cbbe3df` on Linux x86_64. The f
 - Parquet row-group pruning, metadata row duplication, schema drift, partitioned writes, overwrite behavior, and the row-group minimum.
 - CSV rejects, JSON `ignore_errors` nulling, and the `ui` extension install and server startup.
 - The docs index versions and the BM25 subquery.
+- FTS incremental insert/delete freshness, HNSW metric matching, stable Parquet pagination, and the 2.0 NULL, `X'…'`/`B'…'`, and factorial traps.
 - A local Quack server on a non-default port and a Python 2.0.0 venv.
 
-Not run here: a live Iceberg REST catalog, a Delta or Unity Catalog endpoint, the interactive browser UI beyond server startup, the Claude Code plugin validator (the CLI is not installed), a 1.5.x reader binary for the storage-pin matrix, and a second-machine install. Those claims are labeled documented or announced in the research, not probed.
+Not run here: a live Iceberg REST catalog, a Delta or Unity Catalog endpoint, dbt, Metabase, Grafana, Superset, the interactive browser UI beyond server startup, the Claude Code plugin validator (the CLI is not installed), a 1.5.x reader binary for the storage-pin matrix, and a second-machine install. Those claims are labeled documented or announced in the research, not probed.
 
 ## Research
 

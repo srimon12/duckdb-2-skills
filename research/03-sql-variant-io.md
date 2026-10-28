@@ -231,7 +231,7 @@ Not asynchronous. The 2.0 I/O page says these stay synchronous:
 - JSON files.
 - DuckDB’s native database format.
 
-The July post said JSON and native-file async reads were still planned, and that out-of-tree extension formats were not on the roadmap. The 2.0 docs are the current statement: JSON and the native format use synchronous I/O.
+The July post said JSON and native-file async reads were still planned, and that out-of-tree extension formats were not on the roadmap. The 2.0 docs are the current statement: JSON is synchronous; native DuckDB storage is async.
 
 ### Thread pools and SET commands
 
@@ -413,7 +413,7 @@ Dialect additions that are new syntax rather than changed semantics, and that th
 - The docs never say “do not store JSON as `VARCHAR`.” They compare `VARIANT` with the `JSON` type, which is stored as text.
 - `variant_group_array(i)` is shown with result `[0, 1, 2, 3]` without the query that produced `i`. `variant_comparator` and `variant_normalize` results are described, not printed as literals.
 - `variant_extract`’s description says the second argument may be a list index. The only example uses an object field name. Index base (0 versus 1) is not stated on that page.
-- The July 2026 async-I/O post describes implementation detail (job = one Parquet row group, CSV scan boundaries, memory governor) and says JSON and native async reads were still to come. The 2.0 I/O page is the behavior to follow: those two formats are synchronous, and async is the default for Parquet and uncompressed seekable UTF-8 CSV. Benchmark timings in that post are v2.0.0-dev, not the 2.0.0 release.
+- The July 2026 async-I/O post describes implementation detail (job = one Parquet row group, CSV scan boundaries, memory governor) and says JSON and native async reads were still to come. The 2.0 I/O page is the behavior to follow: JSON is synchronous; async is the default for Parquet, uncompressed seekable UTF-8 CSV, and native DuckDB storage. Benchmark timings in that post are v2.0.0-dev, not the 2.0.0 release.
 - `SET enable_legacy_parser = true` is said to autoload `legacy_parser` on the PEG page. The migration guide and the extension page still show `INSTALL AND LOAD legacy_parser` first. This briefing does not resolve which is required in every client.
 - The August PEG post’s extension-registration API was a pre-release preview. The 2.0 parser page confirms that extension grammars exist and does not document how to write one.
 - `check_peg_parser` returning no rows does not mean the query parsed. The docs say that explicitly for 2.0.0.
