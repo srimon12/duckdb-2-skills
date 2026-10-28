@@ -6,7 +6,7 @@ This is an independent pack. It is not a fork of [duckdb/duckdb-skills](https://
 
 ## What this is
 
-Thirteen skills. One router, twelve task skills, and eight lookup references. The router checks the binary, picks the output mode, and points at the skill that owns the job. Each task skill is short enough to load whole and specific enough to change the next command.
+Thirteen skills. One router, twelve task skills, ten lookup references, and a plan linter. The router checks the binary, picks the output mode, and points at the skill that owns the job. Each task skill is short enough to load whole and specific enough to change the next command.
 
 The pack was rewritten for 2.0. It is not a 1.x pack with a version string changed. DuckDB 2.0 changes the storage format, the lambda syntax, the parser, the CLI output contract, the lakehouse extensions, and the Python client. Each of those has a migration action.
 
@@ -75,14 +75,14 @@ Copy `skills/<name>/` into the client's skills root. The folder is the unit; the
 | --- | --- | --- |
 | [`duckdb`](skills/duckdb/SKILL.md) | Gate the binary, pick the output mode, route | The user mentions DuckDB or the CLI, or you do not know which skill to load |
 | [`duckdb-sql`](skills/duckdb-sql/SKILL.md) | Write and run SQL | A query, lambda, trigger, nested schema, `MERGE`, or SQL migration |
-| [`duckdb-profile`](skills/duckdb-profile/SKILL.md) | Diagnose a slow query or unhealthy Parquet layout | A slow query, `EXPLAIN ANALYZE`, spill, row-group scan, or schema drift |
+| [`duckdb-profile`](skills/duckdb-profile/SKILL.md) | Diagnose a slow query or unhealthy Parquet layout | A slow query, `EXPLAIN ANALYZE`, OOM, full scan, spill, row-group scan, or schema drift |
 | [`duckdb-session`](skills/duckdb-session/SKILL.md) | Attach a database and keep it across calls | Attach, open, switch, or persist a native `.duckdb` file |
 | [`duckdb-files`](skills/duckdb-files/SKILL.md) | Read, preview, convert, and batch-ingest files | A CSV, Parquet, JSON, Avro, Excel, SQLite, HTTP, object-storage path, or batch load |
 | [`duckdb-variant`](skills/duckdb-variant/SKILL.md) | Store and query semi-structured values | `VARIANT`, shredded JSON, schema-less columns |
 | [`duckdb-quack`](skills/duckdb-quack/SKILL.md) | Serve a database or route a session | Quack, `-serve`, `-connect`, `CONNECT`, Postgres or MySQL pushdown |
 | [`duckdb-lakehouse`](skills/duckdb-lakehouse/SKILL.md) | Use DuckLake, Iceberg, Delta, Unity Catalog | A lakehouse catalog or an open table format decision |
 | [`duckdb-extensions`](skills/duckdb-extensions/SKILL.md) | Install, load, and update extensions | A missing extension, a community extension, or a custom repository |
-| [`duckdb-docs`](skills/duckdb-docs/SKILL.md) | Search the official docs index | A signature or behavior needs the current manual |
+| [`duckdb-docs`](skills/duckdb-docs/SKILL.md) | Search the official docs index | A signature, setting, or page needs the current manual and no task skill owns the procedure |
 | [`duckdb-migrate`](skills/duckdb-migrate/SKILL.md) | Move a 1.4 or 1.5 deployment to 2.0 | Upgrade, storage version, export/import, or a 1.x reader |
 | [`duckdb-python`](skills/duckdb-python/SKILL.md) | Write or migrate Python client code | Code that imports `duckdb` |
 | [`duckdb-spatial`](skills/duckdb-spatial/SKILL.md) | Answer location questions | Maps, lat/lng, GeoJSON, Overture, H3 |
@@ -95,17 +95,21 @@ skills/
   duckdb-sql/              task skill
     references/            long lookup tables, loaded only when needed
   duckdb-profile/          plan and file diagnosis
+    scripts/               plan linter
   duckdb-files/            readers, writers, and the ingest reference
   ...
 research/                  evidence, snapshots, and the per-skill audit
 scripts/                   structure checks and executable probes
 evals/                     trigger cases and the ingest task case
+docs/                      authoring guide for maintainers
 CONTRIBUTING.md            the skill contract
 ```
 
 Load `duckdb` first when the task is not specific. It routes. The other twelve skills are written to stand alone for their job, but each deep fact has one owner. When a skill needs a fact another skill owns, it gives the one line needed to recognize the situation and links the owner.
 
 `references/` is lookup material, not required reading. A skill links a reference at the point where the choice is made.
+
+The design rules behind the split are in [docs/skill-design.md](docs/skill-design.md). It explains the primitive-to-abstraction ladder, the contract a workflow skill must carry, and the proof and stop rules that keep an agent from overreaching.
 
 ## What changed in 2.0
 
@@ -116,10 +120,10 @@ Load `duckdb` first when the task is not specific. It routes. The other twelve s
 - `~` and `!~` are partial matches, like PostgreSQL.
 - Agent mode is on when an agent environment variable is present and stdout is not a terminal, unless an output flag is passed.
 - `VARIANT` is a first-class type, with shredding in database storage and Parquet.
-- Triggers exist, with limits: no `BEFORE ... FOR EACH ROW`, no `UPDATE ... FOR EACH ROW`.
+- Triggers exist, with limits: no `BEFORE ... FOR EACH ROW`, no `UPDATE ... FOR EACH ROW`, and no mixing statement and row triggers on one table.
 - Quack serves a database, and `CONNECT` routes a session to Quack, PostgreSQL, or MySQL.
 - DuckLake 1.1, Iceberg REST attach options, and Delta `CREATE TABLE`, time travel, and `VARIANT`.
-- Python relations are lazy, `execute()` results must be consumed, and one connection serves one call at a time.
+- Python relations are lazy, an unread streaming `execute()` result must be finished before `sql`/`query`, and one connection serves one call at a time.
 
 The evidence for each claim is in [research/](research/), with the per-skill verdict in [research/08-skill-audit.md](research/08-skill-audit.md).
 
@@ -130,24 +134,26 @@ python3 scripts/check-skills.py
 python3 scripts/probe.py
 python3 scripts/probe.py --network --write research/probe-results.txt
 bash evals/ingest/run_reference.sh
+python3 skills/duckdb-profile/scripts/plan_lint.py --self-test
 ```
 
-`check-skills.py` checks frontmatter, name and directory agreement, descriptions, required sections, line budgets, relative links, cross-skill names, and stale strings. `probe.py` runs the executable claims against the local binary. The ingest reference run proves the file-to-Parquet workflow with 25 checks.
+`check-skills.py` checks frontmatter, name and directory agreement, descriptions, required sections, line budgets, relative links, script references, cross-skill names, and stale strings. `probe.py` runs the executable claims against the local binary. The ingest reference run proves the file-to-Parquet workflow with 25 checks. The plan linter self-test proves the diagnostic engine finds a cross product, a full scan, and a metadata-only count, leaves a sargable lookup alone, and rejects a hidden second statement.
 
-Checked here on 2026-10-22 with DuckDB 2.0.0 `d54cbbe3df` on macOS arm64:
+Checked here on 2026-10-26 with DuckDB 2.0.0 `d54cbbe3df` on Linux x86_64. The first pass was checked on macOS arm64 on 2026-10-22:
 
 - Version gate, agent-mode truncation and footer, `-csv` behavior, JSON error split.
-- Lambda syntax, `$x`, integer division, nested schemas, triggers, `MERGE`, `NEAREST`, `GROUP BY unnest`.
-- Storage versions, `COPY FROM DATABASE`, `read_duckdb`.
+- Lambda syntax, `$x`, integer division, nested schemas, trigger composition and DML proof, `MERGE`, `NEAREST`, `GROUP BY unnest`, and the friendly-SQL examples.
+- Storage versions and reader pins, `COPY FROM DATABASE` into a target with unrelated objects, `read_duckdb` with multiple tables, and the ingest reject invariant.
 - `VARIANT` functions, 1-based indexing, comparator, shredding syntax.
 - Parquet `schema`, R-tree index scan, `SECURE VIEW`, regex `~`.
-- `EXPLAIN` estimates, `EXPLAIN ANALYZE` actuals, JSON plans, and the fact that `EXPLAIN ANALYZE` runs DML.
+- `EXPLAIN` estimates, `EXPLAIN ANALYZE` actuals, JSON plans, the plan-only versus analyzed JSON shape, metadata-only plans, spill metrics, row-group semantics, the legacy metrics shape, and the fact that `EXPLAIN ANALYZE` runs DML.
+- The plan linter self-test, including a cross product, a non-sargable Parquet filter, a sargable point lookup, a metadata-only count, and a write-guard check.
 - Parquet row-group pruning, metadata row duplication, schema drift, partitioned writes, overwrite behavior, and the row-group minimum.
 - CSV rejects, JSON `ignore_errors` nulling, and the `ui` extension install and server startup.
 - The docs index versions and the BM25 subquery.
 - A local Quack server on a non-default port and a Python 2.0.0 venv.
 
-Not run here: a live Iceberg REST catalog, a Delta or Unity Catalog endpoint, the interactive browser UI beyond server startup, the Claude Code plugin validator (the CLI is not installed), and a second-machine install. Those claims are labeled documented or announced in the research, not probed.
+Not run here: a live Iceberg REST catalog, a Delta or Unity Catalog endpoint, the interactive browser UI beyond server startup, the Claude Code plugin validator (the CLI is not installed), a 1.5.x reader binary for the storage-pin matrix, and a second-machine install. Those claims are labeled documented or announced in the research, not probed.
 
 ## Research
 
@@ -161,7 +167,7 @@ The snapshots are pinned to a commit. The live pages remain the source of truth.
 
 ## Contributing
 
-Read [CONTRIBUTING.md](CONTRIBUTING.md) before editing a skill. Run [evals/triggers.md](evals/triggers.md) after changing a description.
+Read [CONTRIBUTING.md](CONTRIBUTING.md) before editing a skill, and [docs/skill-design.md](docs/skill-design.md) for the workflow contract and abstraction ladder. Run [evals/triggers.md](evals/triggers.md) after changing a description.
 
 ## License
 

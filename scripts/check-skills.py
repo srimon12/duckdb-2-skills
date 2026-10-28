@@ -121,6 +121,10 @@ def check_skill(path: Path) -> tuple[list[str], list[str]]:
         if token.startswith("duckdb-") and token not in known:
             warnings.append(f"cross-skill: `{token}` does not match a skill directory")
 
+    for script in set(re.findall(r"`(scripts/[^`]+\.py)`", body)):
+        if not (path.parent / script).exists():
+            errors.append(f"script: {script!r} does not exist under {path.parent.name}/")
+
     refs_dir = path.parent / "references"
     if refs_dir.exists():
         for ref in sorted(refs_dir.glob("*.md")):

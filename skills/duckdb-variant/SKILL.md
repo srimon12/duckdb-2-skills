@@ -29,6 +29,16 @@ Object keys come back sorted. `{'name': 'Alice', 'age': 30}::VARIANT` prints as 
 
 A `VARIANT` can sit in a table, a Parquet file, or a Delta table. In Delta it can be written at the top level only; a nested `VARIANT` can be created but not written.
 
+## Load JSON
+
+`read_json` cannot read into a `VARIANT` column. Read the file as `JSON`, then cast. For a repeatable load:
+
+1. Read as `JSON` and cast to `VARIANT`.
+2. Profile keys and types on a sample: `SELECT variant_keys(data), variant_typeof(data) FROM ... LIMIT 1000;`
+3. Choose shredding fields that are stable scalars and appear in filters. Leave heterogeneous or high-cardinality fields unshredded.
+4. Write with the schema in `## Shredding`, or keep the database default for mixed data.
+5. Prove the write: compare the row count and `variant_typeof`/`variant_keys` before and after. A mismatched row falls back to the unshredded `value` and still returns.
+
 ## Inspect
 
 ```sql
@@ -36,7 +46,7 @@ SELECT id, variant_typeof(data) AS full_type, variant_type(data) AS category
 FROM events;
 ```
 
-`variant_typeof` returns the full type, such as `INT32`, `VARCHAR`, `ARRAY(3)`, or `OBJECT(age, name)`. `variant_type` returns the physical category, such as `OBJECT`, `BOOL_TRUE`, `INT8`, `DECIMAL`, or `TIMESTAMP_MICROS`. It does not return SQL type names.
+`variant_typeof` returns the full type, such as `INT32`, `VARCHAR`, `ARRAY(3)`, or `OBJECT(age, name)`. `variant_type` returns the physical category, such as `OBJECT`, `BOOL_TRUE`, `INT8` for a `TINYINT`, `INT32` for an `INTEGER`, `DECIMAL`, or `TIMESTAMP_MICROS`. It does not return SQL type names.
 
 | Function | Use |
 | --- | --- |
@@ -52,6 +62,8 @@ FROM events;
 | `variant_comparator(v)` | Binary sort key for the logical `VARIANT` order |
 | `variant_group_object(key, value)` | Aggregate into one object |
 | `variant_group_array(x)` | Aggregate into a `VARIANT` array |
+
+A SQL NULL cast to `VARIANT` and a JSON null both appear as `VARIANT_NULL`; no column-level predicate separates them. `variant_type` returns SQL NULL for both, and `IS NULL` is true for both. Inside an object, `variant_exists(v, path)` separates an absent key from a present null.
 
 ## Extract
 

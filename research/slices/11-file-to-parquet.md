@@ -68,7 +68,7 @@ The partitioned-writes page says both options remove existing directories. The C
 
 ### Row groups
 
-`ROW_GROUP_SIZE` defaults to 122,880. A request below 2,048 is raised to 2,048. The final group can be smaller. A 10,000-row file written with `ROW_GROUP_SIZE 1000` has four groups of 2,048 and one group of 1,808.
+`ROW_GROUP_SIZE` defaults to 122,880. A request is rounded up to a multiple of 2,048, with a minimum of 2,048. The final group can be smaller. A 10,000-row file written with `ROW_GROUP_SIZE 1000` has four groups of 2,048 and one group of 1,808. A request for 10,000 becomes 10,240, so a 100,000-row file has nine full groups and a final smaller group.
 
 Healthy Parquet row groups are 100,000 to 1,000,000 rows. Healthy files are roughly 100 MB to 10 GB. Tiny groups and tiny files cost more in metadata and scheduling than they save.
 

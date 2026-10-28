@@ -26,7 +26,7 @@ Do not build one macro that mentions every reader. A missing extension then fail
 | `.avro` | `FROM read_avro('path')`; autoloads |
 | `.xlsx` | `FROM read_xlsx('path')`; autoloads |
 | `.sqlite`, `.sqlite3` | `ATTACH 'path' AS s (TYPE sqlite);` then `SHOW TABLES` |
-| `.db`, `.duckdb` | `FROM read_duckdb('path')` or `FROM 'path'`; `.db` is DuckDB, not SQLite |
+| `.db`, `.duckdb` | `FROM read_duckdb('path', table_name = '...')` or `FROM 'path'`; a bare read works only for a single-table file. `schema_name` selects a schema in a multi-schema file. `.db` is DuckDB, not SQLite |
 | `.geojson`, `.geojsonl` | `FROM read_json('path', geojson := true)` or `FROM 'path'` |
 | `.shp`, `.gpkg`, `.fgb` | `LOAD spatial;` then `ST_Read('path')` |
 | anything else | `DESCRIBE FROM 'path'` and switch to the reader the error names |
@@ -84,7 +84,7 @@ The format matrix, the CSV/JSON/Parquet parameters, and the secrets table are in
 
 For a repeatable load, read [references/ingest.md](references/ingest.md). It owns the contract from inspect to typed rows, quarantine, partitioned write, and row-count proof. A one-file conversion stays in `Convert` above.
 
-The short form is: read raw, cast explicitly, split good and bad, write `good` to partitioned Parquet, persist `bad` with a reason, and prove `input = kept + quarantined`. Do not use `ignore_errors` as a repair.
+The short form is: read raw, cast explicitly, split good and bad, write `good` to partitioned Parquet, persist `bad` and any parser rejects, and prove `input = good + bad + distinct reject lines`. Do not use `ignore_errors` as a repair.
 
 ## Remote files
 
@@ -119,9 +119,9 @@ SET allow_persistent_secrets = false;
 SET lock_configuration = true;
 ```
 
-The same setting blocks remote reads too. Skip the local allow-list for `s3://`, `gs://`, `gcs://`, `r2://`, `az://`, `azure://`, `abfs://`, `abfss://`, `http://`, and `https://`, but do not assume remote is unrestricted after `enable_external_access=false`.
+`allowed_paths` must come before `enable_external_access = false`; afterward the setting is rejected. The same setting blocks remote reads too. Skip the local allow-list for `s3://`, `gs://`, `gcs://`, `r2://`, `az://`, `azure://`, `abfs://`, `abfss://`, `http://`, and `https://`, but do not assume remote is unrestricted after `enable_external_access=false`.
 
-`-safe` is not a substitute. It blocks all external file access, including the file the user named, while still opening the database path on the command line.
+`-safe` is not a substitute. It blocks all external file access, including the file the user named, while still opening the database path on the command line. The full safety matrix and the `-safe` ordering rule are in `duckdb`.
 
 ## Verify
 

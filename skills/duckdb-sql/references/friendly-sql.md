@@ -6,13 +6,13 @@ Read this when the skill needs an example or an edge case for a friendly-SQL cla
 
 ```sql
 FROM events
-WHERE kind = 'click'
 SELECT user_id, count(*) AS clicks
+WHERE kind = 'click'
 GROUP BY ALL
 ORDER BY clicks DESC;
 ```
 
-The `SELECT` list is optional when every column is wanted.
+The `SELECT` list is optional when every column is wanted. `FROM events WHERE ...` is valid only without an explicit `SELECT`. Put `SELECT` before `WHERE` when both are present.
 
 ## GROUP BY ALL and ORDER BY ALL
 
@@ -87,9 +87,11 @@ UNPIVOT sales ON q1, q2 INTO NAME quarter VALUE amount;
 SELECT [x * 2 FOR x IN [1, 2, 3]] AS doubled;   -- [2, 4, 6]
 SELECT [10, 20, 30, 40][2:3] AS slice;          -- [20, 30], 1-based
 SELECT [10, 20, 30][-1] AS last;                -- 30
-SELECT {'x': 1, 'y': 2}.*;                      -- two columns
+SELECT s.* FROM (SELECT {'x': 1, 'y': 2} AS s); -- two columns
 SELECT [1, 2] || [3] AS appended;
 ```
+
+A struct literal cannot take `.*` directly. Bind it in a subquery or CTE, then expand the alias.
 
 Indexes are 1-based, including slices. JSON arrays are the 0-based exception. `list_transform`, `list_filter`, and `list_reduce` accept `lambda x: ...`, and the optional last parameter is the 1-based index.
 
@@ -99,10 +101,10 @@ Indexes are 1-based, including slices. JSON arrays are the 0-based exception. `l
 SELECT COLUMNS(*) + 1 FROM (SELECT 1 AS a, 2 AS b);
 SELECT COLUMNS('^metric_') FROM readings;
 SELECT COLUMNS(lambda c: c NOT IN ('id', 'created_at')) FROM events;
-SELECT UNPACK(COLUMNS('^flag_')) FROM flags;
+SELECT greatest(UNPACK(COLUMNS('^flag_'))) AS any_flag FROM flags;
 ```
 
-`COLUMNS(...)` applies an expression across columns. `UNPACK` expands the list into a variadic call. `COLUMNS(lambda c, i: ...)` receives the column name and its 1-based position.
+`COLUMNS(...)` applies an expression across columns. `UNPACK` expands the list into a variadic call, so it must sit inside a function argument. `COLUMNS(lambda c, i: ...)` receives the column name and its 1-based position.
 
 ## Joins
 

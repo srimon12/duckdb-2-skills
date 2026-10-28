@@ -13,7 +13,7 @@ Agree on six things before writing output.
 | Partition keys | `year`, `month` | Low-cardinality filter columns. |
 | Key types | `order_id BIGINT`, `ordered_at DATE`, `amount DECIMAL(18,2)` | Type drift changes results. |
 | Nullable columns | `customer` | An empty optional value is `NULL`, not a bad row. |
-| Bad-row policy | Quarantine to `quarantine.parquet` | Never drop or null a bad value silently. |
+| Bad-row policy | Quarantine to `quarantine.parquet`; parser rejects to `rejects.parquet` | Never drop or null a bad value silently. |
 
 If the user only wants a preview, use the `Preview` or `Convert` section in `duckdb-files/SKILL.md`. Do not build a pipeline for a one-off `LIMIT 20`.
 
@@ -62,6 +62,8 @@ FROM read_csv(
 ```
 
 Do not use `ignore_errors = true` as a repair. On JSONL it turns a malformed line into a row of `NULL`s. On CSV it skips the row. Both hide the failure.
+
+Choose the reject path before step 3. If the parser structure is clean, read as text with `all_varchar` and cast. If the reader must parse typed columns, use `store_rejects`; parser rejects never enter `typed`. Do not switch paths after `bad` and `good` are built.
 
 ## 3. Type explicitly
 
@@ -131,7 +133,9 @@ WHERE reason IS NULL;
 
 A row with two bad columns gets one quarantine row with both reasons. That is the contract. Do not count it twice. A blank optional column is not a bad row; it is `NULL` in the typed row.
 
-For CSV parser errors that never reach the typed layer, use `store_rejects`.
+### Parser rejects
+
+Parser rejects never enter `typed`. If the reader uses `store_rejects`, they are not in `bad`. Decide the path before step 3. Do not replace `typed` after `bad` and `good` exist; rebuild `flagged`, `bad`, and `good` after the final typed read.
 
 ```sql
 CREATE OR REPLACE TEMP TABLE typed AS
@@ -142,6 +146,7 @@ FROM read_csv(
     rejects_table = 'rejects'
 );
 
+-- Rebuild flagged, bad, and good from this typed table.
 SELECT count(*) AS errors,
        count(DISTINCT file_id || ':' || line) AS bad_lines
 FROM rejects;
@@ -149,7 +154,7 @@ FROM rejects;
 
 One bad line can produce several reject rows. Count distinct `(file_id, line)` for the row count. The rejects table details are in [formats.md](formats.md).
 
-Persist the rejects before the process exits. A temp table disappears with the connection.
+Persist both quarantine tables before the process exits. A temp table disappears with the connection.
 
 ```sql
 COPY (FROM rejects) TO 'rejects.parquet' (FORMAT parquet);
@@ -202,11 +207,12 @@ Remote filesystems do not support overwrite. Write to a new prefix and swap the 
 
 ## 7. Prove the load
 
-Run these checks in the same process or in a fresh read-only process.
+Run the row counts before the process exits. For a fresh read-only check, persist `good`, `bad`, and `rejects` first, then count the written files.
 
 ```sql
 SELECT count(*) AS kept FROM good;
 SELECT count(*) AS rejected FROM bad;
+SELECT count(DISTINCT file_id || ':' || line) AS rejected_lines FROM rejects;
 SELECT sum(num_rows) AS written
 FROM parquet_file_metadata('out/**/*.parquet');
 ```
@@ -214,9 +220,11 @@ FROM parquet_file_metadata('out/**/*.parquet');
 The invariant is:
 
 ```text
-input rows = kept rows + quarantined rows
-written rows = kept rows
+input data rows = good + bad + rejected_lines
+written rows = good
 ```
+
+Count input data rows from the source, not from `read_csv` output. A header and a multiline field are not rows. If `store_rejects` is not used, `rejected_lines` is 0 and the rejects query is omitted.
 
 Then check the schema and the required columns.
 
@@ -245,10 +253,11 @@ Options:
 | Option | Effect | Use |
 | --- | --- | --- |
 | `union_by_name = true` | Fills missing columns with `NULL`. | Read a dataset with additive schema changes. |
-| `schema = MAP {...}` | Renames, casts, and supplies defaults. | A known contract with a small drift. |
+| `schema = MAP {'col': {name: 'col', type: 'VARCHAR', default_value: NULL}}` | Renames, casts, and supplies defaults. The value type must be a STRUCT with `name`, `type`, and `default_value`. | A known contract with a small drift. |
+| `bound_schema = {'col': 'VARCHAR'}` with `hive_partitioning = false` | Exact ordered output schema for `read_parquet` only; source columns not listed are dropped. Cannot combine with `schema` or `union_by_name`. | A known contract with no defaults. |
 | Separate reads and `UNION ALL BY NAME` | Keeps each producer visible. | A quarantine or a per-source audit. |
 
-Do not use `union_by_name` to hide a missing required column. Count the `NULL`s first.
+Do not use `union_by_name` to hide a missing required column. Count the `NULL`s first. A simple `MAP {'col': 'VARCHAR'}` is not a valid `schema` value because the map value must be a STRUCT.
 
 ## 9. Hand off
 

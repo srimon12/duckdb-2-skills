@@ -30,12 +30,12 @@ CALL quack_stop('quack:localhost');
 
 `quack_stop` stops a server in the current process only. From another process it returns `No server found listening on ...` and the server keeps running. Pass the exact listen URI, including a non-default port.
 
-The token is at least 4 characters. Omit it and the server generates one and returns it.
+The token is at least 4 characters. If a default `quack` secret exists, its token is reused. Otherwise the server generates one and returns it in `auth_token`. Pass `create_secret_if_not_exists => true` to persist a generated token.
 
 | Parameter | Default | Use |
 | --- | --- | --- |
 | `listen_uri` | `quack:localhost` | Host and port. |
-| `token` | generated | Shared secret. |
+| `token` | reused or generated | Shared secret. |
 | `secret` | unset | Name of an existing `quack` secret to use. |
 | `create_secret_if_not_exists` | `false` | Persist the generated token as the default `quack` secret. |
 | `allow_other_hostname` | `false` | Permit a non-local bind such as `0.0.0.0`. Testing only. |
@@ -129,7 +129,7 @@ The server checks a token on connect and runs an authorization callback before e
 
 Do not replace that callback with a regular expression on the query text. A data-modifying CTE starts with `WITH`, and a comment can hide the first keyword, so a prefix check that allows `WITH` still runs writes. Before setting `quack_authorization_function`, read the security page.
 
-`quack_authentication_function` takes `(sid, client_token, server_token)` and returns `BOOLEAN`. `quack_authorization_function` takes `(connection_id, query)`. Both run on a fresh server-side connection, so they cannot rely on session state.
+`quack_authentication_function` takes `(sid, client_token, server_token)` and returns `BOOLEAN`. `quack_authorization_function` takes `(sid, query)` and returns `BOOLEAN` to allow or deny, or `VARCHAR` SQL to replace the query. Use the `VARCHAR` form for row filters; never a regex on query text. Both run on a fresh server-side connection, so they cannot rely on session state.
 
 ## Postgres and MySQL
 

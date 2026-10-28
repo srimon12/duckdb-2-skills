@@ -26,7 +26,7 @@ INSTALL AND LOAD h3 FROM community;
 | `INSTALL name FROM community` | Install from the community repository. |
 | `INSTALL name FROM core_nightly` | Nightly core build. |
 | `INSTALL name FROM 'https://...'` | A repository URL. |
-| `INSTALL name VERSION 'v1.1.8'` | Pin a version. A hash is also valid. |
+| `INSTALL name VERSION '<version>'` | Pin only a version the repository publishes for the 2.0 platform. The `extension_version` shown by `duckdb_extensions()` is a candidate, but an unverified tag or hash returns HTTP 404. Test in a scratch `extension_directories` path first. |
 | `FORCE INSTALL name` | Re-download and overwrite the cached copy. Without `FORCE`, an installed extension is a no-op, even if the version or repository changed. |
 | `INSTALL '/path/ext.duckdb_extension'` | Install a downloaded file. |
 | `LOAD name` | Load an installed extension. |
@@ -42,6 +42,8 @@ UPDATE EXTENSIONS (spatial, httpfs);
 
 The result columns are `extension_name`, `repository`, `update_result`, `previous_version`, and `current_version`. The statement does not reload. Before depending on the new binary, restart the process.
 
+`UPDATE EXTENSIONS` only touches `REPOSITORY` installs. It re-downloads the repository's current build, so it replaces a pinned version. `CUSTOM_PATH` installs are skipped. Re-run `FORCE INSTALL ... VERSION` after an update to restore a pin.
+
 Statically linked extensions in official builds, including `autocomplete`, `core_functions`, `icu`, `json`, `parquet`, and `shell`, are not updated this way. They ship with the binary.
 
 ## Inspect
@@ -52,7 +54,7 @@ FROM duckdb_extensions()
 ORDER BY extension_name;
 ```
 
-`install_mode` is `STATICALLY_LINKED`, `REPOSITORY`, or `NOT_INSTALLED`. `installed_from` names the repository. `signature_key_fingerprint` is populated for signed repository installs.
+`install_mode` is `STATICALLY_LINKED`, `REPOSITORY`, `CUSTOM_PATH`, `NOT_INSTALLED`, or `UNKNOWN`. `installed_from` names the repository for `REPOSITORY` and the source path for `CUSTOM_PATH`. `signature_key_fingerprint` is populated for signed repository installs.
 
 ## Repositories
 
@@ -103,7 +105,7 @@ When the repository is unreachable, download a file manually:
 FORCE INSTALL '/absolute/path/spatial.duckdb_extension';
 ```
 
-A gzipped file must be decompressed first. `LOAD '/absolute/path/name.duckdb_extension'` skips the installed copy. The basename determines the extension name. There is no uninstall command; delete the `.duckdb_extension` file.
+A `.duckdb_extension.gz` file is accepted and decompressed by `INSTALL`. Decompress it yourself only if the installer rejects the file or the file is not a DuckDB extension. `LOAD '/absolute/path/name.duckdb_extension'` skips the installed copy. The basename determines the extension name. There is no uninstall command; delete the `.duckdb_extension` file.
 
 ## Verify
 

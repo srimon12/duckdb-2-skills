@@ -14,7 +14,7 @@ Read this when the skill needs a reader option, a COPY clause, a secret field, o
 | `read_xlsx` | Excel | `excel` | Autoloads. `COPY ... (FORMAT xlsx)` needs `LOAD excel`. |
 | `read_blob` | Any file as `BLOB` | built in | Columns: `filename`, `content`, `size`, `last_modified`. |
 | `read_text` | Any UTF-8 file as `VARCHAR` | built in | 3.9 GiB limit. |
-| `read_duckdb` | A DuckDB database file | built in | Reads tables without attaching; views are not supported. |
+| `read_duckdb` | A DuckDB database file | built in | Reads tables without attaching; views are not supported. A multi-table file needs `table_name = '...'`; a multi-schema file may need `schema_name`. |
 | `ST_Read` | GeoJSON, Shapefile, GeoPackage, FlatGeobuf, GPX | `spatial` | See `duckdb-spatial`. |
 | `sqlite_scan` | SQLite table | `sqlite_scanner` | Prefer `ATTACH ... (TYPE sqlite)`. A bare `.sqlite` path does not dispatch. |
 
@@ -100,7 +100,8 @@ COPY (FROM 'in.csv') TO 'out.jsonl' (FORMAT json, ARRAY false);
 
 | Parameter | Default | Use |
 | --- | --- | --- |
-| `schema` | NULL | Read as a supplied schema; map by field id or name. |
+| `schema` | NULL | Read as a supplied schema; map by field id or name. The value is a `MAP` of column names to `{name, type, default_value}` structs. |
+| `bound_schema` | NULL | Exact ordered output schema for `read_parquet` only. Requires explicit `hive_partitioning=true` or `false`; cannot combine with `schema` or `union_by_name`. |
 | `union_by_name` | `false` | Align columns across files. |
 | `binary_as_string` | `false` | Treat legacy binary columns as strings. |
 | `filename` | false | Virtual column. |

@@ -11,7 +11,7 @@ SET VARIABLE latest = (
 SELECT getvariable('latest');
 ```
 
-The STAC catalog returned `2026-10-21.0` on 2026-10-22. Overture publishes monthly and keeps roughly two months of releases in the public bucket. Do not hardcode a release id in saved SQL.
+Overture publishes monthly and keeps roughly two months of releases in the public bucket. Do not hardcode a release id in saved SQL; read the current release from the STAC catalog.
 
 Path layout:
 
@@ -37,7 +37,7 @@ CREATE SECRET (TYPE s3, PROVIDER config, REGION 'us-west-2');
 | `base` | `land`, `water`, `infrastructure` | Polygon, Point, LineString |
 | `addresses` | `address` | Point |
 
-Every feature carries `id`, `geometry`, `bbox`, `version`, and `sources`. `bbox` is a `STRUCT(xmin, xmax, ymin, ymax)`. Overture geometry is typed `GEOMETRY('OGC:CRS84')`; direct casts to `POINT_2D` fail. For points, `xmin = xmax` and `ymin = ymax`.
+Every feature carries `id`, `geometry`, `bbox`, `version`, and `sources`. `bbox` is a `STRUCT(xmin, xmax, ymin, ymax)`. Overture geometry is typed `GEOMETRY('OGC:CRS84')`; direct casts to `POINT_2D` fail. For points, `xmin = xmax` and `ymin = ymax`. Point themes can use the min corner. Line and polygon themes need full bbox overlap on both axes.
 
 ## Places
 
@@ -80,7 +80,7 @@ ORDER BY places DESC
 LIMIT 20;
 ```
 
-For point data, the bbox min corner equals the point, so `bbox.xmin` and `bbox.ymin` are exact. `bbox` is a per-row struct, not a Hive partition column. For polygons the bbox is a coarse prefilter; a predicate on `xmax`/`ymax` can drop a feature that starts outside the box but intersects it, so follow the bbox filter with `ST_Intersects`.
+For point data, the bbox min corner equals the point, so `bbox.xmin` and `bbox.ymin` are exact. `bbox` is a per-row struct, not a Hive partition column. For lines and polygons, a min-corner predicate drops a feature that starts outside the box but intersects it. Use full overlap on both axes, then `ST_Intersects`. A max-only predicate drops a feature that ends outside.
 
 ## Buildings
 
@@ -120,7 +120,7 @@ LIMIT 5;
 
 For a polygon such as a US state, query `division_area` and filter `country`, `subtype`, and `is_land`. The `division_area` table has no `population` column.
 
-For a point-in-polygon lookup, filter the division bbox first, then use `ST_Intersects`. `ST_Contains` is false for a point on the boundary; `ST_Covers` includes it.
+For a point-in-polygon lookup, filter the division bbox with full overlap first, then use `ST_Intersects`. `ST_Contains` is false for a point on the boundary; `ST_Covers` includes it.
 
 ## Transportation
 
@@ -132,8 +132,8 @@ FROM read_parquet(
     || getvariable('latest')
     || '/theme=transportation/type=segment/*'
 )
-WHERE bbox.xmin BETWEEN -74.01 AND -73.96
-  AND bbox.ymin BETWEEN 40.72 AND 40.77
+WHERE bbox.xmax >= -74.01 AND bbox.xmin <= -73.96
+  AND bbox.ymax >= 40.72  AND bbox.ymin <= 40.77
   AND class = 'primary'
 SELECT names.primary, class, ST_Length(geometry) AS length
 LIMIT 20;
@@ -141,7 +141,7 @@ LIMIT 20;
 
 ## Performance
 
-- Filter `bbox` before any `ST_*` call. For polygons, follow with `ST_Intersects`.
+- Filter `bbox` before any `ST_*` call. For lines and polygons, use full overlap on both axes, then follow with `ST_Intersects`.
 - Use `LIMIT` and `DESCRIBE SELECT ... LIMIT 0` before selecting many columns. `ST_Read` does not expose the manual's `spatial_filter` parameters in this build; use a `WHERE bbox` filter.
 - Parquet predicate pushdown skips row groups, but only when the predicate uses a column with stats. In 2.0, a `GEOMETRY` column has no min/max stats; a separate `bbox` struct does. A `bbox` filter on a 10-row-group file scanned 2 groups and 1.1 MB instead of 10 groups and 11.5 MB.
 - Current file counts are places 16, buildings 512, transportation/segment 128, division_area 8, division 1, address 64. A 0.002-degree building bbox took 2:36 only to read footers. For repeated work, make a regional extract.

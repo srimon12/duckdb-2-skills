@@ -1,7 +1,7 @@
 {
   "name": "duckdb-2-skills",
   "description": "Agent skills for DuckDB 2.0: SQL, plan diagnostics, batch ingest, files, VARIANT, Quack, DuckLake, Iceberg, Delta, migration, and the Python client.",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "license": "MIT",
   "author": {
     "name": "duckdb-2-skills contributors"

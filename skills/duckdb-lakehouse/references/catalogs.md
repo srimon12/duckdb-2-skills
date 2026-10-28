@@ -100,6 +100,16 @@ CALL ducklake_delete_orphaned_files('lake', dry_run => true);
 
 `CHECKPOINT` runs flush, expire, merge, rewrite, cleanup, and orphan deletion. With `expire_older_than` set, it destroys time travel and the change feed. `cleanup_all => true` ignores age. Orphan deletion scans the data path recursively and can delete files DuckLake never wrote. Dry-run first.
 
+| Option | Use |
+| --- | --- |
+| `rewrite_delete_threshold` | Fraction of a file that may be deleted before a rewrite is warranted, 0 to 1. |
+| `delete_older_than` | Age bound for cleanup and orphan deletion. |
+| `expire_older_than` | Age bound for snapshot expiry. It destroys time travel and the change feed. |
+| `auto_compact` | `false` skips flush, merge, and rewrite for a table during `CHECKPOINT`. |
+| `target_file_size` | Target file size for merges. `ducklake_target_file_size` overrides it for the run. |
+
+Merge when a table has many small files and no deletes. Rewrite when the deleted fraction exceeds `rewrite_delete_threshold`. Expire only when the retention policy permits and time travel is expendable. Clean only after expiry, with `dry_run` first.
+
 Merge skips files with deletes or inlined deletions. Rewrite those first, then merge. Files are not removed immediately after a merge; cleanup is a separate step.
 
 ## DuckLake features
@@ -225,7 +235,9 @@ CREATE SECRET uc (
 ATTACH 'my_catalog' AS uc (TYPE unity_catalog, DEFAULT_SCHEMA 'main');
 ```
 
-Options: `SECRET`, `DEFAULT_SCHEMA`, `READ_ONLY`, `USE_IRC_SCAN_PLAN`. A storage secret is also required for the data files.
+Options: `SECRET`, `DEFAULT_SCHEMA`, `READ_ONLY`, `USE_IRC_SCAN_PLAN`. A storage secret is also required for the data files. Create it before `ATTACH`; the catalog secret only authenticates the REST endpoint. `DEFAULT_SCHEMA` is required for Unity Catalog OSS.
+
+Time travel uses `AT (VERSION => 5)` or `AT (TIMESTAMP => TIMESTAMPTZ '...')`. A timestamp reads the latest version committed at or before that time; a time before the first commit or in the future fails.
 
 Unity Catalog reads, inserts, and creates tables. Managed tables use catalog-managed commits. It does not support `UPDATE`, `DELETE`, `DROP TABLE`, `ALTER TABLE`, or view and schema DDL. Inserts into tables with `DEFAULT` or generated columns fail. `CREATE TABLE` rejects constraints, defaults, generated columns, unsupported types, `SORTED BY`, and `WITH` options other than `location`.
 

@@ -35,9 +35,24 @@ That installs under `~/.duckdb/cli/<version>/`, points `~/.duckdb/cli/latest` at
 
 `-csv`, `-json`, and every other output flag disable automatic agent mode. To keep agent framing with a different renderer, pass `-agent` explicitly.
 
-`-agent -json` and `-agent -csv` keep the JSON errors and the banner, but they do not apply the 1,000-row, 10,000-byte, or 500-character caps. When a result could be large, add `LIMIT` or an aggregate.
+`-agent -json` and `-agent -csv` keep the JSON errors and the banner, but they do not apply the 1,000-row, 10,000-byte, or 500-character caps. When a result could be large, add `LIMIT` for a deliberate sample, or an aggregate for a complete count.
 
-Read stderr. Agent mode writes its banner, JSON errors, cost estimates, and progress there. A footer that says `first 20 and last 20 of N rows` means the table is a sample. Before treating the result as complete, add `LIMIT` or an aggregate. Results of 1 to 9 rows have no hash footer; 0 and 10 or more do.
+Read stderr. Agent mode writes its banner, JSON errors, cost estimates, and progress there. A footer that says `first X and last Y of N rows` means the display is truncated; the result still has N rows and the hash covers all of them.
+
+## Result trust
+
+Check the exit code first, then stderr, then the footer.
+
+| Signal | Meaning | Move |
+| --- | --- | --- |
+| exit 0, no stderr error, `N rows, hash ...` | complete for the query | use it; if the SQL has `LIMIT`, it is not the dataset total |
+| exit 0, no footer, 1 to 9 rows | complete for the query; hash omitted | use it |
+| `first X and last Y of N rows` | display truncated; the result has N rows | use `.maxrows -1` to inspect, or an aggregate for a dataset total |
+| `first X of at least N rows` or `query stopped early` | lower bound | stop and bound the query |
+| exit 1 with a stderr JSON error | failed | read the error; do not parse stdout |
+| exit 1 with header-only stdout and no JSON error | interrupted | rerun or bound it |
+
+The result hash is order-independent, so a repeat run with a different `ORDER BY` checks determinism. Do not treat a `LIMIT` result as complete.
 
 `-json` on error can leave a partial `[` on stdout. Before parsing, check the exit code and stderr. `-json` with multiple statements emits one array per statement, and `NaN`/`Infinity` are not strict JSON. `EXPLAIN ANALYZE` prints a profile, not JSON, even with `-json`.
 
@@ -56,7 +71,7 @@ duckdb -f query.sql
 duckdb -init .duckdb/state.sql -agent -c "SHOW TABLES;"
 ```
 
-`-init` replaces `~/.duckdbrc`. `-no-init` skips both. `-cmd` runs at its argument position. `-f` runs a file and stops at the first error by default; stdin continues. To combine a dot command with SQL, use `-cmd` or a heredoc; a `-c` string cannot hold both.
+`-init` replaces `~/.duckdbrc`. `-no-init` skips both. `-cmd` runs at its argument position, including after the last `-c` or a successful `-f`. `-f` runs a file and stops at the first error by default; stdin continues. To combine a dot command with SQL, use `-cmd` or a heredoc; a `-c` string cannot hold both.
 
 `-readonly` opens without write access, but an explicit `ATTACH ... (READ_WRITE)` can override it. `-safe` blocks external file access, still opens the database named on the command line, and locks configuration before `-init` runs.
 
@@ -119,4 +134,4 @@ The first must print `v2.0`. The second must print a Markdown table. The third m
 - [Migration guide](https://duckdb.org/docs/2.0/operations_manual/migration.html) owns the storage break.
 - [Install](https://duckdb.org/install/) owns the platform commands.
 - The full flag, dot-command, and setting tables are in [references/cli.md](references/cli.md).
-- Release checked while writing this pack: DuckDB 2.0.0 `d54cbbe3df`, 2026-10-22. Agent-mode limits and the JSON error split were run locally.
+- Release checked against DuckDB 2.0.0 `d54cbbe3df`. Agent-mode limits and the JSON error split were run locally.

@@ -1,16 +1,18 @@
 # Contributing
 
-This repo ships agent skills, not a manual. A skill earns its place by changing what an agent does on the next command.
+This repo ships agent skills, not a manual. A skill earns its place by changing what an agent does on the next command. Read [docs/skill-design.md](docs/skill-design.md) for the abstraction ladder, the workflow contract, and the proof and stop rules.
 
 ## Layout
 
 ```
 skills/<name>/SKILL.md          the skill
 skills/<name>/references/*.md   long tables loaded only when needed
+skills/<name>/scripts/*.py      deterministic steps the skill runs
 research/                       evidence, snapshots, and the per-skill audit
 scripts/check-skills.py         structure and link checks
 scripts/probe.py                executable claims, run against a real binary
 evals/triggers.md               routing cases to run after a description change
+docs/skill-design.md            how to write a workflow or abstraction skill
 ```
 
 ## SKILL.md contract
@@ -54,7 +56,7 @@ Add a reference file only when the content is long, tabular, and needed on a min
 - Open with one sentence that says when to read it.
 - Do not link a reference from another skill's reference. Link the owning skill.
 
-Current reference files: CLI flags, friendly SQL, file formats, batch ingest, plan reading, lakehouse catalogs, Overture, migration checklist.
+Current reference files: CLI flags, friendly SQL, trigger support, file formats, batch ingest, plan reading, diagnosis protocol, lakehouse catalogs, Overture, migration checklist.
 
 ## Fact ownership
 
@@ -91,9 +93,11 @@ Current reference files: CLI flags, friendly SQL, file formats, batch ingest, pl
 python3 scripts/check-skills.py
 python3 scripts/probe.py
 python3 scripts/probe.py --network --write research/probe-results.txt
+python3 skills/duckdb-profile/scripts/plan_lint.py --self-test
+bash evals/ingest/run_reference.sh
 ```
 
-`check-skills.py` checks frontmatter, headings, line budgets, relative links, cross-skill names, and stale strings. `probe.py` runs the executable claims against the local DuckDB binary.
+`check-skills.py` checks frontmatter, headings, line budgets, relative links, script references, cross-skill names, and stale strings. `probe.py` runs the executable claims against the local DuckDB binary.
 
 When a new fact goes into a skill, add a probe if it is executable. If it is not executable, cite the manual page in `research/09-verified-facts.md` or the slice that covers it.
 
@@ -109,7 +113,7 @@ A claim without a source does not go in a skill. A source without a probe is lab
 
 ## Adding a skill
 
-A new skill needs a job an agent does repeatedly, a trigger that does not collide with an existing skill, and enough depth to fill a page. `duckdb-profile` cleared that bar in the next-phase pass. A separate ingest skill did not. The workflow is `duckdb-files/references/ingest.md` because `duckdb-files` already owns the convert, partition, and COPY triggers.
+A new skill needs a job an agent does repeatedly, a trigger that does not collide with an existing skill, and enough depth to fill a page. `duckdb-profile` cleared that bar in the next-phase pass. Its second pass turned the operator list into a diagnosis contract with a cost model, a failure-class catalog, and a plan linter. A separate ingest skill did not clear the bar. The workflow is `duckdb-files/references/ingest.md` because `duckdb-files` already owns the convert, partition, and COPY triggers.
 
 Rejected in the 2.0 pass: triggers, JSON beside `VARIANT`, separate Iceberg and Delta, C API and other clients, a `CREATE EXTENSION REPOSITORY` procedure.
 
@@ -119,6 +123,7 @@ Rejected in the next-phase pass: a separate ingest skill, dbt-duckdb, Evidence o
 
 - [ ] `check-skills.py` passes with no errors.
 - [ ] `probe.py` passes.
+- [ ] The `duckdb-profile` plan linter self-test passes.
 - [ ] Every reference file is linked and under budget.
 - [ ] `evals/triggers.md` has a pass for each changed description.
 - [ ] `evals/ingest` passes its reference run and its grader.

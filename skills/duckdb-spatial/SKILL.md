@@ -15,17 +15,20 @@ LOAD spatial;
 SET geometry_always_xy = true;
 ```
 
-The spatial extension is not autoloadable. `geometry_always_xy` has no default in 2.0. `ST_Transform`, `ST_Distance_Spheroid`, `ST_Area_Spheroid`, and `ST_Length_Spheroid` raise an `Invalid Configuration Error` until it is set. Set it to `true` for longitude, latitude. Setting it to `false` is not a safe default. For EPSG:4326 it reads the coordinates as latitude, longitude and returns wrong numbers. Read it from `duckdb_settings()`; `current_setting('geometry_always_xy')` fails even after `LOAD spatial`.
+The extension is not autoloadable. `geometry_always_xy` starts unset. `ST_Transform`, `ST_Distance_Sphere`, `ST_Distance_Spheroid`, `ST_Area_Spheroid`, and `ST_Length_Spheroid` raise an `Invalid Configuration Error` while it is unset. Set `true` for longitude, latitude. `false` is accepted, but CRS-sensitive functions then read EPSG:4326 as latitude, longitude and can return wrong numbers. Read the value from `duckdb_settings()`; `current_setting('geometry_always_xy')` fails even after `LOAD spatial`.
 
-## Coordinates and distance
+## Measure
 
-Build a point as `ST_Point(longitude, latitude)`. Longitude is first.
+Build a point as `ST_Point(longitude, latitude)`. Longitude is first. Pick the function by accuracy and cost:
 
-```sql
-SELECT ST_Point(-73.985, 40.748) AS p;
-```
+| Need | Function | Unit and cost |
+| --- | --- | --- |
+| Same-CRS comparison | `ST_Distance` | CRS units, degrees on EPSG:4326, cheapest |
+| Fast meters on lon/lat | `ST_Distance_Sphere` | meters, spherical approximation, usually cheaper |
+| Exact meters on lon/lat | `ST_Distance_Spheroid` | meters, ellipsoid, usually slowest |
+| Radius filter | `ST_DWithin` plus bbox | uses the R-tree |
 
-`ST_Distance` on lon/lat is a planar number, not meters. `ST_Distance_Spheroid` wants two `POINT_2D` values:
+All sphere and spheroid measures on lon/lat use the session setting; only `ST_Transform` has a per-call `always_xy` argument. `ST_DWithin(geom, point, d)` uses the R-tree when the point and distance are constant at planning time; `ST_Distance(geom, point) < d` does not.
 
 ```sql
 SELECT ST_Distance_Spheroid(
@@ -34,7 +37,7 @@ SELECT ST_Distance_Spheroid(
 ) AS meters;
 ```
 
-`ST_Area_Spheroid` takes `GEOMETRY` or `POLYGON_2D`; `ST_Length_Spheroid` takes `GEOMETRY` or `LINESTRING_2D`. They return square meters and meters. They do not take `POINT_2D`.
+`ST_Area_Spheroid` takes `GEOMETRY` or `POLYGON_2D`; `ST_Length_Spheroid` takes `GEOMETRY` or `LINESTRING_2D`. Both accept a `POINT_2D` cast but return `0.0`, so pass a polygon or line for a real measure. They return square meters and meters.
 
 For a CRS change, set `geometry_always_xy` or pass the optional `always_xy` argument. A CRS-typed geometry cannot cast straight to `POINT_2D`; strip the CRS with `::GEOMETRY::POINT_2D` or rebuild the point:
 
@@ -44,14 +47,23 @@ SELECT ST_AsText(ST_Transform(ST_Point(-73.985, 40.748), 'EPSG:4326', 'EPSG:3857
 
 ## Filter before geometry
 
-Before any `ST_*` call, filter with `bbox.xmin` and `bbox.ymin`. `bbox` is a per-row struct, not a partition column. For point data the min corner equals the point, so the min-corner predicate is exact. For polygons it is only a coarse prefilter, and a predicate on `xmax` or `ymax` can drop a feature that starts outside the box but intersects it. Follow the bbox filter with `ST_Intersects`.
+`bbox` is a per-row `STRUCT(xmin, xmax, ymin, ymax)`, not a partition column. For point themes the min corner equals the point, so this is exact:
 
 ```sql
 WHERE bbox.xmin BETWEEN -74.01 AND -73.96
   AND bbox.ymin BETWEEN 40.72 AND 40.77
 ```
 
-For a local table with a `GEOMETRY` column, an R-tree index turns those predicates into an index scan:
+For lines and polygons, min-corner containment drops a feature that starts outside the query but intersects it. Use full overlap on both axes, then `ST_Intersects`:
+
+```sql
+WHERE bbox.xmax >= -74.01 AND bbox.xmin <= -73.96
+  AND bbox.ymax >= 40.72  AND bbox.ymin <= 40.77
+```
+
+Do not filter on `xmax` or `ymax` alone. A max predicate drops a feature that ends outside the query.
+
+For a local table with a `GEOMETRY` column, an R-tree index turns the topology predicate into an index scan:
 
 ```sql
 CREATE INDEX my_idx ON places USING RTREE (geom);
@@ -59,7 +71,11 @@ EXPLAIN SELECT count(*) FROM places
 WHERE ST_Within(geom, ST_MakeEnvelope(-74.01, 40.72, -73.96, 40.77));
 ```
 
-The plan shows `Rtree Index Scan`. The index works for `ST_Equals`, `ST_Intersects`, `ST_Touches`, `ST_Crosses`, `ST_Within`, `ST_Contains`, `ST_Overlaps`, `ST_Covers`, `ST_CoveredBy`, `ST_ContainsProperly`, and `ST_DWithin`, when one argument is constant at planning time. `ST_Distance(geom, point) < d` does not use the index; rewrite it as `ST_DWithin`. After the table is loaded, build the index; bulk loading is faster than incremental inserts.
+The plan shows `Rtree Index Scan`. The index works for `ST_Equals`, `ST_Intersects`, `ST_Touches`, `ST_Crosses`, `ST_Within`, `ST_Contains`, `ST_Overlaps`, `ST_Covers`, `ST_CoveredBy`, `ST_ContainsProperly`, and `ST_DWithin`, when one argument is constant at planning time. After the table is loaded, build the index; bulk loading is faster than incremental inserts.
+
+## Spatial joins
+
+For a join, build the R-tree on the filtered side, add bbox-overlap predicates on both inputs, then join on `ST_Intersects` or `ST_Within`. The planner uses deferred bounds for the other side. For a selective bbox, `EXPLAIN` must show `Rtree Index Scan` or `Spatial Join`. A `Seq Scan` on both sides means the index or the bbox predicate is missing, or the bbox is too broad to be selective.
 
 ## Read and write
 
@@ -134,7 +150,7 @@ Other themes use the same release prefix and `theme=<name>/type=<type>/*`:
 | `base` | `land`, `water`, `infrastructure` |
 | `addresses` | `address` |
 
-Before depending on a column, run `DESCRIBE` on a `LIMIT` subquery. The full schema notes and three worked queries are in [references/overture.md](references/overture.md).
+Before depending on a column, run `DESCRIBE SELECT ... LIMIT 0`. The full schema notes and three worked queries are in [references/overture.md](references/overture.md).
 
 The keyless S3 secret only sets the region. Do not put keys in the URL. Overture data has its own licenses per theme; check the Overture attribution page before publishing a derived dataset.
 
@@ -178,4 +194,4 @@ The point must be a GeoJSON `Point` with `[-73.985, 40.748]`. The distance must 
 - [Overture DuckDB guide](https://docs.overturemaps.org/getting-data/duckdb/) owns the release lookup and examples.
 - [Overture schema](https://docs.overturemaps.org/schema/) owns the current columns.
 - [Overture release calendar](https://docs.overturemaps.org/release-calendar/) owns the release cadence.
-- Bbox-first filtering and the `POINT_2D` cast are adapted from the `spatial` skill in https://github.com/duckdb/duckdb-skills (MIT). The release id and `taxonomy.primary` replace that skill's fixed-date release paths and legacy category column. The STAC catalog returned `2026-10-21.0` on 2026-10-22. The skill reads the catalog rather than baking that id in.
+- Bbox-first filtering and the `POINT_2D` cast are adapted from the `spatial` skill in https://github.com/duckdb/duckdb-skills (MIT). The release id and `taxonomy.primary` replace that skill's fixed-date release paths and legacy category column. The skill reads the STAC catalog rather than baking a release id in.

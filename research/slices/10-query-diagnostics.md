@@ -1,5 +1,7 @@
 # Query and file diagnostics
 
+Superseded in part by `12-diagnostics-engine.md`. Slice 12 owns the 2.0.0 JSON shapes, profile metrics, text layout, and plan-linter semantics. This slice keeps the original pushdown, join, metadata, and UI evidence.
+
 Sources: the 2.0 snapshots for [profiling](https://duckdb.org/docs/2.0/dev/profiling.html), [EXPLAIN](https://duckdb.org/docs/2.0/guides/meta/explain.html), [EXPLAIN ANALYZE](https://duckdb.org/docs/2.0/guides/meta/explain_analyze.html), [tuning workloads](https://duckdb.org/docs/2.0/guides/performance/how_to_tune_workloads.html), [Parquet metadata](https://duckdb.org/docs/2.0/data/parquet/metadata.html), and [UI](https://duckdb.org/docs/2.0/core_extensions/ui.html). Probes ran on DuckDB 2.0.0 `d54cbbe3df` on macOS arm64.
 
 ## Plan facts
@@ -17,11 +19,16 @@ The estimate is 20,000. The actual is 10.
 
 ```text
 $ duckdb -no-agent -c "CREATE TABLE t AS SELECT range AS id FROM range(100000); EXPLAIN ANALYZE SELECT count(*) FROM t WHERE id < 10;"
-Summary: Total Time: 0.0027s
-Table Scan
-Filters: id < 10
-10 rows
+╭─ Summary ───────────╮
+│ Total Time: 0.0027s │
+╰─────────────────────╯
+╭─ Table Scan ────────╮
+│ Filters: id < 10    │
+│ 10 rows         0µs │
+╰─────────────────────╯
 ```
+
+The text layout is boxed in 2.0.0; parse JSON for timings because text rounds to `0µs`.
 
 `EXPLAIN ANALYZE` also executes DML.
 
