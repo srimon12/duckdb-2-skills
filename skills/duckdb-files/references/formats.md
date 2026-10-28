@@ -100,7 +100,8 @@ COPY (FROM 'in.csv') TO 'out.jsonl' (FORMAT json, ARRAY false);
 
 | Parameter | Default | Use |
 | --- | --- | --- |
-| `schema` | NULL | Read as a supplied schema; map by field id or name. The value is a `MAP` of column names to `{name, type, default_value}` structs. Use `bound_schema` for an exact ordered output schema. |
+| `schema` | NULL | Read as a supplied schema; map by field id or name. The value is a `MAP` of column names to `{name, type, default_value}` structs. |
+| `bound_schema` | NULL | Exact ordered output schema for `read_parquet` only. Requires explicit `hive_partitioning=true` or `false`; cannot combine with `schema` or `union_by_name`. |
 | `union_by_name` | `false` | Align columns across files. |
 | `binary_as_string` | `false` | Treat legacy binary columns as strings. |
 | `filename` | false | Virtual column. |

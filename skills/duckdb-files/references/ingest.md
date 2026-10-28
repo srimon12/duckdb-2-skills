@@ -254,7 +254,7 @@ Options:
 | --- | --- | --- |
 | `union_by_name = true` | Fills missing columns with `NULL`. | Read a dataset with additive schema changes. |
 | `schema = MAP {'col': {name: 'col', type: 'VARCHAR', default_value: NULL}}` | Renames, casts, and supplies defaults. The value type must be a STRUCT with `name`, `type`, and `default_value`. | A known contract with a small drift. |
-| `bound_schema = {'col': 'VARCHAR'}` with `hive_partitioning = false` | Exact ordered output schema; source columns not listed are dropped. | A known contract with no defaults. |
+| `bound_schema = {'col': 'VARCHAR'}` with `hive_partitioning = false` | Exact ordered output schema for `read_parquet` only; source columns not listed are dropped. Cannot combine with `schema` or `union_by_name`. | A known contract with no defaults. |
 | Separate reads and `UNION ALL BY NAME` | Keeps each producer visible. | A quarantine or a per-source audit. |
 
 Do not use `union_by_name` to hide a missing required column. Count the `NULL`s first. A simple `MAP {'col': 'VARCHAR'}` is not a valid `schema` value because the map value must be a STRUCT.

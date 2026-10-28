@@ -127,7 +127,7 @@ Do not use `RETURNING` as the only proof when a row trigger exists. The trigger'
 | Integer versus string | `1 = '1.1'` is true; the string is cast and rounded | Cast explicitly and compare like types |
 | Decimal division | Any `/` involving `DECIMAL` returns `DOUBLE` | Use `decimal_division` |
 | Window frame | `sum(x) OVER (ORDER BY x)` shares a value across ties | Use `ROWS BETWEEN ...` for row-by-row |
-| `approx_count_distinct` | Typically 1 to 2% low on 1M values; the error is data-dependent | Use `count(DISTINCT x)` for user-visible numbers |
+| `approx_count_distinct` | The error is data-dependent and can be several percent high or low | Use `count(DISTINCT x)` for user-visible numbers |
 | Empty-group aggregate | `sum`, `list`, and `string_agg` return `NULL`; `count` returns `0` | `coalesce(sum(x), 0)` |
 | `sum` overflow | `sum(DECIMAL(38,0))` and `sum(HUGEINT)` can overflow | Cast deliberately to `DECIMAL(38,s)` |
 | Timestamps | Casting `DATE` to `TIMESTAMPTZ` uses the session zone | Store instants as `TIMESTAMPTZ`; set the zone explicitly |

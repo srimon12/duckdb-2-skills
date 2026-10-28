@@ -11,7 +11,7 @@ SET VARIABLE latest = (
 SELECT getvariable('latest');
 ```
 
-The STAC catalog returned `2026-10-21.0` on 2026-10-22. Overture publishes monthly and keeps roughly two months of releases in the public bucket. Do not hardcode a release id in saved SQL.
+Overture publishes monthly and keeps roughly two months of releases in the public bucket. Do not hardcode a release id in saved SQL; read the current release from the STAC catalog.
 
 Path layout:
 

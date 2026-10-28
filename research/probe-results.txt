@@ -46,8 +46,8 @@ Binary: v2.0.0 (Cyanoptera) d54cbbe3df
 - **PASS** EXPLAIN ANALYZE (FORMAT JSON) shape: `object sections=['io', 'operator', 'optimizer', 'parser', 'physical_planner', 'planner', 'query', 'system'] scan_rows=1000`
 - **PASS** EXPLAIN ANALYZE ignores -json: `text profile, not JSON`
 - **PASS** legacy metrics flat shape: `legacy flat shape`
-- **PASS** profile reports spill: `peak_temp_dir_size=108396544`
-- **PASS** plan linter self-test: `PASS metadata-only count: ['no_profile']`
+- **PASS** profile reports spill: `peak_temp_dir_size=120848384`
+- **PASS** plan linter self-test: `write guard and 4 plan cases pass`
 - **PASS** EXPLAIN ANALYZE executes DML: `inserted 3 rows during ANALYZE`
 - **PASS** Parquet row-group pruning: `1 of 10 row groups`
 - **PASS** Parquet metadata row duplication: `{'file_rows': 10, 'chunk_rows': 30}`
@@ -71,7 +71,7 @@ Binary: v2.0.0 (Cyanoptera) d54cbbe3df
 - **PASS** json_merge_patch: `{'v': {'a': 1, 'b': 2}}`
 - **PASS** data-modifying CTE with RETURNING: `{'n': 2}`
 - **PASS** temporary secret creation: `{'type': 's3', 'provider': 'config'}`
-- **PASS** Python connection configuration: `skipped (duckdb Python package not importable)`
-- **PASS** docs index versions: `[{'version': '2.0', 'n': 2689}, {'version': 'blog', 'n': 999}]`
+- **PASS** Python connection configuration: `read-only rejected: Connection Error: Can't open a connection to same database file with a different configuration than `
+- **PASS** docs index versions: `[{'version': '2.0', 'n': 2702}, {'version': 'blog', 'n': 1006}]`
 
 71/71 passed

@@ -86,7 +86,7 @@ duckdb mydata.new.db -c "IMPORT DATABASE 'tmp'"
 
 `ATTACH existing (STORAGE_VERSION 'latest')` followed by a write upgrades the file to 69. A lower `STORAGE_VERSION` on an existing file errors; the version cannot be lowered in place.
 
-`COPY FROM DATABASE` is the other documented method. The target must be attached. It may contain unrelated objects; any same-named object aborts. Its `STORAGE_VERSION` controls the output:
+`COPY FROM DATABASE` is the other documented method. The target must be attached. It may contain unrelated objects; same-named tables, macros, and sequences abort, and an existing schema is reused. Its `STORAGE_VERSION` controls the output:
 
 ```sql
 ATTACH 'old.db' AS old (READ_ONLY);
@@ -98,7 +98,7 @@ A clean exit checkpoints and removes the WAL. `CHECKPOINT` and `FORCE CHECKPOINT
 
 `EXPORT DATABASE` writes CSV by default. Add `(FORMAT parquet)` when Parquet is expected. The export directory should be empty. `IMPORT DATABASE` may target a database with unrelated objects; any same-named object aborts.
 
-`COPY FROM DATABASE` preserves schema, constraints, indexes, sequences, macros, and data. `EXPORT DATABASE` plus `IMPORT DATABASE` is the portable path across versions. Both need a target with no same-named objects.
+`COPY FROM DATABASE` preserves schema, constraints, indexes, sequences, macros, and data. `EXPORT DATABASE` plus `IMPORT DATABASE` is the portable path across versions. IMPORT aborts on any same-named object, including a schema.
 
 ## SQL text
 

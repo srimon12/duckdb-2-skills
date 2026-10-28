@@ -56,7 +56,7 @@ The first plan shows `~N rows`. The second shows `N rows`. A gap between the two
 
 `EXPLAIN (FORMAT JSON)` returns an array of plan nodes and no actuals. `EXPLAIN ANALYZE (FORMAT JSON)` executes the statement and returns one object with `operator`, `query`, `io`, and `system` sections. `EXPLAIN ANALYZE` ignores `-json`; the `(FORMAT JSON)` form is the JSON path. The two JSON shapes are different. `legacy_metrics_format` returns a third, flat shape; leave it off.
 
-A metadata-only query can return the right answer with no operator tree. `count(*)`, `min`, and `max` over one table or Parquet file can be answered from metadata: the plan shows `COLUMN_DATA_SCAN` and the profile JSON is `{"result":"error"}`. That is not a query failure. Measure a real scan with a row-level filter or a data-column projection. Text timings are rounded to 0.01 seconds and can print `0µs`; use JSON for any ranking.
+A metadata-only query can return the right answer with no operator tree. `count(*)`, `min`, and `max` over one table or Parquet file can be answered from metadata: the plan shows `COLUMN_DATA_SCAN` and the profile JSON is `{"result":"error"}`. That is not a query failure. Measure a real scan with a row-level filter or a data-column projection. Text timings are low-precision and can print `0µs` for a real operator; use JSON for any ranking.
 
 `EXPLAIN (FORMAT WEB)` opens an HTML plan. Full statement forms, scan fields, and the operator map are in [references/plans.md](references/plans.md).
 
@@ -150,7 +150,7 @@ python3 scripts/plan_lint.py --query "SELECT ..." --json
 python3 scripts/plan_lint.py --self-test
 ```
 
-`--analyze` executes the statement and refuses a statement that looks like a write unless `--allow-write` is also passed. The exit code is 1 for a high or critical finding and 0 otherwise, so a script can gate on it. Pass `--set memory_limit=4GB` to reproduce production settings. The linter recognizes a metadata-only plan and reports that no profile tree exists. It does not replace the before-and-after proof.
+`--analyze` executes the statement and refuses a statement that looks like a write unless `--allow-write` is also passed. `--readonly` requires `--db` and opens the file with `-readonly`. The exit code is 1 for a high or critical finding and 0 otherwise, so a script can gate on it. Pass `--set memory_limit=4GB` to reproduce production settings. The linter recognizes a metadata-only plan and reports that no profile tree exists. It does not replace the before-and-after proof.
 
 ## Profile and hand off
 
@@ -184,7 +184,7 @@ The plan must show one row group scanned out of ten. The row-level filter forces
 python3 scripts/plan_lint.py --self-test
 ```
 
-The self-test builds a cross join, a non-sargable Parquet filter, and a sargable point lookup. It must find the cross product and the full scan, and must not flag the point lookup.
+The self-test builds a cross join, a non-sargable Parquet filter, a sargable point lookup, and a metadata-only count. It must find the cross product, the full scan, and the missing profile, and must not flag the point lookup. It also checks that a hidden second statement and a malformed `--set` are rejected.
 
 ## References
 

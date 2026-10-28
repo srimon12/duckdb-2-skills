@@ -82,7 +82,7 @@ Copy `skills/<name>/` into the client's skills root. The folder is the unit; the
 | [`duckdb-quack`](skills/duckdb-quack/SKILL.md) | Serve a database or route a session | Quack, `-serve`, `-connect`, `CONNECT`, Postgres or MySQL pushdown |
 | [`duckdb-lakehouse`](skills/duckdb-lakehouse/SKILL.md) | Use DuckLake, Iceberg, Delta, Unity Catalog | A lakehouse catalog or an open table format decision |
 | [`duckdb-extensions`](skills/duckdb-extensions/SKILL.md) | Install, load, and update extensions | A missing extension, a community extension, or a custom repository |
-| [`duckdb-docs`](skills/duckdb-docs/SKILL.md) | Search the official docs index | A signature or behavior needs the current manual |
+| [`duckdb-docs`](skills/duckdb-docs/SKILL.md) | Search the official docs index | A signature, setting, or page needs the current manual and no task skill owns the procedure |
 | [`duckdb-migrate`](skills/duckdb-migrate/SKILL.md) | Move a 1.4 or 1.5 deployment to 2.0 | Upgrade, storage version, export/import, or a 1.x reader |
 | [`duckdb-python`](skills/duckdb-python/SKILL.md) | Write or migrate Python client code | Code that imports `duckdb` |
 | [`duckdb-spatial`](skills/duckdb-spatial/SKILL.md) | Answer location questions | Maps, lat/lng, GeoJSON, Overture, H3 |
@@ -123,7 +123,7 @@ The design rules behind the split are in [docs/skill-design.md](docs/skill-desig
 - Triggers exist, with limits: no `BEFORE ... FOR EACH ROW`, no `UPDATE ... FOR EACH ROW`, and no mixing statement and row triggers on one table.
 - Quack serves a database, and `CONNECT` routes a session to Quack, PostgreSQL, or MySQL.
 - DuckLake 1.1, Iceberg REST attach options, and Delta `CREATE TABLE`, time travel, and `VARIANT`.
-- Python relations are lazy, an open `execute()` result must be finished before `sql`/`query`, and one connection serves one call at a time.
+- Python relations are lazy, an unread streaming `execute()` result must be finished before `sql`/`query`, and one connection serves one call at a time.
 
 The evidence for each claim is in [research/](research/), with the per-skill verdict in [research/08-skill-audit.md](research/08-skill-audit.md).
 
@@ -137,7 +137,7 @@ bash evals/ingest/run_reference.sh
 python3 skills/duckdb-profile/scripts/plan_lint.py --self-test
 ```
 
-`check-skills.py` checks frontmatter, name and directory agreement, descriptions, required sections, line budgets, relative links, script references, cross-skill names, and stale strings. `probe.py` runs the executable claims against the local binary. The ingest reference run proves the file-to-Parquet workflow with 25 checks. The plan linter self-test proves the diagnostic engine finds a cross product, a full scan, and a metadata-only count, and leaves a sargable lookup alone.
+`check-skills.py` checks frontmatter, name and directory agreement, descriptions, required sections, line budgets, relative links, script references, cross-skill names, and stale strings. `probe.py` runs the executable claims against the local binary. The ingest reference run proves the file-to-Parquet workflow with 25 checks. The plan linter self-test proves the diagnostic engine finds a cross product, a full scan, and a metadata-only count, leaves a sargable lookup alone, and rejects a hidden second statement.
 
 Checked here on 2026-10-26 with DuckDB 2.0.0 `d54cbbe3df` on Linux x86_64. The first pass was checked on macOS arm64 on 2026-10-22:
 
@@ -147,7 +147,7 @@ Checked here on 2026-10-26 with DuckDB 2.0.0 `d54cbbe3df` on Linux x86_64. The f
 - `VARIANT` functions, 1-based indexing, comparator, shredding syntax.
 - Parquet `schema`, R-tree index scan, `SECURE VIEW`, regex `~`.
 - `EXPLAIN` estimates, `EXPLAIN ANALYZE` actuals, JSON plans, the plan-only versus analyzed JSON shape, metadata-only plans, spill metrics, row-group semantics, the legacy metrics shape, and the fact that `EXPLAIN ANALYZE` runs DML.
-- The plan linter self-test, including a cross product, a non-sargable Parquet filter, a sargable point lookup, and a metadata-only count.
+- The plan linter self-test, including a cross product, a non-sargable Parquet filter, a sargable point lookup, a metadata-only count, and a write-guard check.
 - Parquet row-group pruning, metadata row duplication, schema drift, partitioned writes, overwrite behavior, and the row-group minimum.
 - CSV rejects, JSON `ignore_errors` nulling, and the `ui` extension install and server startup.
 - The docs index versions and the BM25 subquery.

@@ -42,7 +42,7 @@ Write the contract before the prose. A useful contract fits in five lines.
 ```text
 Inputs:      one CSV path, one output directory, one partition key
 Outputs:     partitioned Parquet, quarantine Parquet, proof file
-Invariants:  input rows = kept rows + distinct quarantined lines
+Invariants:  input data rows = good + bad + distinct rejected lines
 Failure:     a bad row is quarantined with a reason, never nulled silently
 Proof:       sum of Parquet footer rows equals the kept count
 ```
@@ -109,7 +109,7 @@ SELECT sum(num_rows) FROM parquet_file_metadata('out/**/*.parquet');
 ```
 
 ```bash
-python3 scripts/plan_lint.py --self-test
+python3 skills/duckdb-profile/scripts/plan_lint.py --self-test
 ```
 
 A proof that always passes is decoration. A proof that fails on a known bad input is a test.
@@ -182,10 +182,10 @@ The rewrite adds:
 
 - A case file: question, baseline, budget, measurement, finding, proof.
 - A cost model: rows, bytes, seconds, memory, and the join cardinality estimate.
-- A failure-class catalog: non-sargable filter, layout, cardinality, statistics, memory, I/O, client, concurrency.
+- A failure-class catalog: non-sargable filter, unsorted or unpartitioned data, tiny files or row groups, cardinality, statistics, memory, I/O, client, concurrency.
 - A workflow for slow queries, OOM, remote scans, Parquet health, regression, and production-safe profiling.
 - A script that captures the plan, ranks findings, and returns an exit code.
-- A self-test that proves the linter finds a cross product and a full scan, and does not flag a sargable point lookup.
+- A self-test that proves the linter finds a cross product, a full scan, and a metadata-only count, and does not flag a sargable point lookup. It also checks the write guard.
 
 The abstraction is not the operator table. The abstraction is the decision procedure that uses the table.
 
@@ -194,7 +194,7 @@ The abstraction is not the operator table. The abstraction is the decision proce
 `duckdb-files/references/ingest.md` did not become a new skill. `duckdb-files` already owned the reader, the COPY options, and the partition triggers. The new value was a contract and a proof:
 
 ```text
-raw text -> typed rows -> good + quarantine -> partitioned Parquet -> input = kept + rejected
+raw text -> typed rows -> good + bad + rejects -> partitioned Parquet -> input = good + bad + distinct rejected lines
 ```
 
 The task case in `evals/ingest` makes the contract executable. A separate ingest skill would have duplicated the triggers and split the owner. The reference is the right home because the workflow is used on a minority of file tasks, but when it is used, the proof matters.

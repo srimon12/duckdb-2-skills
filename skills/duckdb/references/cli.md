@@ -193,7 +193,7 @@ External access cannot be turned back on in the same process. `-safe -init allow
 | Windows | `winget install DuckDB.cli` |
 | Docker | `docker run --rm -it duckdb/duckdb` |
 
-The install script puts the binary under `~/.duckdb/cli/<version>/`, points `latest` at it, and links `~/.local/bin/duckdb` only when that directory exists and has no `duckdb` file. Pin a version with `DUCKDB_VERSION=2.0.0` on the install command. Homebrew was still on 1.5.6 on 2026-10-22. `osx_amd64` has partial support and is dropped in 2.1; Linux requires glibc >= 2.28. Version check:
+The install script puts the binary under `~/.duckdb/cli/<version>/`, points `latest` at it, and links `~/.local/bin/duckdb` only when that directory exists and has no `duckdb` file. Pin a version with `DUCKDB_VERSION=2.0.0` on the install command. Homebrew may lag the release. `osx_amd64` has partial support and is dropped in 2.1; Linux requires glibc >= 2.28. Version check:
 
 ```bash
 duckdb -no-agent --version

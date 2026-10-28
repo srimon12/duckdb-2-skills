@@ -27,10 +27,10 @@ Sources: DuckDB 2.0.0 source at `d54cbbe3df` (`/tmp/opencode/duckdb-src`), the 2
 | 17 | `EXPLAIN ANALYZE` runs DML. | Existing probe: `EXPLAIN ANALYZE INSERT` inserted 3 rows | Probed |
 | 18 | A metadata-only `count(*)`/`min`/`max` can produce `COLUMN_DATA_SCAN` and no profile tree. | `EXPLAIN ANALYZE (FORMAT JSON) SELECT count(*) FROM 'sorted.parquet'` returned `{"result":"error"}` while the query returned 100000 | Probed |
 | 19 | `{"result":"error"}` means no profiler root, not query failure. | Same probe; successful DDL and metadata-only aggregates produce it | Probed |
-| 20 | `rows_scanned` is rows emitted by the scan after its filters, not rows examined. | A 10/10 row-group scan with no matches reported `rows_scanned: 0` | Probed |
+| 20 | `rows_scanned` is scan-reported, not a portable emitted-row count. A Parquet scan with pushed filters can report `0`; a base-table scan can report rows examined. | A 10/10 row-group Parquet scan with no matches reported `rows_scanned: 0`; a base-table scan reported `20000000` while `intermediate_rows` was `0` | Probed |
 | 21 | The row-group denominator is after file-list pruning. | Hive filter: `Scanning Files: 1/6`, `Row Groups Scanned: 1/1` | Probed |
 | 22 | `Data Read` and `Data Written` are query-wide FileSystem bytes and include spill. | Read-only 100 MB-limit sort: `Data Read: 68.3 MB`, `Data Written: 62.2 MB`, `peak_temp_dir_size: 60817408` | Probed |
-| 23 | Text timings round to `0µs` below about 5 ms. | JSON `timing: 0.006676964` printed as `0µs` in the text box | Probed |
+| 23 | Text timings can print `0µs` for a real multi-millisecond operator. | JSON `timing: 0.006676964` printed as `0µs` in the text box | Probed |
 | 24 | `explain_output='all'` concatenates three JSON documents. | Logical, optimized, physical arrays in one output; `json.load` fails | Probed |
 | 25 | `profiling_output` is last-statement-wins; `EXPLAIN ANALYZE` ignores it. | Two SELECTs wrote one file with the second query; `EXPLAIN ANALYZE` created no profile file | Probed |
 | 26 | `operator.cpu_time` is advertised but not emitted. | `duckdb_available_metrics()` lists it; tracking only it produces anonymous `{}` nodes | Probed |
@@ -68,7 +68,7 @@ The thresholds are heuristics. They are labeled as such in the output. The linte
 
 ### Self-test
 
-The self-test builds a deterministic database and three cases:
+The self-test builds a deterministic database and four plan cases, plus a write-guard check:
 
 | Case | Query | Expected |
 | --- | --- | --- |
@@ -77,7 +77,7 @@ The self-test builds a deterministic database and three cases:
 | Sargable point lookup | `WHERE id = 99999` | no `full_scan` |
 | Metadata-only count | `SELECT count(*)` without a filter | `no_profile`, not a failure |
 
-The reference run passes all four. The self-test is also wired into `scripts/probe.py`.
+The reference run passes all four plan cases and the guard check. The self-test is also wired into `scripts/probe.py`.
 
 ## Existing skill audit
 
@@ -117,10 +117,10 @@ The reference run passes all four. The self-test is also wired into `scripts/pro
 | Running `EXPLAIN ANALYZE` on a write | The write happens | Use plain `EXPLAIN` unless the write is intended | Existing probe |
 | Reading `{"result":"error"}` as query failure | The query may have succeeded; only the profiler root is missing | Check the result separately; measure a real scan | Probed |
 | Using `count(*)` as a scan benchmark | The plan can be metadata-only and instant | Add a row filter or select a data column | Probed |
-| Reading `rows_scanned` as rows examined | A 10/10 scan with zero matches reports 0 | Use row groups, `Scanning Files`, and Data Read | Probed |
+| Reading `rows_scanned` as a portable emitted-row count | Base-table and Parquet scans disagree; a Parquet scan can report 0 while a base table reports rows examined | Use `intermediate_rows` for emitted rows; use row groups and Data Read for scan work | Probed |
 | Reading `Row Groups Scanned: 1/1` as healthy | The denominator is after file pruning | Pair it with `Scanning Files` and file metadata | Probed |
 | Treating Data Read as scan bytes | It includes footers and spill | If temp > 0, treat it as an upper bound | Probed |
-| Ranking from text timings | Sub-5 ms operators print `0µs` | Use `(FORMAT JSON)` | Probed |
+| Ranking from text timings | A real multi-millisecond operator can print `0µs` | Use `(FORMAT JSON)` | Probed |
 | Parsing `explain_output='all'` as one JSON document | Three documents concatenate | Force `physical_only` or parse stream values | Probed |
 | Raising `memory_limit` first | A bad join still explodes, with a larger bill | Reduce rows before the blocking operator | Design rule |
 | Using `union_by_name` to hide drift | The read succeeds with NULLs; the producer is still broken | Quarantine or backfill first | `duckdb-files` |
@@ -163,7 +163,8 @@ $ duckdb -no-agent -c "SET explain_output='all'; EXPLAIN (FORMAT JSON) SELECT ..
 # three JSON documents concatenated; json.load fails
 
 $ python3 skills/duckdb-profile/scripts/plan_lint.py --self-test
-PASS cross join: ['cross_product', 'time_hotspot']
+PASS write guard: one statement, no second statement from --set
+PASS cross join: ['cross_product']
 PASS non-sargable filter: ['full_scan']
 PASS sargable filter: []
 PASS metadata-only count: ['no_profile']

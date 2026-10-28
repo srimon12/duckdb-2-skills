@@ -32,7 +32,7 @@ DuckDB's work is rows moving through operators. Time is bounded by the slowest o
 
 | Quantity | Working estimate | What it tells you |
 | --- | --- | --- |
-| Scan bytes | `files × row_groups × columns × bytes_per_value` after pruning | Whether the scan is the problem, and whether pruning worked. |
+| Scan bytes | `rows_after_pruning × columns × bytes_per_value` | Whether the scan is the problem, and whether pruning worked. |
 | Selectivity | `output_rows / input_rows` | Whether a filter is selective enough to matter. |
 | Join output | `|A| × |B| / max(distinct join keys)` for an equality join | Whether the key is unique enough. Skew makes this worse. |
 | Aggregation state | `groups × state_width` | Whether a `GROUP BY` will fit in memory. |
@@ -47,11 +47,11 @@ These are not the optimizer's cost units. They are sanity checks. When an operat
 `EXPLAIN` gives estimates. `EXPLAIN ANALYZE` executes the statement and adds actual rows and timings.
 
 - Operator timings are exclusive. Their sum is close to `query.cpu_time`.
-- `query.total_time` includes planning, waiting, and serialization, so it is larger than the operator sum.
+- `query.total_time` includes planning, waiting, and serialization. On a serial query it is larger than the operator sum; on a parallel query the sum and `cpu_time` can exceed it.
 - On a parallel query, `query.cpu_time` can exceed wall time because threads overlap. Do not add operator times to predict wall time.
 - `system.peak_temp_dir_size > 0` proves a spill. `system.peak_buffer_memory` shows how close the query came to `memory_limit`.
 - `io.total_bytes_read` is query-wide FileSystem bytes, including footers and spill reads. It is not the file size and not scan-only bytes. If the query spilled, treat it as an upper bound.
-- `operator.rows_scanned` is rows emitted by the scan after its filters, not rows examined. Use row groups, `Scanning Files`, and `Data Read` for scan work.
+- `operator.rows_scanned` is scan-reported. A base-table scan can report rows examined; a Parquet scan with pushed filters can report rows emitted. Use `intermediate_rows` for emitted rows, and row groups, `Scanning Files`, and `Data Read` for scan work.
 - A plan-only `EXPLAIN` has no row-group scan counts, actual rows, timings, spill, or bytes. Do not diagnose pruning from a plan-only tree.
 - A metadata-only `count(*)`, `min`, or `max` can produce no operator tree and `{"result":"error"}`. That is not a query failure.
 

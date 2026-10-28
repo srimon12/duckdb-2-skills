@@ -77,12 +77,12 @@ A metadata-only query can return the right answer with no operator tree. `count(
 | `Filename(s)` | Up to five names plus `...` | Not the full file list |
 | `Scanning Files` | Files selected by file-list pruning | The real partition-pruning signal |
 | `Row Groups Scanned` | Groups read / groups available after file-list pruning | `1 / 1` can mean one selected file |
-| `rows_scanned` | Rows emitted after the scan filter | Not rows examined |
+| `rows_scanned` | Rows the scan reports. A base-table scan can report rows examined; a Parquet scan with pushed filters can report rows emitted. | Not a portable emitted-row count. Use `intermediate_rows` for emitted rows. |
 | `Data Read` | Query-wide FileSystem bytes | Includes footers and spill reads |
 
 Plan-only JSON names a scan differently from profiled JSON. Direct `'file.parquet'` is `PARQUET_SCAN`; `read_parquet()` is `READ_PARQUET`; `read_csv()` is `READ_CSV`; direct `'file.csv'` is `READ_CSV_AUTO`. Profiled JSON always says `TABLE_SCAN` and puts the reader in `extra_info.Function`. Normalize scan names before matching.
 
-Text timings are rounded to 0.01 seconds, so a 5 ms operator can print `0µs`. Text also condenses operators and omits estimates in `EXPLAIN ANALYZE`. Use `(FORMAT JSON)` for any comparison or ranking.
+Text timings are low-precision; a multi-millisecond operator can print `0µs`. Text also condenses operators and omits estimates in `EXPLAIN ANALYZE`. Use `(FORMAT JSON)` for any comparison or ranking.
 
 ## Operator map
 
@@ -220,7 +220,7 @@ Useful metrics:
 | --- | --- | --- |
 | `query.total_time` | seconds | End-to-end query time, including planning and waits. |
 | `query.cpu_time` | seconds | CPU time across operators. On a parallel query it can exceed wall time. |
-| `query.total_rows_scanned` | rows | Rows read by all scans. |
+| `query.total_rows_scanned` | rows | Sum of scan-reported rows. A base-table scan can report rows examined; not emitted rows. |
 | `query.total_row_groups_scanned` | row groups | Row groups read. Compare with `..._to_scan`. |
 | `query.total_intermediate_rows` | rows | Cumulative rows produced between operators. |
 | `query.total_intermediate_size_bytes` | bytes | Cumulative bytes produced between operators. |
@@ -232,7 +232,7 @@ Useful metrics:
 | `operator.timing` | seconds | Exclusive time in one operator. |
 | `operator.intermediate_rows` | rows | Rows emitted by the operator. |
 | `operator.intermediate_size_bytes` | bytes | Output chunk footprint. Not hash-table or sort memory; use `system` metrics for pressure. |
-| `operator.rows_scanned` | rows | Rows emitted by a scan after its filters. This is not rows examined. |
+| `operator.rows_scanned` | rows | Rows the scan reports. For a base table this can be rows examined; for Parquet with pushed filters it can be rows emitted. Use `intermediate_rows` for emitted rows. |
 | `operator.row_groups_scanned` | row groups | Row groups read by a scan. |
 | `operator.total_row_groups_to_scan` | row groups | Row groups available after file-list pruning. |
 | `operator.extra_info` | map | Operator-specific details. |

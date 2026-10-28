@@ -63,7 +63,7 @@ FROM events;
 | `variant_group_object(key, value)` | Aggregate into one object |
 | `variant_group_array(x)` | Aggregate into a `VARIANT` array |
 
-SQL NULL and `VARIANT_NULL` are different. `variant_typeof(v) = 'VARIANT_NULL'` detects a variant null. `variant_type` returns SQL NULL for it, and `IS NULL` is true for both. Use `variant_exists` to separate an absent key from a present null.
+A SQL NULL cast to `VARIANT` and a JSON null both appear as `VARIANT_NULL`; no column-level predicate separates them. `variant_type` returns SQL NULL for both, and `IS NULL` is true for both. Inside an object, `variant_exists(v, path)` separates an absent key from a present null.
 
 ## Extract
 

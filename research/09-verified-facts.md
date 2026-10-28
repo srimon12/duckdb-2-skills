@@ -34,33 +34,33 @@ Run `python3 scripts/probe.py --network --write research/probe-results.txt`. The
 | 22 | `EXPLAIN (SQL)` returns executable SQL | `EXPLAIN (SQL) SELECT 42` | `SELECT CAST(42 AS INTEGER) AS "42"` |
 | 23 | Agent mode truncates a large result | `-agent`, `range(2000)` | `first 20 and last 20 of 2000 rows`, hash |
 | 24 | `-csv` disables automatic agent mode | `-csv`, `SELECT 42` | plain CSV, no agent banner |
-| 25 | The docs index has `2.0` and `blog` only | attach the remote index, count by version | `2.0=2695`, `blog=999` |
+| 25 | The docs index has `2.0` and `blog` only | attach the remote index, count by version | `2.0=2702`, `blog=1006` |
 
 ## Diagnostics pass
 
-Numbers below are local to this pass; they do not continue the first-pass table.
+Numbers below are local to this pass and use the `D` prefix.
 
 | # | Fact | Probe | Observed |
 | --- | --- | --- | --- |
-| 44 | `EXPLAIN (FORMAT JSON)` returns an array and no actuals | `EXPLAIN (FORMAT JSON) SELECT count(*) ...` | root `UNGROUPED_AGGREGATE`; no `intermediate_rows` |
-| 45 | `EXPLAIN ANALYZE (FORMAT JSON)` returns one object with `operator`, `query`, `io`, `system` | same query with `ANALYZE` | object sections present; `TABLE_SCAN` has `rows_scanned` |
-| 46 | `EXPLAIN ANALYZE` ignores CLI `-json` | `duckdb -json -c "EXPLAIN ANALYZE SELECT 42"` | text profile with `Total Time:`, not JSON |
-| 47 | `legacy_metrics_format` returns a flat object | set the setting, then `EXPLAIN ANALYZE (FORMAT JSON)` | `latency`, `children`, `operator_type`; no `operator` |
-| 48 | Operator timings are exclusive and sum to `query.cpu_time` | 4-thread 5M-row aggregate | sum 0.05118432 s; `cpu_time` 0.05118432 s; `total_time` 0.055123027 s |
-| 49 | `system.peak_temp_dir_size > 0` proves a spill | 100 MB limit, 2M-row `ORDER BY` | `peak_temp_dir_size=98271232` |
-| 50 | `tracked_metrics` restricts `json`, not `query_tree` | `tracked_metrics=['query.total_time']` | JSON has only `query.total_time`; query_tree keeps the tree |
-| 51 | A cross product can omit `Estimated Cardinality` | `EXPLAIN (FORMAT JSON) SELECT count(*) FROM a, b` | `CROSS_PRODUCT` with empty `extra_info` |
-| 52 | The plan linter finds a cross product, a non-sargable scan, and a metadata-only count | `plan_lint.py --self-test` | `PASS cross join`, `PASS non-sargable filter`, `PASS sargable filter`, `PASS metadata-only count` |
-| 53 | A metadata-only `count(*)` can return `{"result":"error"}` with no operator tree | `EXPLAIN ANALYZE (FORMAT JSON) SELECT count(*) FROM 'sorted.parquet'` | `{"result":"error"}` while the query returns 100000 |
-| 54 | `rows_scanned` is rows emitted after scan filters | 10/10 row-group scan with no matches | `rows_scanned: 0` |
-| 55 | Row-group denominator is after file-list pruning | Hive filter | `Scanning Files: 1/6`, `Row Groups Scanned: 1/1` |
-| 56 | Data Read and Data Written include spill | 100 MB-limit sort | `Data Written: 62.2 MB`, `peak_temp_dir_size: 60817408` |
-| 57 | Text timings below about 5 ms print `0µs` | JSON 0.006676964 s | text `0µs` |
-| 58 | `explain_output='all'` concatenates three JSON documents | logical, optimized, physical | `json.load` fails |
-| 59 | `profiling_output` is last-statement-wins | two SELECTs, one file | file holds the second query |
-| 60 | `operator.cpu_time` is advertised but not emitted | `duckdb_available_metrics()` vs operator JSON | no `cpu_time` key |
-| 61 | `ROW_GROUP_SIZE` rounds up to a 2,048 multiple | 2,049 -> 4,096; 3,000 -> 4,096 | groups 4,096 |
-| 62 | `FILE_SIZE_BYTES` overshoots | 100 KB target | 124,230 and 77,551 bytes |
+| D1 | `EXPLAIN (FORMAT JSON)` returns an array and no actuals | `EXPLAIN (FORMAT JSON) SELECT count(*) ...` | root `UNGROUPED_AGGREGATE`; no `intermediate_rows` |
+| D2 | `EXPLAIN ANALYZE (FORMAT JSON)` returns one object with `operator`, `query`, `io`, `system` | same query with `ANALYZE` | object sections present; `TABLE_SCAN` has `rows_scanned` |
+| D3 | `EXPLAIN ANALYZE` ignores CLI `-json` | `duckdb -json -c "EXPLAIN ANALYZE SELECT 42"` | text profile with `Total Time:`, not JSON |
+| D4 | `legacy_metrics_format` returns a flat object | set the setting, then `EXPLAIN ANALYZE (FORMAT JSON)` | `latency`, `children`, `operator_type`; no `operator` |
+| D5 | Operator timings are exclusive and sum to `query.cpu_time` | 4-thread 5M-row aggregate | sum 0.05118432 s; `cpu_time` 0.05118432 s; `total_time` 0.055123027 s |
+| D6 | `system.peak_temp_dir_size > 0` proves a spill | 100 MB limit, 2M-row `ORDER BY` | `peak_temp_dir_size=98271232` |
+| D7 | `tracked_metrics` restricts `json`, not `query_tree` | `tracked_metrics=['query.total_time']` | JSON has only `query.total_time`; query_tree keeps the tree |
+| D8 | A cross product can omit `Estimated Cardinality` | `EXPLAIN (FORMAT JSON) SELECT count(*) FROM a, b` | `CROSS_PRODUCT` with empty `extra_info` |
+| D9 | The plan linter finds a cross product, a non-sargable scan, a sargable lookup, and a metadata-only count, and rejects a hidden statement | `plan_lint.py --self-test` | four `PASS` plan lines plus `PASS write guard` |
+| D10 | A metadata-only `count(*)` can return `{"result":"error"}` with no operator tree | `EXPLAIN ANALYZE (FORMAT JSON) SELECT count(*) FROM 'sorted.parquet'` | `{"result":"error"}` while the query returns 100000 |
+| D11 | `rows_scanned` is scan-reported, not a portable emitted-row count | base-table scan with no matches; Parquet scan with no matches | base table `rows_scanned: 20000000`, `intermediate_rows: 0`; Parquet `rows_scanned: 0` |
+| D12 | Row-group denominator is after file-list pruning | Hive filter | `Scanning Files: 1/6`, `Row Groups Scanned: 1/1` |
+| D13 | Data Read and Data Written include spill | 100 MB-limit sort | `Data Written: 62.2 MB`, `peak_temp_dir_size: 60817408` |
+| D14 | Text timings can print `0µs` for a real multi-millisecond operator | JSON 0.006676964 s | text `0µs` |
+| D15 | `explain_output='all'` concatenates three JSON documents | logical, optimized, physical | `json.load` fails |
+| D16 | `profiling_output` is last-statement-wins | two SELECTs, one file | file holds the second query |
+| D17 | `operator.cpu_time` is advertised but not emitted | `duckdb_available_metrics()` vs operator JSON | no `cpu_time` key |
+| D18 | `ROW_GROUP_SIZE` rounds up to a 2,048 multiple | 2,049 -> 4,096; 3,000 -> 4,096 | groups 4,096 |
+| D19 | `FILE_SIZE_BYTES` overshoots | 100 KB target | 124,230 and 77,551 bytes |
 
 ## Manual
 

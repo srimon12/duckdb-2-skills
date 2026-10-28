@@ -126,7 +126,7 @@ duckdb mydata.new.db -c "IMPORT DATABASE 'tmp'"
 
 `EXPORT DATABASE` writes CSV by default; add `(FORMAT parquet)` if you expect Parquet. The export directory should be empty. `IMPORT DATABASE` may target a database with unrelated objects; any same-named object aborts.
 
-To copy between attached databases, the target may hold unrelated objects; any same-named object aborts. The target storage version controls the output:
+To copy between attached databases, the target may hold unrelated objects; same-named tables, macros, and sequences abort, and an existing schema is reused. The target storage version controls the output:
 
 ```sql
 ATTACH 'old.db' AS old (READ_ONLY);

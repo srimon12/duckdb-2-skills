@@ -547,8 +547,12 @@ def check_plan_lint_selftest(tmp: Path, network: bool) -> tuple[bool, str]:
         cwd=tmp, capture_output=True, text=True, timeout=300,
         env={**os.environ, "DUCKDB": DUCKDB},
     )
-    ok = proc.returncode == 0 and "PASS cross join" in proc.stdout
-    return ok, proc.stdout.strip().splitlines()[-1] if ok else (proc.stderr or proc.stdout)[-160:]
+    ok = (
+        proc.returncode == 0
+        and "PASS cross join" in proc.stdout
+        and "PASS write guard" in proc.stdout
+    )
+    return ok, "write guard and 4 plan cases pass" if ok else (proc.stderr or proc.stdout)[-160:]
 
 
 def check_explain_analyze_dml(tmp: Path, network: bool) -> tuple[bool, str]:
@@ -1048,22 +1052,34 @@ def main() -> int:
     tmp = Path(tempfile.mkdtemp(prefix="duckdb-probe-"))
     lines = [f"# Probe results", "", f"Binary: {probe.stdout.strip()}", ""]
     failures = 0
+    skips = 0
     try:
         for check in CHECKS:
             try:
                 ok, detail = check.fn(tmp, args.network)
             except Exception as exc:  # noqa: BLE001 - a probe failure is data
                 ok, detail = False, f"{type(exc).__name__}: {exc}"
-            status = "PASS" if ok else "FAIL"
-            if not ok:
+            if ok and detail.lower().startswith("skipped"):
+                status = "SKIP"
+                skips += 1
+            elif ok:
+                status = "PASS"
+            else:
+                status = "FAIL"
                 failures += 1
             print(f"{status} {check.name}: {detail}")
             lines.append(f"- **{status}** {check.name}: `{detail}`")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
 
+    total = len(CHECKS)
+    summary = f"{total - failures - skips}/{total} passed"
+    if skips:
+        summary += f", {skips} skipped"
+    if failures:
+        summary += f", {failures} failed"
     lines.append("")
-    lines.append(f"{len(CHECKS) - failures}/{len(CHECKS)} passed")
+    lines.append(summary)
     report = "\n".join(lines) + "\n"
     if args.write:
         args.write.parent.mkdir(parents=True, exist_ok=True)

@@ -15,7 +15,7 @@ LOAD spatial;
 SET geometry_always_xy = true;
 ```
 
-The extension is not autoloadable. `geometry_always_xy` starts unset. `ST_Transform`, `ST_Distance_Sphere`, `ST_Distance_Spheroid`, `ST_Area_Spheroid`, and `ST_Length_Spheroid` raise an `Invalid Configuration Error` until it is `true`. Set `true` for longitude, latitude. For CRS-sensitive functions, `false` reads EPSG:4326 as latitude, longitude and is not safe. Read the value from `duckdb_settings()`; `current_setting('geometry_always_xy')` fails even after `LOAD spatial`.
+The extension is not autoloadable. `geometry_always_xy` starts unset. `ST_Transform`, `ST_Distance_Sphere`, `ST_Distance_Spheroid`, `ST_Area_Spheroid`, and `ST_Length_Spheroid` raise an `Invalid Configuration Error` while it is unset. Set `true` for longitude, latitude. `false` is accepted, but CRS-sensitive functions then read EPSG:4326 as latitude, longitude and can return wrong numbers. Read the value from `duckdb_settings()`; `current_setting('geometry_always_xy')` fails even after `LOAD spatial`.
 
 ## Measure
 
@@ -28,7 +28,7 @@ Build a point as `ST_Point(longitude, latitude)`. Longitude is first. Pick the f
 | Exact meters on lon/lat | `ST_Distance_Spheroid` | meters, ellipsoid, usually slowest |
 | Radius filter | `ST_DWithin` plus bbox | uses the R-tree |
 
-All sphere and spheroid measures on lon/lat require `geometry_always_xy = true`. `ST_Distance_Sphere` also accepts a per-call `always_xy` boolean. `ST_DWithin(geom, point, d)` uses the R-tree when the point and distance are constant at planning time; `ST_Distance(geom, point) < d` does not.
+All sphere and spheroid measures on lon/lat use the session setting; only `ST_Transform` has a per-call `always_xy` argument. `ST_DWithin(geom, point, d)` uses the R-tree when the point and distance are constant at planning time; `ST_Distance(geom, point) < d` does not.
 
 ```sql
 SELECT ST_Distance_Spheroid(
@@ -75,7 +75,7 @@ The plan shows `Rtree Index Scan`. The index works for `ST_Equals`, `ST_Intersec
 
 ## Spatial joins
 
-For a join, build the R-tree on the filtered side, add bbox-overlap predicates on both inputs, then join on `ST_Intersects` or `ST_Within`. The planner uses deferred bounds for the other side. `EXPLAIN` must show `Rtree Index Scan` or `Spatial Join`; a `Seq Scan` on both sides means the index or the bbox predicate is missing.
+For a join, build the R-tree on the filtered side, add bbox-overlap predicates on both inputs, then join on `ST_Intersects` or `ST_Within`. The planner uses deferred bounds for the other side. For a selective bbox, `EXPLAIN` must show `Rtree Index Scan` or `Spatial Join`. A `Seq Scan` on both sides means the index or the bbox predicate is missing, or the bbox is too broad to be selective.
 
 ## Read and write
 
@@ -194,4 +194,4 @@ The point must be a GeoJSON `Point` with `[-73.985, 40.748]`. The distance must 
 - [Overture DuckDB guide](https://docs.overturemaps.org/getting-data/duckdb/) owns the release lookup and examples.
 - [Overture schema](https://docs.overturemaps.org/schema/) owns the current columns.
 - [Overture release calendar](https://docs.overturemaps.org/release-calendar/) owns the release cadence.
-- Bbox-first filtering and the `POINT_2D` cast are adapted from the `spatial` skill in https://github.com/duckdb/duckdb-skills (MIT). The release id and `taxonomy.primary` replace that skill's fixed-date release paths and legacy category column. The STAC catalog returned `2026-10-21.0` on 2026-10-22. The skill reads the catalog rather than baking that id in.
+- Bbox-first filtering and the `POINT_2D` cast are adapted from the `spatial` skill in https://github.com/duckdb/duckdb-skills (MIT). The release id and `taxonomy.primary` replace that skill's fixed-date release paths and legacy category column. The skill reads the STAC catalog rather than baking a release id in.

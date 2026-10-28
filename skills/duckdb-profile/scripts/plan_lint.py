@@ -74,9 +74,11 @@ WRAPPER_TYPES = {"RESULT_COLLECTOR", "EXPLAIN_ANALYZE", "EXPLAIN"}
 
 WRITE_WORDS = re.compile(
     r"\b(INSERT|UPDATE|DELETE|MERGE|COPY|CREATE|DROP|ALTER|TRUNCATE|"
-    r"ATTACH|DETACH|CALL|EXPORT|IMPORT|VACUUM|CHECKPOINT|LOAD|INSTALL)\b",
+    r"ATTACH|DETACH|CALL|EXPORT|IMPORT|VACUUM|CHECKPOINT|LOAD|INSTALL|"
+    r"PRAGMA)\b",
     re.IGNORECASE,
 )
+SETTING_KEY_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 @dataclass
@@ -125,7 +127,13 @@ class Finding:
 
 
 def strip_sql(sql: str) -> str:
-    """Replace comments and string literals so keyword checks do not fire on data."""
+    """Replace comments and string literals so keyword checks do not fire on data.
+
+    Standard strings close at the next quote; only E'...' strings use a
+    backslash escape. Dollar-quoted strings are opaque SQL text. The previous
+    lexer treated a backslash in a standard string as an escape and missed
+    statements after the string, which bypassed the --analyze write guard.
+    """
     out: list[str] = []
     i = 0
     n = len(sql)
@@ -135,24 +143,55 @@ def strip_sql(sql: str) -> str:
             while i < n and sql[i] != "\n":
                 i += 1
         elif ch == "/" and i + 1 < n and sql[i + 1] == "*":
+            depth = 1
             i += 2
-            while i + 1 < n and not (sql[i] == "*" and sql[i + 1] == "/"):
+            while i < n and depth:
+                if sql[i] == "/" and i + 1 < n and sql[i + 1] == "*":
+                    depth += 1
+                    i += 2
+                elif sql[i] == "*" and i + 1 < n and sql[i + 1] == "/":
+                    depth -= 1
+                    i += 2
+                else:
+                    i += 1
+        elif ch == "$":
+            match = re.match(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$", sql[i:])
+            if match is None:
+                out.append(ch)
                 i += 1
-            i = min(i + 2, n)
+            else:
+                tag = match.group(0)
+                end = sql.find(tag, i + len(tag))
+                i = n if end == -1 else end + len(tag)
+        elif (
+            ch in ("e", "E")
+            and i + 1 < n
+            and sql[i + 1] == "'"
+            and (i == 0 or not (sql[i - 1].isalnum() or sql[i - 1] == "_"))
+        ):
+            i += 2
+            while i < n:
+                if sql[i] == "\\" and i + 1 < n:
+                    i += 2
+                elif sql[i] == "'":
+                    if i + 1 < n and sql[i + 1] == "'":
+                        i += 2
+                    else:
+                        i += 1
+                        break
+                else:
+                    i += 1
         elif ch in ("'", '"', "`"):
             quote = ch
             i += 1
             while i < n:
                 if sql[i] == quote:
-                    if quote != "`" and i + 1 < n and sql[i + 1] == quote:
+                    if i + 1 < n and sql[i + 1] == quote:
                         i += 2
                         continue
                     i += 1
                     break
-                if sql[i] == "\\" and quote == "'":
-                    i += 2
-                else:
-                    i += 1
+                i += 1
         else:
             out.append(ch)
             i += 1
@@ -325,7 +364,7 @@ def diagnose(roots: list[Node], meta: dict[str, Any], mode: str) -> list[Finding
                 evidence=(
                     "The query returned a result but DuckDB had no profiler root. "
                     "This commonly means a metadata-only plan such as count(*), min, or max, "
-                    "or a DDL statement. It is not a query failure."
+                    "a VALUES or expression result, or a DDL statement. It is not a query failure."
                 ),
                 move=(
                     "Check the query result separately. If you meant to measure scan work, "
@@ -413,10 +452,10 @@ def diagnose(roots: list[Node], meta: dict[str, Any], mode: str) -> list[Finding
                 Finding(
                     code="metadata_only",
                     severity="info",
-                    title="Plan is answered from metadata",
+                    title="Plan has no data-file scan",
                     evidence=(
                         "The plan contains COLUMN_DATA_SCAN, so DuckDB did not scan a data file. "
-                        "This is common for count(*), min, and max over a single table or Parquet file."
+                        "This can be a metadata-only count(*), min, or max, a VALUES list, or an expression result."
                     ),
                     move=(
                         "Do not use this query as a scan benchmark. Add a row-level filter "
@@ -432,7 +471,13 @@ def diagnose(roots: list[Node], meta: dict[str, Any], mode: str) -> list[Finding
             scanned = node.row_groups_scanned
             total = node.row_groups_total
             filters = str(extra({"extra_info": node.extra}, "Filters") or "").strip()
+            file_filters = str(extra({"extra_info": node.extra}, "File Filters") or "").strip()
+            scanning_files = str(extra({"extra_info": node.extra}, "Scanning Files") or "").strip()
             dynamic = str(extra({"extra_info": node.extra}, "Dynamic Filters") or "").strip()
+            files_pruned = False
+            file_match = re.search(r"(\d+)\s*/\s*(\d+)", scanning_files)
+            if file_match:
+                files_pruned = int(file_match.group(1)) < int(file_match.group(2))
             if dynamic:
                 add(
                     findings,
@@ -451,37 +496,54 @@ def diagnose(roots: list[Node], meta: dict[str, Any], mode: str) -> list[Finding
                     ),
                 )
             if total and total >= 2 and scanned is not None and scanned >= total:
-                severity = "high" if filters else "medium"
+                if filters:
+                    severity = "high"
+                    title = "Scan read every row group"
+                    move = (
+                        "Make the filter a range on the bare column. A cast or function around "
+                        "the data column defeats pruning; a foldable expression on a partition "
+                        "column can still prune files. If the data is unsorted, sort or partition "
+                        "by the filter column before writing. The denominator is after file-list "
+                        "pruning, so 1/1 can mean one selected file, not a healthy dataset."
+                    )
+                elif file_filters or files_pruned:
+                    severity = "info"
+                    title = "Partition-pruned scan read every row group in the selected files"
+                    move = (
+                        "File pruning worked. If the same query needs fewer row groups, sort or "
+                        "partition by the data filter. Do not add a redundant partition predicate."
+                    )
+                else:
+                    severity = "info"
+                    title = "Full scan with no filter"
+                    move = (
+                        "Confirm the full scan is intended. Add a selective filter if the query "
+                        "needs only part of the data."
+                    )
                 add(
                     findings,
                     Finding(
                         code="full_scan",
                         severity=severity,
-                        title="Scan read every row group",
+                        title=title,
                         evidence=(
                             f"Row Groups Scanned: {fmt_num(scanned)} / {fmt_num(total)}; "
                             f"Filters: {filters or '(none)'}; "
-                            f"rows_scanned: {fmt_num(node.rows_scanned)}"
+                            f"File Filters: {file_filters or '(none)'}; "
+                            f"Scanning Files: {scanning_files or '(n/a)'}; "
+                            f"scan-reported rows: {fmt_num(node.rows_scanned)}"
                         ),
-                        move=(
-                            "If a filter exists, make it a range on the bare column. "
-                            "A cast or function around the data column defeats pruning; a foldable "
-                            "expression on a partition column can still prune files. "
-                            "If the data is unsorted, sort or partition by the filter column before writing. "
-                            "Remember that the denominator is after file-list pruning, so 1/1 can mean "
-                            "one selected file, not a healthy dataset. If there is no filter, confirm "
-                            "the full scan is intended."
-                        ),
+                        move=move,
                         prove=(
                             "Rerun EXPLAIN ANALYZE and confirm Row Groups Scanned is below the total, "
                             "or that Data Read fell."
                         ),
                         node=node.path,
-                        score=(node.rows_scanned or 0) + 1,
+                        score=(node.actual or node.rows_scanned or 0) + 1,
                     ),
                 )
             if (
-                node.rows_scanned == 0
+                node.actual == 0
                 and node.row_groups_scanned
                 and node.row_groups_scanned > 0
             ):
@@ -492,8 +554,9 @@ def diagnose(roots: list[Node], meta: dict[str, Any], mode: str) -> list[Finding
                         severity="info",
                         title="Scan read row groups but emitted no rows",
                         evidence=(
-                            f"Row Groups Scanned: {fmt_num(node.row_groups_scanned)} / "
-                            f"{fmt_num(node.row_groups_total)}; rows_scanned: 0"
+                            f"emitted rows: 0; Row Groups Scanned: "
+                            f"{fmt_num(node.row_groups_scanned)} / {fmt_num(node.row_groups_total)}; "
+                            f"scan-reported rows: {fmt_num(node.rows_scanned)}"
                         ),
                         move=(
                             "The filter matched nothing after the scan. Check the predicate and the "
@@ -505,10 +568,18 @@ def diagnose(roots: list[Node], meta: dict[str, Any], mode: str) -> list[Finding
                     ),
                 )
 
-        if node.actual and node.est and node.actual >= 1000:
+        if node.actual and node.est is not None:
             ratio = node.actual / max(node.est, 1e-9)
             if ratio >= 100 or ratio <= 0.01:
-                severity = "high" if ratio >= 1000 or ratio <= 0.001 else "medium"
+                is_parquet = "PARQUET" in str(node.extra.get("Function", "")).upper()
+                if is_parquet:
+                    severity = "low"
+                elif node.actual >= 1000 and (ratio >= 1000 or ratio <= 0.001):
+                    severity = "high"
+                elif node.actual >= 1000:
+                    severity = "medium"
+                else:
+                    severity = "low"
                 direction = "under" if ratio >= 1 else "over"
                 add(
                     findings,
@@ -522,6 +593,7 @@ def diagnose(roots: list[Node], meta: dict[str, Any], mode: str) -> list[Finding
                         ),
                         move=(
                             "For a base table, run ANALYZE and check whether the predicate is selective. "
+                            "For a Parquet scan, inspect parquet_metadata; ANALYZE does not refresh footer statistics. "
                             "For a join, check the key cardinality and whether the filter was pushed down. "
                             "Do not add LIMIT to a blocking operator to hide the gap."
                         ),
@@ -555,30 +627,32 @@ def diagnose(roots: list[Node], meta: dict[str, Any], mode: str) -> list[Finding
                     ),
                 )
 
-        if node.name in BLOCKING_TYPES and node.actual and node.actual >= 1_000_000:
+        input_rows = child_sum(node) if node.children else (node.actual or 0)
+        if node.name in BLOCKING_TYPES and input_rows >= 1_000_000:
             add(
                 findings,
                 Finding(
                     code="blocking_operator",
                     severity="medium",
-                    title="Blocking operator receives a large intermediate result",
+                    title="Blocking operator receives a large input",
                     evidence=(
-                        f"{node.name}: intermediate_rows = {fmt_num(node.actual)}; "
-                        f"intermediate_size_bytes = {fmt_bytes(node.bytes_out)}. "
-                        "intermediate_size_bytes is the output chunk footprint, not hash-table or sort memory."
+                        f"{node.name}: input rows = {fmt_num(input_rows)}; "
+                        f"output rows = {fmt_num(node.actual)}; "
+                        f"output chunk bytes = {fmt_bytes(node.bytes_out)}. "
+                        "Output chunk bytes are not hash-table or sort memory."
                     ),
                     move=(
                         "Filter or aggregate before this operator. If the shape cannot change, "
                         "check system.peak_buffer_memory and system.peak_temp_dir_size, then "
                         "raise memory_limit or add temp_directory in that order of preference."
                     ),
-                    prove="Rerun EXPLAIN ANALYZE and compare intermediate rows and peak buffer memory.",
+                    prove="Rerun EXPLAIN ANALYZE and compare input rows and peak buffer memory.",
                     node=node.path,
-                    score=node.actual,
+                    score=input_rows,
                 ),
             )
 
-        if node.actual and node.actual >= 1_000_000 and node.time and node.time > 0:
+        if node.time and node.time >= 0.01:
             total_time = sum((n.time or 0) for n in nodes if n.name not in WRAPPER_TYPES)
             if (
                 total_time > 0
@@ -655,19 +729,29 @@ def diagnose(roots: list[Node], meta: dict[str, Any], mode: str) -> list[Finding
 
 
 def render_setting(setting: str) -> str:
-    """Quote a bare setting value so --set memory_limit=100MB works."""
+    """Render one --set as a single SET statement.
+
+    The key is a setting identifier, not SQL. Values are quoted here so a
+    caller-supplied quote or comment cannot open a second statement.
+    """
     key, separator, raw = setting.partition("=")
-    if not separator or not key.strip() or raw == "":
+    key = key.strip()
+    if not separator or not SETTING_KEY_RE.fullmatch(key) or raw.strip() == "":
         raise ValueError(f"setting must look like key=value, got {setting!r}")
     value = raw.strip()
-    bare = (
-        value[0] in "'\"[$"
-        or value.lower() in {"true", "false", "null"}
-        or re.fullmatch(r"-?\d+(?:\.\d+)?", value) is not None
-    )
-    if not bare:
+    lowered = value.lower()
+    if lowered in {"true", "false", "null"}:
+        value = lowered
+    elif re.fullmatch(r"-?\d+(?:\.\d+)?", value):
+        pass
+    elif value.startswith(("[", "{")):
+        if any(token in value for token in (";", "--", "/*", "*/")):
+            raise ValueError(f"setting value contains a statement separator: {setting!r}")
+    else:
+        if value.startswith("'") and value.endswith("'") and len(value) >= 2:
+            value = value[1:-1].replace("''", "'")
         value = "'" + value.replace("'", "''") + "'"
-    return f"SET {key.strip()} = {value};"
+    return f"SET {key} = {value};"
 
 
 def run_duckdb(
@@ -681,7 +765,7 @@ def run_duckdb(
     prefix = "SET explain_output = 'physical_only';\n"
     prefix += "".join(render_setting(setting) + "\n" for setting in settings)
     command = [duckdb_bin, "-no-agent", "-json"]
-    if readonly:
+    if readonly and db:
         command.append("-readonly")
     if db:
         command.append(db)
@@ -711,9 +795,21 @@ def render_markdown(
     counts: dict[str, int] = {}
     for finding in findings:
         counts[finding.severity] = counts.get(finding.severity, 0) + 1
-    verdict = ", ".join(
-        f"{counts[level]} {level}" for level in ("critical", "high", "medium", "low") if counts.get(level)
-    ) or ("no profile (metadata-only or DDL)" if mode == "no_profile" else "no defects found")
+    actionable = sum(
+        counts.get(level, 0) for level in ("critical", "high", "medium", "low")
+    )
+    if mode == "no_profile":
+        verdict = "no profile (metadata-only, VALUES, or DDL)"
+    elif actionable:
+        verdict = ", ".join(
+            f"{counts[level]} {level}"
+            for level in ("critical", "high", "medium", "low")
+            if counts.get(level)
+        )
+    elif counts.get("info"):
+        verdict = f"no actionable findings ({counts['info']} info)"
+    else:
+        verdict = "no defects found"
 
     lines: list[str] = []
     lines.append("# Plan diagnosis")
@@ -734,12 +830,14 @@ def render_markdown(
         lines.append("| Metric | Value |")
         lines.append("| --- | --- |")
         lines.append(f"| Query total time | {fmt_time(parse_number(query_meta.get('total_time')))} |")
-        lines.append(f"| Rows scanned | {fmt_num(parse_number(query_meta.get('total_rows_scanned')))} |")
+        lines.append(f"| Scan rows reported | {fmt_num(parse_number(query_meta.get('total_rows_scanned')))} |")
         lines.append(f"| Row groups scanned | {fmt_num(parse_number(query_meta.get('total_row_groups_scanned')))} |")
         lines.append(f"| Intermediate rows | {fmt_num(parse_number(query_meta.get('total_intermediate_rows')))} |")
         lines.append(f"| Data read | {fmt_bytes(parse_number(io.get('total_bytes_read')))} |")
         lines.append(f"| Peak buffer memory | {fmt_bytes(parse_number(system.get('peak_buffer_memory')))} |")
         lines.append(f"| Peak temp directory | {fmt_bytes(parse_number(system.get('peak_temp_dir_size')))} |")
+        lines.append("")
+        lines.append("Scan rows are what the scan reports; a base-table scan can report rows examined. Use row groups and Data read for scan work.")
         lines.append("")
 
     lines.append("## Findings")
@@ -842,8 +940,36 @@ def render_json(
     return json.dumps(payload, indent=2, default=str) + "\n"
 
 
+def guard_test() -> int:
+    """Check the parser guard against strings that can hide a statement."""
+    cases = [
+        ("backslash in a standard string", "SELECT 'a\\'; INSERT INTO t VALUES (1); --'", True),
+        ("dollar-quoted statement", "SELECT $$--$$; INSERT INTO t VALUES (1); --'", True),
+        ("dollar-quoted semicolon", "SELECT $$a;b$$", False),
+        ("escape string", "SELECT E'a\\'b'", False),
+        ("doubled quote", "SELECT 'a''b'", False),
+    ]
+    failures = 0
+    for label, sql, expected in cases:
+        actual = has_multiple_statements(sql)
+        if actual != expected:
+            print(f"FAIL write guard ({label}): expected multiple={expected}, got {actual}")
+            failures += 1
+    try:
+        render_setting("threads TO 4; DROP TABLE victim; --=1")
+    except ValueError:
+        pass
+    else:
+        print("FAIL write guard: a setting key can open a second statement")
+        failures += 1
+    if not failures:
+        print("PASS write guard: one statement, no second statement from --set")
+    return failures
+
+
 def self_test(duckdb_bin: str) -> int:
     """Build a small deterministic database and assert the linter finds known defects."""
+    guard_failures = guard_test()
     with tempfile.TemporaryDirectory(prefix="plan-lint-") as tmp:
         db = str(Path(tmp) / "test.duckdb")
         setup = (
@@ -902,7 +1028,7 @@ def self_test(duckdb_bin: str) -> int:
                 failures += 1
             else:
                 print(f"PASS {label}: {sorted(codes)}")
-    return 1 if failures else 0
+    return 1 if failures or guard_failures else 0
 
 
 def load_and_diagnose(
@@ -912,8 +1038,9 @@ def load_and_diagnose(
     analyze: bool,
     settings: list[str],
     timeout: int,
+    readonly: bool = False,
 ) -> tuple[str, dict[str, Any], list[Node]]:
-    proc = run_duckdb(duckdb_bin, make_query(analyze, query), db, timeout, False, settings)
+    proc = run_duckdb(duckdb_bin, make_query(analyze, query), db, timeout, readonly, settings)
     if proc.returncode != 0:
         message = proc.stderr.strip().splitlines()
         raise RuntimeError(message[0] if message else "duckdb failed")
@@ -941,11 +1068,11 @@ def main() -> int:
         action="store_true",
         help="Permit --analyze on a statement that looks like a write.",
     )
-    parser.add_argument("--readonly", action="store_true", help="Open the database with -readonly.")
+    parser.add_argument("--readonly", action="store_true", help="Open the --db file with -readonly. Requires --db.")
     parser.add_argument("--set", action="append", default=[], metavar="KEY=VALUE", help="SET before the query. Repeatable.")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     parser.add_argument("--top", type=int, default=10, help="Maximum findings to show (default: 10).")
-    parser.add_argument("--timeout", type=int, default=120, help="DuckDB timeout in seconds (default: 120).")
+    parser.add_argument("--timeout", type=int, default=120, help="Wall-clock timeout for the duckdb process in seconds (default: 120).")
     parser.add_argument("--duckdb", default=os.environ.get("DUCKDB", "duckdb"), help="DuckDB binary (default: $DUCKDB or duckdb).")
     parser.add_argument("--self-test", action="store_true", help="Run the built-in deterministic checks.")
     args = parser.parse_args()
@@ -959,7 +1086,19 @@ def main() -> int:
 
     if bool(args.query) == bool(args.query_file):
         parser.error("pass exactly one of --query or --query-file")
-    query = args.query if args.query else args.query_file.read_text(encoding="utf-8")
+    if args.readonly and not args.db:
+        parser.error("--readonly requires --db")
+    if args.top < 1:
+        parser.error("--top must be at least 1")
+    if args.timeout < 1:
+        parser.error("--timeout must be at least 1")
+    if args.query_file:
+        try:
+            query = args.query_file.read_text(encoding="utf-8")
+        except OSError as exc:
+            parser.error(f"cannot read {args.query_file}: {exc}")
+    else:
+        query = args.query or ""
     if not query.strip():
         parser.error("query is empty")
     if has_multiple_statements(query):
@@ -976,7 +1115,7 @@ def main() -> int:
 
     try:
         mode, meta, roots = load_and_diagnose(
-            args.duckdb, args.db, query, args.analyze, args.set, args.timeout
+            args.duckdb, args.db, query, args.analyze, args.set, args.timeout, args.readonly
         )
     except (RuntimeError, ValueError, OSError, subprocess.TimeoutExpired) as exc:
         print(f"error: {exc}", file=sys.stderr)

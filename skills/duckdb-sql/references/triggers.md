@@ -2,10 +2,6 @@
 
 Read this when the user asks for a trigger, an audit trail, a transition table, or a `RETURNING` rule that a trigger changes.
 
-## Body
-
-A trigger body is exactly one data-modifying statement: `INSERT`, `UPDATE`, `DELETE`, or `MERGE`, optionally prefixed by `WITH`. A `SELECT`, DDL, `COPY`, `CALL`, or `PRAGMA` body is a parser error. A body that modifies its own table raises `Recursive trigger chains are not yet supported`.
-
 ## Support matrix
 
 | Shape | Status |

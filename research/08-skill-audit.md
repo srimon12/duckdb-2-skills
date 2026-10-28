@@ -49,7 +49,7 @@ A second audit ran on 2026-10-26 against the same binary and the v2.0.0 source. 
 - The frontmatter stays `name` and `description`. Client-specific fields are omitted so the pack loads in Claude Code, Codex, Cursor, Grok, and other Agent Skills clients.
 - `scripts/check-skills.py` encodes the structure and runs with zero errors and zero warnings across all 13 skills in strict mode.
 - `scripts/probe.py` encodes executable claims across 71 automated probes, including plan estimates and actuals, plan-only versus analyzed JSON shapes, metadata-only plans, spill metrics, the legacy metrics shape, DML execution under `EXPLAIN ANALYZE`, trigger composition, the friendly-SQL examples, migration targets, multi-table `read_duckdb`, Parquet row-group pruning, metadata duplication, schema drift, partitioned writes, overwrite behavior, CSV rejects, the ingest reject invariant, and JSON `ignore_errors`.
-- `duckdb-profile/scripts/plan_lint.py` turns a plan into ranked findings. Its self-test covers a cross product, a non-sargable Parquet filter, a sargable point lookup, and a metadata-only count.
+- `duckdb-profile/scripts/plan_lint.py` turns a plan into ranked findings. Its self-test covers a cross product, a non-sargable Parquet filter, a sargable point lookup, a metadata-only count, and a write-guard check.
 - `evals/triggers.md` covers routing, skill-specific prompts, and negative disambiguation triggers across all skills including `duckdb-profile` and `duckdb-files`.
 - `evals/ingest` is a task case for the file-to-Parquet workflow, with a deterministic 60,000-row fixture and 25 grader checks. The first candidate smoke run found a nullable-column ambiguity; the contract now names it.
 

@@ -41,7 +41,7 @@ con = duckdb.connect(config={"threads": 4, "memory_limit": "2GB"})
 | Read vs write | `read_only=True` rejects writes and does not create a missing file. Do not open a read-only connection in a process that already has the same file read-write. |
 | Concurrency | One connection plus `con.cursor()` per thread. Two read-write connections in one process are legal under MVCC. Cross-process is one writer or many readers. |
 | Relation vs execute | `con.sql` is lazy for reads and runs once for DDL/DML. `con.execute` runs now and holds a result. `materialize()` if a read relation is reused. |
-| Finish a result | Fetch to the end, `complete()`, or `abort()` before `con.sql`, `con.query`, or an appender `flush()`. A new `execute()` replaces an open result silently. |
+| Finish a streaming result | Fetch to the end, `complete()`, or `abort()` before `con.sql`, `con.query`, or an appender `flush()`. A new `execute()` replaces an open result silently. Small results may be buffered. |
 | Transaction | A failed statement aborts the transaction. `commit()` rolls back; `rollback()` after that commit errors. Start a new transaction before retrying. |
 | Appender | `flush()` on success, `clear()` to discard. No `close()`. `key` is for update and delete only; upsert uses the PK or unique constraint. |
 
@@ -122,7 +122,7 @@ with con.appender("people") as appender:
     appender.append_rows([(2, "Grace"), (3, "Edsger")])
 ```
 
-The appender supports `action="insert"`, `"upsert"`, `"update"`, and `"delete"`. `update` and `delete` take `key`, a list of key columns. `upsert` uses the table's primary key or unique constraint and rejects `key`. `columns` is a list, and `con.query_appender(statement, columns, source=...)` takes a dict of column names to types. The statement reads `appender_data`; the optional source query reads `appender_buffer`. The appender has no `close()` method; call `clear()` to discard buffered rows. Do not share an appender across threads. Finish open `execute()` results before calling `flush()`. A `with` block flushes on success and discards buffered rows on an exception. Outside a `with` block, call `flush()`.
+The appender supports `action="insert"`, `"upsert"`, `"update"`, and `"delete"`. `update` and `delete` take `key`, a list of key columns. `upsert` uses the table's primary key or unique constraint; it needs exactly one conflict target, and rejects `key`. `columns` is a list, and `con.query_appender(statement, columns, source=...)` takes a dict of column names to types. The statement reads `appender_data`; the optional source query reads `appender_buffer`. The appender has no `close()` method; call `clear()` to discard buffered rows. Do not share an appender across threads. Finish open `execute()` results before calling `flush()`. A `with` block flushes on success and discards buffered rows on an exception. Outside a `with` block, call `flush()`.
 
 ## Verify
 

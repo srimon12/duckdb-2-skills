@@ -37,7 +37,7 @@ That installs under `~/.duckdb/cli/<version>/`, points `~/.duckdb/cli/latest` at
 
 `-agent -json` and `-agent -csv` keep the JSON errors and the banner, but they do not apply the 1,000-row, 10,000-byte, or 500-character caps. When a result could be large, add `LIMIT` for a deliberate sample, or an aggregate for a complete count.
 
-Read stderr. Agent mode writes its banner, JSON errors, cost estimates, and progress there. A footer that says `first X and last Y of N rows` means the table is a sample.
+Read stderr. Agent mode writes its banner, JSON errors, cost estimates, and progress there. A footer that says `first X and last Y of N rows` means the display is truncated; the result still has N rows and the hash covers all of them.
 
 ## Result trust
 
@@ -45,9 +45,9 @@ Check the exit code first, then stderr, then the footer.
 
 | Signal | Meaning | Move |
 | --- | --- | --- |
-| exit 0, no stderr error, `N rows, hash ...` | complete | use it |
-| exit 0, no footer, 1 to 9 rows | complete; hash omitted | use it |
-| `first X and last Y of N rows` | sample | run `count(*)` or an aggregate; a bare `LIMIT` is a cap, not a proof |
+| exit 0, no stderr error, `N rows, hash ...` | complete for the query | use it; if the SQL has `LIMIT`, it is not the dataset total |
+| exit 0, no footer, 1 to 9 rows | complete for the query; hash omitted | use it |
+| `first X and last Y of N rows` | display truncated; the result has N rows | use `.maxrows -1` to inspect, or an aggregate for a dataset total |
 | `first X of at least N rows` or `query stopped early` | lower bound | stop and bound the query |
 | exit 1 with a stderr JSON error | failed | read the error; do not parse stdout |
 | exit 1 with header-only stdout and no JSON error | interrupted | rerun or bound it |
@@ -134,4 +134,4 @@ The first must print `v2.0`. The second must print a Markdown table. The third m
 - [Migration guide](https://duckdb.org/docs/2.0/operations_manual/migration.html) owns the storage break.
 - [Install](https://duckdb.org/install/) owns the platform commands.
 - The full flag, dot-command, and setting tables are in [references/cli.md](references/cli.md).
-- Release checked while writing this pack: DuckDB 2.0.0 `d54cbbe3df`, 2026-10-22. Agent-mode limits and the JSON error split were run locally.
+- Release checked against DuckDB 2.0.0 `d54cbbe3df`. Agent-mode limits and the JSON error split were run locally.
