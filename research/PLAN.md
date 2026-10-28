@@ -21,6 +21,7 @@ A reader can install the pack, pick the right skill from the router, and run the
 - [x] **10. Diagnose and ingest.** Add `duckdb-profile`; move plan reading out of `duckdb-sql`; add the batch-ingest reference to `duckdb-files`; add the task case.
 - [x] **11. Domain audit.** Probe the core and data skills against the 2.0.0 source. Fix silent wrong answers, add `references/triggers.md` and `references/diagnosis.md`, add `scripts/plan_lint.py`, and add the workflow authoring guide at `docs/skill-design.md`.
 - [x] **12. Integration pass.** Recheck HN, Reddit, X, blogs, and official docs. Add `duckdb-search` and `duckdb-dbt`; add pagination, client, MCP, FTS, and VSS references; fix the async, security, migration, and sharing traps.
+- [x] **13. Search and dbt workflow pass.** Re-probe dbt 2.0.9 and the FTS/VSS extensions. Add layered FTS, hybrid RRF, HNSW acceleration and memory rules, dbt driver and storage proof, materializations, hooks, concurrency, and a dbt project reference. Re-run 83 probes.
 
 ## Decisions
 

@@ -2,7 +2,7 @@
 
 Agent skills for DuckDB 2.0. Write SQL, ingest files, diagnose slow plans, search tables, run dbt, work with lakes, and ship Python code without re-learning the 2.0 traps each time.
 
-Fifteen skills, fifteen lookup references, one router, and a plan linter. Verified against DuckDB 2.0.0 LTS `d54cbbe3df` on Linux x86_64.
+Fifteen skills, seventeen lookup references, one router, and a plan linter. Verified against DuckDB 2.0.0 LTS `d54cbbe3df` on Linux x86_64.
 
 ## Why this pack
 
@@ -94,9 +94,9 @@ Then ask in normal language:
 | [`duckdb-files`](skills/duckdb-files/SKILL.md) | Read, convert, and batch-ingest files | CSV, Parquet, JSON, Avro, Excel, SQLite, HTTP, object storage |
 | [`duckdb-session`](skills/duckdb-session/SKILL.md) | Attach and restore a database | Attach, open, switch, persist a `.duckdb` file |
 | [`duckdb-variant`](skills/duckdb-variant/SKILL.md) | Store and query semi-structured values | `VARIANT`, shredded JSON, schema-less columns |
-| [`duckdb-search`](skills/duckdb-search/SKILL.md) | Build full-text and vector indexes | BM25, keyword search, HNSW, embeddings |
+| [`duckdb-search`](skills/duckdb-search/SKILL.md) | Build full-text, layered, and vector indexes | BM25, prefix search, HNSW, embeddings, hybrid ranking |
 | [`duckdb-python`](skills/duckdb-python/SKILL.md) | Write or migrate Python client code | Code that imports `duckdb` |
-| [`duckdb-dbt`](skills/duckdb-dbt/SKILL.md) | Run dbt v2 on DuckDB | dbt project, profile, `dbt-duckdb`, dbt migration |
+| [`duckdb-dbt`](skills/duckdb-dbt/SKILL.md) | Run dbt v2 on DuckDB | dbt project, profile, `dbt-duckdb`, driver and storage proof |
 | [`duckdb-quack`](skills/duckdb-quack/SKILL.md) | Serve a database or route a session | Quack, `-serve`, `-connect`, Postgres or MySQL pushdown |
 | [`duckdb-lakehouse`](skills/duckdb-lakehouse/SKILL.md) | Use DuckLake, Iceberg, Delta, Unity | Lakehouse catalog or open table format decision |
 | [`duckdb-spatial`](skills/duckdb-spatial/SKILL.md) | Answer location questions | Maps, lat/lng, GeoJSON, Overture, H3 |
@@ -127,9 +127,9 @@ bash evals/ingest/run_reference.sh
 python3 skills/duckdb-profile/scripts/plan_lint.py --self-test
 ```
 
-Current result: 15 skills with 0 errors, 75/75 probes, 25/25 ingest checks, and 5/5 linter checks.
+Current result: 15 skills with 0 errors, 82/83 probes passed with 1 skipped when the Python package is absent, 25/25 ingest checks, and 5/5 linter checks.
 
-The probe suite needs DuckDB 2.0. The network probes cover the docs index and the UI extension. dbt, Metabase, Grafana, Superset, Ibis, live Iceberg, and Unity Catalog are documented, not executed. See [research/08-skill-audit.md](research/08-skill-audit.md) for the exact coverage.
+The probe suite needs DuckDB 2.0. The network probes cover the docs index and the UI extension. dbt 2.0.9, the FTS and VSS extensions, and the DuckDB binary are probed. Metabase, Grafana, Superset, Ibis, live Iceberg, and Unity Catalog are documented, not executed. See [research/08-skill-audit.md](research/08-skill-audit.md) for the exact coverage.
 
 ## Research and contributing
 

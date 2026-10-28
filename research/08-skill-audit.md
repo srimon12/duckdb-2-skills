@@ -59,15 +59,26 @@ The 2026-10-28 pass rechecked HN, Reddit, X, ecosystem blogs, official docs, and
 | `duckdb-lakehouse` | Catalog choice omitted the all-readers-`READ_ONLY` condition. | Added it to `references/catalogs.md`. |
 | `duckdb-profile` | Remote footer requests and cache scope were missing. | Added the cold-query cache note to `references/diagnosis.md`. |
 
+## Search and dbt pass
+
+The 2026-10-28 second pass ran the two new skills against dbt 2.0.9 and the 2.0.0 extensions. It added workflow depth and removed claims that the binary contradicted.
+
+| Skill | Main issue found | Change |
+| --- | --- | --- |
+| `duckdb-search` | The first draft covered only static BM25 and basic HNSW. It missed layered search, OR/AND semantics, code tokenization, the storage-2.0 gate for incremental indexes, NULL and zero vectors, literal-vector acceleration, prefilter behavior, compaction reality, and hybrid ranking. | Rewrote the body around four paths, corrected the HNSW type and freshness contracts, added layered FTS and RRF, and added `references/hybrid.md`. |
+| `duckdb-dbt` | The first draft repeated the docs on extensions and offered a profile storage pin that does not exist. It had no driver proof, materialization matrix, silent merge failure, lock error, or hook schema trap. | Rewrote the body around stack proof, profile, models, incremental strategies, hooks, concurrency, catalogs, and migration. Added `references/project.md` with exact keys and errors. |
+| `duckdb-migrate` | `references/clients.md` repeated the false `v1.5.6` profile pin and the unqualified extension claim. | Replaced with the bundled-driver version, the storage tag check, and a link to `duckdb-dbt`. |
+| `evals/triggers.md` | No cases for layered search, hybrid ranking, storage-gated FTS, or dbt unique keys and hooks. | Added the new prompts and corrected the dbt storage row. |
+
 ## Cross-cutting
 
 - Descriptions no longer contain slash commands. Plugin installs namespace the skill, Codex uses `$`, and a slash clause is not portable.
 - Every skill has `## Verify` and ends with `## References`.
-- Fifteen reference files: CLI, friendly SQL, trigger support, file formats, batch ingest, stable pagination, plan reading, diagnosis protocol, lakehouse catalogs, Overture, migration checklist, client compatibility, MCP, FTS, and VSS.
+- Seventeen reference files: CLI, friendly SQL, trigger support, file formats, batch ingest, stable pagination, plan reading, diagnosis protocol, lakehouse catalogs, Overture, migration checklist, client compatibility, MCP, FTS, VSS, dbt project, and hybrid ranking.
 - The router owns the version gate and output mode. Storage, secrets, Overture, extension rules, search indexes, dbt, and plan diagnosis have one owner each.
 - The frontmatter stays `name` and `description`. Client-specific fields are omitted so the pack loads in Claude Code, Codex, Cursor, Grok, and other Agent Skills clients.
 - `scripts/check-skills.py` encodes the structure and runs with zero errors and zero warnings across all 15 skills in strict mode.
-- `scripts/probe.py` encodes executable claims across 75 automated probes, including plan estimates and actuals, plan-only versus analyzed JSON shapes, metadata-only plans, spill metrics, the legacy metrics shape, DML execution under `EXPLAIN ANALYZE`, trigger composition, the friendly-SQL examples, migration targets, multi-table `read_duckdb`, Parquet row-group pruning, metadata duplication, schema drift, partitioned writes, overwrite behavior, CSV rejects, the ingest reject invariant, JSON `ignore_errors`, FTS freshness, HNSW metric matching, stable Parquet pagination, and the 2.0 parser traps.
+- `scripts/probe.py` encodes executable claims across 83 automated probes, including plan estimates and actuals, plan-only versus analyzed JSON shapes, metadata-only plans, spill metrics, the legacy metrics shape, DML execution under `EXPLAIN ANALYZE`, trigger composition, the friendly-SQL examples, migration targets, multi-table `read_duckdb`, Parquet row-group pruning, metadata duplication, schema drift, partitioned writes, overwrite behavior, CSV rejects, the ingest reject invariant, JSON `ignore_errors`, FTS freshness, the FTS storage gate, FTS query semantics, layered FTS, HNSW metric matching, FLOAT-only keys, NULL vectors, acceleration shapes, OFFSET, hybrid RRF, stable Parquet pagination, and the 2.0 parser traps.
 - `duckdb-profile/scripts/plan_lint.py` turns a plan into ranked findings. Its self-test covers a cross product, a non-sargable Parquet filter, a sargable point lookup, a metadata-only count, and a write-guard check.
 - `evals/triggers.md` covers routing, skill-specific prompts, and negative disambiguation triggers across all skills including `duckdb-search`, `duckdb-dbt`, `duckdb-profile`, and `duckdb-files`.
 - `evals/ingest` is a task case for the file-to-Parquet workflow, with a deterministic 60,000-row fixture and 25 grader checks. The first candidate smoke run found a nullable-column ambiguity; the contract now names it.

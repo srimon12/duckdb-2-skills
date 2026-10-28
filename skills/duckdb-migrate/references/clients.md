@@ -38,13 +38,13 @@ A BI reader and a local writer cannot share one file across processes. Point the
 
 ## dbt
 
-dbt v2 (`dbt` package) has a built-in DuckDB adapter. Its bundled driver cannot load extensions. Install the system driver with `dbc install duckdb` before using `httpfs`, `parquet`, `spatial`, or `ducklake`.
+dbt v2 (`dbt` package) has a built-in DuckDB adapter. Its bundled driver at 2.0.9 reports DuckDB 1.5.4, writes a `v1.0.0+` file, and cannot open storage 69. Install the system driver with `dbc install duckdb` before using a 2.0 file or a 2.0-only extension.
 
 `dbt-duckdb` is the v1 adapter. It does not become dbt v2.
 
-The dbt v2 driver is pinned. Installing `duckdb==2.0.0` with `pip` does not change it. Check `dbt show --inline "select version()"`. If it is not 2.0, install a 2.0 system driver or write the target file with `STORAGE_VERSION 'v1.5.6'`.
+Installing `duckdb==2.0.0` with `pip` does not change the driver dbt uses. Check `dbt show --inline "select version()"` and `tags['storage_version']`. A profile cannot set `STORAGE_VERSION`; convert the file with the DuckDB CLI before dbt opens it.
 
-Read `duckdb-dbt` for the profile, catalogs, and migration steps.
+Read `duckdb-dbt` for the profile, driver proof, hooks, catalogs, and migration steps.
 
 ## Ibis
 

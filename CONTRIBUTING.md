@@ -56,7 +56,7 @@ Add a reference file only when the content is long, tabular, and needed on a min
 - Open with one sentence that says when to read it.
 - Do not link a reference from another skill's reference. Link the owning skill.
 
-Current reference files: CLI flags, friendly SQL, trigger support, file formats, batch ingest, stable pagination, plan reading, diagnosis protocol, lakehouse catalogs, Overture, migration checklist, client compatibility, MCP, FTS, and VSS.
+Current reference files: CLI flags, friendly SQL, trigger support, file formats, batch ingest, stable pagination, plan reading, diagnosis protocol, lakehouse catalogs, Overture, migration checklist, client compatibility, MCP, FTS, VSS, dbt project, and hybrid ranking.
 
 ## Fact ownership
 
@@ -73,8 +73,9 @@ Current reference files: CLI flags, friendly SQL, trigger support, file formats,
 | DuckLake, Iceberg, Delta, catalog choice | `duckdb-lakehouse` |
 | `INSTALL`, `LOAD`, `UPDATE EXTENSIONS`, repositories | `duckdb-extensions` |
 | Docs index versions, hosted BM25 query, cache | `duckdb-docs` |
-| FTS indexes, HNSW, search freshness, vector metrics | `duckdb-search` |
-| dbt v2 adapter, profiles, extensions, catalogs, orchestration | `duckdb-dbt` |
+| FTS indexes, layered search, HNSW, search freshness, vector metrics, hybrid ranking | `duckdb-search` |
+| dbt v2 adapter, profiles, hooks, materializations, catalogs, orchestration | `duckdb-dbt` |
+| dbt profile keys, materialization matrix, exact errors | `duckdb-dbt` (`references/project.md`) |
 | Storage versions, compatibility, export/import, migration order | `duckdb-migrate` |
 | BI, dbt, Ibis, and MCP client compatibility | `duckdb-migrate` (`references/clients.md`) |
 | Python API changes, relations, threads, Arrow | `duckdb-python` |
