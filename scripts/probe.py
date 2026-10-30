@@ -601,6 +601,226 @@ def check_vss_hnsw(tmp: Path, network: bool) -> tuple[bool, str]:
     return ok, "cosine index scan; similarity falls back"
 
 
+def check_fts_storage_gate(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = str(tmp / "fts-old.duckdb")
+    rows(
+        "ATTACH 'fts-old.duckdb' AS old (STORAGE_VERSION 'v1.5.6');"
+        " CREATE TABLE old.docs (id INTEGER NOT NULL, body VARCHAR);"
+        " INSERT INTO old.docs VALUES (1, 'duck');"
+        " DETACH old;",
+        tmp,
+    )
+    ok, detail = expect_error(
+        "LOAD fts; PRAGMA create_fts_index('docs', 'id', 'body', incremental = 1);",
+        tmp,
+        "storage version v2.0.0",
+        (db,),
+    )
+    return ok, detail
+
+
+def check_fts_query_semantics(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = str(tmp / "fts-query.duckdb")
+    rows(
+        "LOAD fts;"
+        " CREATE TABLE docs (id INTEGER NOT NULL, body VARCHAR);"
+        " INSERT INTO docs VALUES"
+        " (1, 'duck database'), (2, 'duckling'), (3, 'database system'),"
+        " (4, 'orange duck'), (5, 'duckdb 2.0');"
+        " PRAGMA create_fts_index('docs', 'id', 'body',"
+        " stemmer = 'none', stopwords = 'none');",
+        tmp,
+        (db,),
+    )
+    any_term = one(
+        "SELECT count(*) AS n FROM ("
+        " SELECT id, fts_main_docs.match_bm25(id, 'duck database') AS s FROM docs"
+        ") WHERE s IS NOT NULL",
+        tmp,
+        (db,),
+    )
+    all_terms = one(
+        "SELECT count(*) AS n FROM ("
+        " SELECT id, fts_main_docs.match_bm25(id, 'duck database', conjunctive := 1) AS s FROM docs"
+        ") WHERE s IS NOT NULL",
+        tmp,
+        (db,),
+    )
+    digits = one(
+        "SELECT count(*) AS n FROM ("
+        " SELECT id, fts_main_docs.match_bm25(id, '2.0') AS s FROM docs"
+        ") WHERE s IS NOT NULL",
+        tmp,
+        (db,),
+    )
+    ok = any_term["n"] == 3 and all_terms["n"] == 1 and digits["n"] == 0
+    return ok, f"or={any_term['n']} and={all_terms['n']} digits={digits['n']}"
+
+
+def check_fts_layered(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = str(tmp / "fts-layered.duckdb")
+    rows(
+        "LOAD fts; LOAD json;"
+        " CREATE TABLE docs (id INTEGER NOT NULL, body VARCHAR);"
+        " INSERT INTO docs VALUES (1, 'quacking duck'), (2, 'barking dog');"
+        " PRAGMA create_fts_index('docs', 'id', 'body',"
+        " stemmer = 'none', stopwords = 'none', layered_search = 1, incremental = 1);",
+        tmp,
+        (db,),
+    )
+    prefix = one(
+        "SELECT count(*) AS n FROM fts_main_docs.search_layered_bm25('quack', top_k := 10);",
+        tmp,
+        (db,),
+    )
+    boolean = one(
+        "SELECT count(*) AS n FROM fts_main_docs.search_layered_bm25_query("
+        " '{\"must\":[{\"query\":\"dog\"}]}'::JSON, top_k := 10);",
+        tmp,
+        (db,),
+    )
+    ok = prefix["n"] == 1 and boolean["n"] == 1
+    return ok, f"prefix={prefix['n']} bool={boolean['n']}"
+
+
+def check_vss_float_only(tmp: Path, network: bool) -> tuple[bool, str]:
+    ok, detail = expect_error(
+        "LOAD vss;"
+        " CREATE TABLE d (id INTEGER, emb DOUBLE[3]);"
+        " CREATE INDEX d_hnsw ON d USING HNSW (emb);",
+        tmp,
+        "FLOAT[N]",
+    )
+    return ok, detail
+
+
+def check_vss_null_vectors(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = str(tmp / "vss-null.duckdb")
+    rows(
+        "LOAD vss;"
+        " SET hnsw_enable_experimental_persistence = true;"
+        " CREATE TABLE items (id INTEGER, emb FLOAT[3]);"
+        " INSERT INTO items VALUES (1, [1, 0, 0]), (2, NULL), (3, [0, 1, 0]);"
+        " CREATE INDEX items_hnsw ON items USING HNSW (emb) WITH (metric = 'cosine');"
+        " CREATE TABLE brute AS SELECT * FROM items;",
+        tmp,
+        (db,),
+    )
+    indexed = rows(
+        "LOAD vss; SELECT id FROM items"
+        " ORDER BY array_cosine_distance(emb, [1, 0, 0]::FLOAT[3]) LIMIT 5",
+        tmp,
+        (db,),
+    )
+    brute = rows(
+        "LOAD vss; SELECT id FROM brute"
+        " ORDER BY array_cosine_distance(emb, [1, 0, 0]::FLOAT[3]) LIMIT 5",
+        tmp,
+        (db,),
+    )
+    ok = len(indexed) == 2 and len(brute) == 3
+    return ok, f"indexed={len(indexed)} brute={len(brute)}"
+
+
+def check_vss_query_shapes(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = str(tmp / "vss-shapes.duckdb")
+    rows(
+        "LOAD vss;"
+        " SET hnsw_enable_experimental_persistence = true;"
+        " CREATE TABLE items (id INTEGER, emb FLOAT[3]);"
+        " INSERT INTO items VALUES (1, [1, 0, 0]), (2, [0, 1, 0]);"
+        " CREATE INDEX items_hnsw ON items USING HNSW (emb) WITH (metric = 'cosine');",
+        tmp,
+        (db,),
+    )
+    literal = duckdb(
+        "LOAD vss; EXPLAIN SELECT id FROM items"
+        " ORDER BY array_cosine_distance(emb, [1, 0, 0]::FLOAT[3]), id LIMIT 1;",
+        tmp,
+        (db,),
+    )
+    double = duckdb(
+        "LOAD vss; EXPLAIN SELECT id FROM items"
+        " ORDER BY array_cosine_distance(emb, [1, 0, 0]::DOUBLE[3]) LIMIT 1;",
+        tmp,
+        (db,),
+    )
+    ok = (
+        literal.returncode == 0
+        and "Hnsw Index Scan" not in literal.stdout
+        and double.returncode == 0
+        and "Hnsw Index Scan" not in double.stdout
+    )
+    return ok, "tie-breaker and DOUBLE cast fall back"
+
+
+def check_vss_offset(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = str(tmp / "vss-offset.duckdb")
+    rows(
+        "LOAD vss;"
+        " SET hnsw_enable_experimental_persistence = true;"
+        " CREATE TABLE items (id INTEGER, emb FLOAT[3]);"
+        " INSERT INTO items VALUES"
+        " (1, [1, 0, 0]), (2, [0.9, 0.1, 0]), (3, [0.8, 0.2, 0]), (4, [0.7, 0.3, 0]);"
+        " CREATE INDEX items_hnsw ON items USING HNSW (emb) WITH (metric = 'cosine');"
+        " CREATE TABLE brute AS SELECT * FROM items;",
+        tmp,
+        (db,),
+    )
+    indexed = rows(
+        "LOAD vss; SELECT id FROM items"
+        " ORDER BY array_cosine_distance(emb, [1, 0, 0]::FLOAT[3]) LIMIT 2 OFFSET 2;",
+        tmp,
+        (db,),
+    )
+    brute = rows(
+        "SELECT id FROM brute"
+        " ORDER BY array_cosine_distance(emb, [1, 0, 0]::FLOAT[3]) LIMIT 2 OFFSET 2;",
+        tmp,
+        (db,),
+    )
+    indexed_ids = [r["id"] for r in indexed]
+    brute_ids = [r["id"] for r in brute]
+    ok = indexed_ids != brute_ids and indexed_ids == [1, 2]
+    return ok, f"indexed={indexed_ids} brute={brute_ids}"
+
+
+def check_hybrid_rrf(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = str(tmp / "hybrid.duckdb")
+    rows(
+        "LOAD fts; LOAD vss;"
+        " SET hnsw_enable_experimental_persistence = true;"
+        " CREATE TABLE docs (id INTEGER NOT NULL, body VARCHAR, emb FLOAT[3]);"
+        " INSERT INTO docs VALUES"
+        " (1, 'duck database', [1, 0, 0]), (2, 'database system', [0.8, 0.2, 0]),"
+        " (3, 'orange duck', [0, 1, 0]), (4, 'cooking', [0, 0, 1]);"
+        " PRAGMA create_fts_index('docs', 'id', 'body', overwrite = 1);"
+        " CREATE INDEX docs_hnsw ON docs USING HNSW (emb) WITH (metric = 'cosine');",
+        tmp,
+        (db,),
+    )
+    fused = rows(
+        "LOAD fts; LOAD vss;"
+        " WITH lex AS ("
+        " SELECT id, row_number() OVER (ORDER BY bm25 DESC, id) r"
+        " FROM (SELECT id, fts_main_docs.match_bm25(id, 'duck') bm25 FROM docs) t"
+        " WHERE bm25 IS NOT NULL ORDER BY bm25 DESC, id LIMIT 50"
+        " ), vec AS ("
+        " SELECT id, row_number() OVER (ORDER BY d, id) r"
+        " FROM (SELECT id, array_cosine_distance(emb, [0.9, 0.3, 0]::FLOAT[3]) d"
+        " FROM docs ORDER BY d LIMIT 50) t"
+        " )"
+        " SELECT coalesce(l.id, v.id) id,"
+        " coalesce(1.0 / (60 + l.r), 0) + coalesce(1.0 / (60 + v.r), 0) rrf"
+        " FROM lex l FULL OUTER JOIN vec v USING (id)"
+        " ORDER BY rrf DESC, id;",
+        tmp,
+        (db,),
+    )
+    ok = len(fused) == 4 and fused[0]["id"] == 1 and fused[1]["id"] == 3
+    return ok, f"top={[r['id'] for r in fused]}"
+
+
 def check_parquet_pagination(tmp: Path, network: bool) -> tuple[bool, str]:
     rows(
         "COPY (SELECT range AS id FROM range(30000) ORDER BY id)"
@@ -1109,7 +1329,15 @@ CHECKS = [
     Check("profile reports spill", check_profile_spill),
     Check("plan linter self-test", check_plan_lint_selftest),
     Check("FTS incremental freshness", check_fts_freshness),
+    Check("FTS incremental storage gate", check_fts_storage_gate),
+    Check("FTS query semantics", check_fts_query_semantics),
+    Check("FTS layered search", check_fts_layered),
     Check("VSS HNSW metric match", check_vss_hnsw),
+    Check("VSS FLOAT only", check_vss_float_only),
+    Check("VSS drops NULL vectors", check_vss_null_vectors),
+    Check("VSS query shapes", check_vss_query_shapes),
+    Check("VSS OFFSET repeats page", check_vss_offset),
+    Check("Hybrid RRF fusion", check_hybrid_rrf),
     Check("Parquet stable pagination", check_parquet_pagination),
     Check("2.0 parser traps", check_2_0_parser_traps),
     Check("EXPLAIN ANALYZE executes DML", check_explain_analyze_dml),

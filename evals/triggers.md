@@ -38,6 +38,10 @@ A description that needs this table explained is too weak. The prompt should be 
 | 28 | Share a small catalog of views without giving out S3 keys. | `duckdb-session` | `duckdb-quack`, `duckdb-files` |
 | 29 | Our Metabase DuckDB driver cannot open a 2.0 file. | `duckdb-migrate` | `duckdb-quack`, `duckdb-session` |
 | 30 | Connect Claude Desktop to a local DuckDB file over MCP. | `duckdb` | `duckdb-extensions`, `duckdb-search` |
+| 31 | Search these docs for a prefix and tolerate typos. | `duckdb-search` | `duckdb-docs`, `duckdb-sql` |
+| 32 | Combine keyword search and embeddings into one ranking. | `duckdb-search` | `duckdb-sql`, `duckdb-python` |
+| 33 | Our dbt merge silently duplicates rows on every run. | `duckdb-dbt` | `duckdb-sql`, `duckdb-files` |
+| 34 | dbt cannot open our 2.0 warehouse file. | `duckdb-dbt` | `duckdb-migrate`, `duckdb-extensions` |
 
 ## Skill-specific
 
@@ -84,21 +88,27 @@ A description that needs this table explained is too weak. The prompt should be 
 | Prompt | Expected action |
 | --- | --- |
 | Search these support emails by keyword and rank the matches. | create an FTS index, query `match_bm25` in a subquery, order by score |
-| Keep the search index current after inserts and deletes. | `incremental = 1`; it does not cover updates |
+| Search for a prefix, a typo, or an autocomplete fragment. | `layered_search = 1` and `search_layered_bm25`, not `match_bm25` wildcards |
+| Keep the search index current after inserts and deletes. | `incremental = 1`; it needs storage `v2.0.0` and does not cover updates |
 | An updated document still matches its old term. | delete and reinsert, or rebuild with `overwrite = 1` |
+| Search code for `s3` or `2.0`. | `stemmer='none'`, `stopwords='none'`, custom `ignore`; defaults strip digits |
 | Find the nearest embeddings. | HNSW index whose metric matches the distance function, `LIMIT k` |
 | Paginate nearest-neighbor results. | do not use `OFFSET` on 2.0.0; fetch `k + offset` and slice |
 | Rank by cosine similarity. | use `array_cosine_distance` with a cosine index, not `array_cosine_similarity` |
+| Combine keyword and vector results. | RRF over both ranked legs; literal term, literal vector, literal limits |
 
 ### `duckdb-dbt`
 
 | Prompt | Expected action |
 | --- | --- |
-| Our dbt project uses DuckDB and `httpfs`. | dbt v2 built-in adapter plus `dbc install duckdb`; the bundled driver cannot load extensions |
-| We still have `dbt-duckdb` installed. | that is the v1 adapter; dbt v2 is the `dbt` package |
-| dbt cannot open our 2.0 warehouse file. | check the driver's DuckDB build; install a 2.0 driver or pin the file to `v1.5.6` |
+| Our dbt project uses DuckDB and `httpfs`. | prove the active driver with `dbt show --inline "select version()"`; use `dbc install duckdb` for 2.0 |
+| We still have `dbt-duckdb` installed. | that is the v1 adapter; dbt v2 is the `dbt` package and prints one version line |
+| dbt cannot open our 2.0 warehouse file. | the bundled driver is 1.5.4; install the 2.0 system driver with `dbc`, then check the storage tag |
+| Our merge model duplicates rows on every run. | set `unique_key`; without it dbt emits `ON (FALSE)` and appends |
+| Two dbt jobs run against the same local file. | one writer per file; use separate files or a shared lakehouse |
 | Run dbt on an ephemeral worker. | persist the warehouse to S3/Parquet or DuckLake; do not use a local file |
-| Move a v1 dbt project to v2. | keep the old env, install `dbt`, `dbc install duckdb`, `dbt debug`, `dbt build` |
+| Move a v1 dbt project to v2. | keep the old env, install `dbt`, `dbc install duckdb`, `dbt debug`, `dbt show version`, `dbt build` |
+| Rebuild an FTS-indexed model in dbt. | set `schema` explicitly and recreate the index in a post-hook |
 
 ### `duckdb-files`
 
