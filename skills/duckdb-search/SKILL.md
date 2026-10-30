@@ -71,7 +71,7 @@ WHERE bm25 IS NOT NULL
 ORDER BY bm25 DESC;
 ```
 
-A query string is a bag of terms. Terms are OR by default. `conjunctive := 1` requires every surviving term. There is no phrase, wildcard, negation, or `AND`/`OR` syntax: quotes, `-`, and `*` are delimiters. Use a layered index for those shapes. `fields := 'title,body'` restricts matching and scoring; an unknown field returns zero rows without an error.
+A query string is a bag of terms. Terms are OR by default. `conjunctive := 1` requires every surviving term. There is no phrase, wildcard, negation, or `AND`/`OR` syntax: quotes, `-`, and `*` are delimiters. Use a layered index for those shapes. `fields := 'title,body'` restricts matching and scoring; on 2.0.0 an unknown field returns zero rows without an error, and later builds raise `fields contains unknown field`.
 
 Scores are unbounded and corpus-dependent. Rank them; do not compare them to a fixed threshold. BM25F combines fields with field weights, then saturates once. `field_weights`, `field_b`, `scoring_model`, and `tie_breaker` are in [references/fts.md](references/fts.md).
 
@@ -83,7 +83,7 @@ Invalid Input Error: incremental FTS indexes require trigger support. Persistent
 
 Incremental triggers cover `INSERT` and `DELETE`. An `UPDATE` leaves the old term searchable and the new term missing. `INSERT ... ON CONFLICT DO UPDATE` and `MERGE INTO` fail on the table. Repair with `DELETE` plus `INSERT`, or rebuild with `overwrite = 1`. `CREATE OR REPLACE TABLE` leaves the old index schema behind and the new table can return stale matches.
 
-Tokenization decides whether a search is usable. The default `ignore` pattern treats digits as delimiters, so `2.0` and `s3` are not searchable. The English stopword list contains words such as `name`, `value`, `where`, and `only`. For code, API names, or logs, set `stemmer = 'none'`, `stopwords = 'none'`, and an `ignore` pattern that keeps the characters you need. Stemming is not prefix matching. `duckling` and `duck` are separate terms. Exact tokens need `none`.
+Tokenization decides whether a search is usable. The default `ignore` pattern treats digits and `.` as delimiters: `2.0` tokenizes to nothing, and `s3` indexes as the single token `s`, so an exact `s3` match is impossible. The English stopword list contains words such as `name`, `value`, `where`, and `only`. For code, API names, or logs, set `stemmer = 'none'`, `stopwords = 'none'`, and an `ignore` pattern that keeps the characters you need. Stemming is not prefix matching. `duckling` and `duck` are separate terms. Exact tokens need `none`.
 
 The index lives in `fts_<schema>_<table>`. It is a set of tables, not a plan operator, so a plan does not prove it is used. A freshness count does.
 
@@ -134,7 +134,7 @@ ORDER BY array_cosine_distance(emb, [1, 0, 0]::FLOAT[3])
 LIMIT 3;
 ```
 
-The query vector must be a literal `FLOAT[N]`. A `::DOUBLE[N]` cast, a prepared `$1`, or a scalar subquery silently disables the index and returns a sequential scan. `array_cosine_similarity` is not accelerated. `DESC`, a missing `LIMIT`, an ordinal `ORDER BY 1`, a tie-breaker `ORDER BY dist, id`, and `LIMIT (SELECT k)` also fall back to a scan.
+The query vector must be a literal `FLOAT[N]`. A `::DOUBLE[N]` cast, a scalar subquery, `DESC`, a missing `LIMIT`, a tie-breaker `ORDER BY dist, id`, and `LIMIT (SELECT k)` silently fall back to a sequential scan. A prepared `$1` and an ordinal `ORDER BY 1` still use HNSW, but as a full index scan without top-k pushdown. Sort by `array_cosine_distance`, or by `1.0 - array_cosine_similarity`, which the planner rewrites to the distance; a bare `array_cosine_similarity` sort is not accelerated.
 
 A `WHERE` filter is applied before the HNSW search by default. Keep `hnsw_prefilter = true`. Setting it to `false` on a selective filter can return zero rows. Prefiltering costs a full scan of the filter columns, so a very selective filter over a large table is not free. Raise `hnsw_ef_search` for recall; the default is 64. Do not add `OFFSET` on 2.0.0; the index scan repeats the first page. Fetch `LIMIT k + offset` and slice in the client, or drop the index for that query. Recheck on 2.0.1.
 
@@ -166,7 +166,7 @@ ORDER BY rrf DESC, id;
 
 - Do not use `incremental = 1` on an update-heavy table or a pre-2.0 storage file.
 - Do not index code or identifiers with the default stopwords and digit-stripping pattern.
-- Do not mix an HNSW metric with a different distance function, or use `array_cosine_similarity` for an indexed query.
+- Do not mix an HNSW metric with a different distance function, or sort by a bare `array_cosine_similarity`.
 - Do not use a non-literal HNSW query vector, `DESC`, a tie-breaker, or `LIMIT (SELECT ...)`; do not paginate with `OFFSET` on 2.0.0.
 - Do not build HNSW in a file database without the persistence flag.
 - Do not disable `hnsw_prefilter` on a selective filter.

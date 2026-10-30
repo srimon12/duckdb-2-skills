@@ -91,7 +91,7 @@ A query with no score filter returns every row, with NULL for non-matches. `ORDE
 
 Scores are unbounded and corpus-dependent. A rare term can score 4.82 and a common term 0.0000065. Rank, never threshold.
 
-`fields := 'title,body'` is a comma-separated string, trimmed and matched case-sensitively. An unknown field returns zero rows without an error. `fields := 'Title'` is not the same as `fields := 'title'`. `fields := ''` returns zero rows.
+`fields := 'title,body'` is a comma-separated string, trimmed and matched case-sensitively. On 2.0.0 an unknown field returns zero rows without an error; current `v2.0-cyanoptera` HEAD raises `fields contains unknown field: <name>`. `fields := 'Title'` is not the same as `fields := 'title'`. `fields := ''` returns zero rows.
 
 ## Scoring
 
@@ -168,7 +168,8 @@ The defaults are tuned for prose, not code.
 
 | Shape | What happens | Correct move |
 | --- | --- | --- |
-| `2.0`, `s3`, `2024` | Digits are delimiters. The terms disappear. | Set `ignore` to keep digits. |
+| `2.0`, `2024` | Digits and `.` are delimiters. The terms disappear. | Set `ignore` to keep digits. |
+| `s3` | Indexes as `s`. A query for `s3` matches every `s` token. | Set `ignore` to keep digits. |
 | `name`, `value`, `where`, `only` | In the 571-word English stopword list. A document of only stopwords indexes nothing. | `stopwords = 'none'`. |
 | `user_id`, `fts_main_docs` | Punctuation and underscore split identifiers. | Index a normalized copy, or use `stemmer = 'none'` and a custom `ignore`. |
 | `databases` | Porter stems to `databas`. | Keep `porter` for prose. |

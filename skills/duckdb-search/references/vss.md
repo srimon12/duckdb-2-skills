@@ -43,7 +43,7 @@ An empty table can be indexed before the first insert. Inserts, updates, and del
 | `cosine` | `array_cosine_distance` | Normalizes internally. Range `0` to `2`. |
 | `ip` | `array_negative_inner_product` | Negative dot product. |
 
-A mismatch is silent. An `l2sq` index with `array_cosine_distance` produces a sequential scan, not an error. `array_cosine_similarity` is not accelerated. Check the plan, or `pragma_hnsw_index_info().metric`.
+A mismatch is silent. An `l2sq` index with `array_cosine_distance` produces a sequential scan, not an error. Sort by `1.0 - array_cosine_similarity` to get the rewrite to `array_cosine_distance`; a bare `array_cosine_similarity` sort is not accelerated. Check the plan, or `pragma_hnsw_index_info().metric`.
 
 ## Query shape
 
@@ -64,7 +64,8 @@ LIMIT 3;
 | `WHERE other_col = constant` | Yes, prefiltered |
 | `WHERE id IN (1, 2, 3)` | Yes, mark join |
 | `ORDER BY dist, id` tie-breaker | No |
-| `ORDER BY 1` ordinal | No |
+| `ORDER BY 1` ordinal | Yes, full scan without top-k pushdown |
+| Prepared `$1` vector | Yes, full scan without top-k pushdown |
 | `DESC` | No |
 | Missing `LIMIT` | No |
 | `LIMIT (SELECT k)` | No |
@@ -72,7 +73,7 @@ LIMIT 3;
 | `JOIN`, `QUALIFY`, window function | No |
 | `min_by(t, <matching distance>(col, literal), k ORDER BY col)` | Yes |
 
-The query vector must be a literal `FLOAT[N]`. A `::DOUBLE[N]` cast, a prepared `$1`, or a scalar subquery such as `(SELECT emb FROM items WHERE id = 1)` silently disables the index. The same applies to a non-flat vector expression that the planner cannot fold.
+The query vector must be a literal `FLOAT[N]`. A `::DOUBLE[N]` cast or a scalar subquery such as `(SELECT emb FROM items WHERE id = 1)` silently falls back to a sequential scan. A prepared `$1` still uses HNSW, but as a full index scan without top-k pushdown. The same applies to a non-flat vector expression that the planner cannot fold.
 
 `array_distance` on a `FLOAT[3]` column and a bare `[1, 2, 3]` literal binds as `INTEGER[]` and fails. Always cast the literal.
 

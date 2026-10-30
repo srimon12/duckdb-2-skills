@@ -37,15 +37,17 @@ Run these before changing a project:
 2. `dbt debug` must pass and report `duckdb (remote)`.
 3. `dbt show --inline "select version()"` must return the DuckDB build you intend to use.
 4. If the build is not 2.0, install the system driver with `dbc install duckdb`.
-5. Check the file header with the DuckDB CLI, not with dbt.
+5. Check the storage tag with the DuckDB CLI, not with dbt.
 
-dbt v2 downloads a bundled ADBC driver on first use. At dbt 2.0.9 that driver reports DuckDB 1.5.4, writes a `v1.0.0+` file, and cannot read storage 69:
+dbt v2 downloads a bundled ADBC driver on first use. At dbt 2.0.9 that driver reports DuckDB 1.5.4, writes a storage-64 (`v1.0.0+`) file, and cannot read storage 69:
 
 ```text
 IO Error: Trying to read a database file with version number 999, but we can only read versions between 64 and 68.
 ```
 
-A system driver installed by `dbc` wins over the bundled one. After `dbc install duckdb`, the same command returns `v2.0.0`, opens storage 69, and `tags['storage_version']` is `v2.0.0+`.
+DuckDB 1.5.5 and earlier print the raw header field `999` for a file created by 2.0. DuckDB 1.5.6 prints `69` for the same file. Do not read `999` as the storage version.
+
+At dbt 2.0.9 a system driver installed by `dbc` won over the bundled one. After `dbc install duckdb`, the same command returns `v2.0.0`, opens storage 69, and `tags['storage_version']` is `v2.0.0+`. Do not rely on that order across dbt releases; prove the active driver with the version query.
 
 The vendor docs say the bundled driver cannot load extensions. At dbt 2.0.9 it loaded `httpfs`, `spatial`, `fts`, `vss`, and `ducklake` in a probe. Do not rely on that. Install the system driver for 2.0-only features and prove the engine with the version query.
 
@@ -76,7 +78,7 @@ analytics:
           provider: credential_chain
 ```
 
-Set `schema` explicitly. Without it a model lands in `main`, but `this` inside a hook renders `<database>.public.<model>` at dbt 2.0.9. A post-hook that indexes a table will target the wrong schema.
+Set `schema` explicitly. Without it, dbt 2.0.9 renders `this` as `<database>.public.<model>` during hook compilation while the model builds in `main`. Set `schema: main` so both agree.
 
 `settings` applies DuckDB configuration after the database is attached. `attach` accepts `duckdb`, `sqlite`, and `postgres` paths and uses the basename as the alias. `secrets` creates `__dbt_secret_N` entries in `duckdb_secrets()`.
 
@@ -184,7 +186,7 @@ duckdb -no-agent -json warehouse.duckdb \
   -c "SELECT tags['storage_version'] AS v FROM duckdb_databases() WHERE database_name = current_database();"
 ```
 
-The tag must match the readers that will open the file: `v2.0.0+` for DuckDB 2.0, `v1.5.0+` for a 1.5 reader.
+The tag must match the readers that will open the file: `v2.0.0+` for DuckDB 2.0, `v1.5.0+` for a file pinned to a 1.5.6 reader.
 
 ## References
 

@@ -70,6 +70,17 @@ The 2026-10-28 second pass ran the two new skills against dbt 2.0.9 and the 2.0.
 | `duckdb-migrate` | `references/clients.md` repeated the false `v1.5.6` profile pin and the unqualified extension claim. | Replaced with the bundled-driver version, the storage tag check, and a link to `duckdb-dbt`. |
 | `evals/triggers.md` | No cases for layered search, hybrid ranking, storage-gated FTS, or dbt unique keys and hooks. | Added the new prompts and corrected the dbt storage row. |
 
+## Review corrections
+
+A third pass checked the new text against the 2.0 docs, the extension sources, and dbt 2.0.9. It found four overstatements.
+
+| Claim | Correction |
+| --- | --- |
+| A `dbc` system driver always wins over the bundled dbt driver. | It won at 2.0.9, but driver precedence is not guaranteed. The skill now says to prove the active driver with the version query. |
+| A 1.5.4 dbt driver cannot read storage 69, quoted as error `999`. | Both are true. 1.5.5 and earlier print the raw header field `999`; 1.5.6 prints `69`. The text now names the cutover. |
+| `attach[].options` is a v2 profile key. | v2 parses and drops `options`; only `path`, `alias`, `type`, `read_only`, and `is_ducklake` reach the attachment. |
+| The default FTS tokenizer makes `s3` unsearchable, and a prepared or ordinal HNSW query falls back to a sequential scan. | `s3` indexes as `s`, so a query matches the wrong token. A prepared vector and ordinal `ORDER BY` use HNSW as a full scan without top-k pushdown, not a sequential scan. |
+
 ## Cross-cutting
 
 - Descriptions no longer contain slash commands. Plugin installs namespace the skill, Codex uses `$`, and a slash clause is not portable.

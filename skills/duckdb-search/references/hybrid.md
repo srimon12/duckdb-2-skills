@@ -38,7 +38,7 @@ LIMIT 10;
 
 Each leg needs a literal `LIMIT`. `LIMIT (SELECT k)` removes HNSW acceleration and turns the vector leg into a full scan.
 
-The vector must be a literal `FLOAT[N]`. A scalar subquery, a prepared parameter, or a `::DOUBLE[N]` cast silently removes the index. Bind a new literal query per request in the client.
+The vector must be a literal `FLOAT[N]`. A scalar subquery or a `::DOUBLE[N]` cast silently removes the index. A prepared parameter keeps the index but runs a full scan without top-k pushdown. Bind a new literal query per request in the client.
 
 RRF uses ranks, so raw BM25 and cosine scores never need a shared scale. The constant 60 is a smoothing floor, not a weight. Weight the two terms when one leg is stronger:
 

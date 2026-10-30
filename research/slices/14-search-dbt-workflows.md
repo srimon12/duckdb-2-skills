@@ -42,9 +42,9 @@ Status: complete on 2026-10-28. Scope: turn the first `duckdb-search` and `duckd
 | # | Claim | Evidence | Confidence |
 | --- | --- | --- | --- |
 | D1 | dbt 2.0.9 is a Rust binary with a thin Python shim. `dbt --version` prints one line and no adapter list. | `dbt --version`; wheel has `_core.abi3.so`; `dbt debug` reports `duckdb (remote)`. | Probed |
-| D2 | The bundled ADBC driver at 2.0.9 is DuckDB 1.5.4 and cannot read storage 69. | Clean cache: `dbt show --inline "select version()"` returned `v1.5.4`; opening a 2.0 file raised `version number 999 ... between 64 and 68`. | Probed |
-| D3 | The bundled driver writes a `v1.0.0+` file. A system driver writes `v2.0.0+`. | Probe: `tags['storage_version']` on each file. | Probed |
-| D4 | A system driver installed with `dbc` wins over the bundled driver. | Probe: `dbc install duckdb`; `dbt show` returned `v2.0.0`; uninstall returned `v1.5.4` and the storage error. | Probed |
+| D2 | The bundled ADBC driver at 2.0.9 is DuckDB 1.5.4 and cannot read storage 69. | Clean cache: `dbt show --inline "select version()"` returned `v1.5.4`; opening a 2.0 file raised `version number 999 ... between 64 and 68`. 1.5.4 is in the 1.5.5-and-earlier group that prints the raw header field `999`; 1.5.6 prints `69`. | Probed |
+| D3 | The bundled driver writes a storage-64 (`v1.0.0+`) file. A system driver writes `v2.0.0+`. | Probe: `tags['storage_version']` and header on each file. | Probed |
+| D4 | At dbt 2.0.9 a system driver installed with `dbc` won over the bundled driver. | Probe: `dbc install duckdb`; `dbt show` returned `v2.0.0`; uninstall returned `v1.5.4` and the storage error. Driver order is not guaranteed across dbt releases. | Probed |
 | D5 | The bundled driver loaded `httpfs`, `spatial`, `fts`, `vss`, and `ducklake` in a probe, contrary to the setup docs. | `duckdb_extensions()` reported loaded and installed for each. | Probed vs documented |
 | D6 | dbt v2 has no profile key for storage version. `settings.storage_compatibility_version` is applied after attach and does not create an old file. | Probe: file header stayed 999; `SET storage_version` is not a DuckDB setting. | Probed |
 | D7 | `external` models write one file. The parent directory must exist. A directory `location` errors. | Probe: `out/ext.parquet`; missing parent raised `No such file or directory`; trailing slash raised `Is a directory`. | Probed |
@@ -52,7 +52,7 @@ Status: complete on 2026-10-28. Scope: turn the first `duckdb-search` and `duckd
 | D9 | `merge` and `delete+insert` without `unique_key` silently append. | Probe: merge emitted `ON (FALSE)`; rerun added rows. | Probed |
 | D10 | Duplicate source keys abort a merge. | Probe: `MERGE INTO command cannot affect the same target row more than once`. | Probed |
 | D11 | Two dbt processes on one file fail on the lock. Threads inside one process work. | Probe: parallel `dbt run`; exact `Could not set lock on file`. | Probed |
-| D12 | Without `schema` in the profile, a model lands in `main` but `this` in a hook renders `<db>.public.<model>`. | Probe: post-hook relation `"h"."public"."m"`; table in `main`; adding `schema: main` fixed it. | Probed |
+| D12 | Without `schema` in the profile, dbt 2.0.9 renders `this` as `<db>.public.<model>` during hook compilation while the model lands in `main`. | Probe: hook log `"h"."public"."m"`; executed hook SQL and table in `main`; adding `schema: main` made both `main`. | Probed |
 | D13 | `dbt docs generate` executes nodes and can replace `run_results.json`; use `--write-catalog` for `catalog.json`. | Probe: 23 nodes executed, empty run results, info schema Parquet written. | Probed |
 | D14 | `--compute inline` and `sidecar` fall back to remote for DuckDB and break ad-hoc `duckdb_*` functions. | Probe: warning plus `TableFunctionResolutionFailed`. | Probed |
 

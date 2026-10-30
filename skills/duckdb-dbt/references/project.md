@@ -12,7 +12,7 @@ Read this when the skill needs an exact profile key, materialization behavior, e
 | `threads` | Optional | Concurrent models inside one process. Default is `max_cpu`. |
 | `extensions` | Optional | Extension names, or `{name, repo}` pairs. Applied at connect. |
 | `settings` | Optional | DuckDB configuration map. Applied after attach. |
-| `attach` | Optional | List of `{path, alias, type, read_only, options}`. Types are `duckdb`, `sqlite`, `postgres`. |
+| `attach` | Optional | List of `{path, alias, type, read_only, is_ducklake}`. Types are `duckdb`, `sqlite`, `postgres`. |
 | `secrets` | Optional | DuckDB secrets. Each appears as `__dbt_secret_N`. |
 | `external_root` | Optional | Root for an `external` model that omits `location`. |
 | `plugins` | v1 only | Python plugin hooks. Not read by v2. |
@@ -21,7 +21,7 @@ Read this when the skill needs an exact profile key, materialization behavior, e
 
 `external_location`, `file_size`, and `overwrite` are v1 model config keys. dbt v2 fails with `UnusedConfigKey (dbt1060)`.
 
-A profile `settings: storage_compatibility_version: v1.5.4` is accepted after attach and does not create an old file. `attach[].options.storage_version` is also ignored. Use `ATTACH ... (STORAGE_VERSION ...)` in the DuckDB CLI before dbt opens the file.
+A profile `settings: storage_compatibility_version: v1.5.4` is accepted after attach and does not create an old file. The accepted strings come from the active driver: the bundled 1.5.4 driver rejects `v1.5.6`, and the 2.0 driver accepts it. `attach[].options` is parsed and dropped in v2; `attach[].options.storage_version` does not reach the `ATTACH`. Use `ATTACH ... (STORAGE_VERSION ...)` in the DuckDB CLI before dbt opens the file.
 
 ## Materializations
 
@@ -64,7 +64,7 @@ MERGE INTO command cannot affect the same target row more than once. A target ro
 
 ## Hooks
 
-`this` inside a model renders the correct relation. `this` inside a hook can render `<database>.public.<model>` while the model lands in `main`. Set `schema: main` in the profile before using a post-hook that references `this`.
+`this` inside a model renders the correct relation. `this` inside a hook can render `<database>.public.<model>` during compilation while the model lands in `main`. Set `schema: main` in the profile before using a hook that references `this`.
 
 A table rebuild drops FTS and HNSW indexes. Recreate them in a post-hook. An incremental update leaves an FTS index stale because the incremental triggers cover only `INSERT` and `DELETE`.
 
@@ -96,6 +96,8 @@ dbt v2 writes `manifest.json` and `run_results.json` to `target/`, plus a querya
 | Materialized view | `get_create_materialized_view_as_sql has not been implemented for this adapter` |
 | `--compute inline` | `` `--compute inline` is not supported for adapter 'duckdb'. Falling back to `--compute remote`. `` |
 | Unknown incremental strategy | `No macro named 'get_incremental_<name>_sql'` on the second run |
+
+DuckDB 1.5.5 and earlier print the raw header field `999` for a natively created 2.0 file. DuckDB 1.5.6 prints `69`. The storage version is 69 in both cases; read `tags['storage_version']`, not the error number.
 
 ## v1-to-v2 checklist
 

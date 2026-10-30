@@ -38,7 +38,7 @@ A BI reader and a local writer cannot share one file across processes. Point the
 
 ## dbt
 
-dbt v2 (`dbt` package) has a built-in DuckDB adapter. Its bundled driver at 2.0.9 reports DuckDB 1.5.4, writes a `v1.0.0+` file, and cannot open storage 69. Install the system driver with `dbc install duckdb` before using a 2.0 file or a 2.0-only extension.
+dbt v2 (`dbt` package) has a built-in DuckDB adapter. Its bundled driver at 2.0.9 reports DuckDB 1.5.4, writes a `v1.0.0+` file, and cannot open storage 69. Its error prints `version number 999` because 1.5.4 belongs to the 1.5.5-and-earlier group that reports the raw header field. Install the system driver with `dbc install duckdb` before using a 2.0 file or a 2.0-only extension.
 
 `dbt-duckdb` is the v1 adapter. It does not become dbt v2.
 

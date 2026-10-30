@@ -94,22 +94,22 @@ Numbers below use the `E` prefix. The full probe log and decisions are in `slice
 | E24 | ADBC DBAPI is not auto-commit; Ibis 12 does not support 2.0 | ADBC probe and Ibis guide | write lost without `commit()`; pin `duckdb<2` |
 | E25 | Incremental FTS requires storage `v2.0.0` or newer | old `v1.5.0+` file, `incremental = 1` | `incremental FTS indexes require trigger support ... STORAGE_VERSION 'v2.0.0'` |
 | E26 | FTS terms are OR by default; `conjunctive = 1` requires all terms | `duck database` versus conjunctive | `or=3`, `and=1`; quotes, `-`, `*` are delimiters |
-| E27 | Default FTS tokenization strips digits and common code words | `2.0`, `s3`, `name` queries | all zero; custom `ignore` and `stopwords='none'` fixed it |
+| E27 | Default FTS tokenization strips digits and common code words; `s3` indexes as `s` | `2.0`, `s3`, `name` queries | `2.0` and `name` zero; `s3` matched as `s`; custom `ignore` and `stopwords='none'` fixed it |
 | E28 | Static FTS silently drops NULL ids and returns duplicate rows for duplicate ids; incremental rejects both | NULL and duplicate fixtures | NULL row never returned; duplicate query raised `More than one row` |
 | E29 | Layered FTS adds prefix, fuzzy, autocomplete, and JSON boolean search | `layered_search=1` probe | `quack` matched `quacking`; `must dog` returned one row |
 | E30 | HNSW accepts only `FLOAT[N]` | `DOUBLE[3]` index | `Binder Error: HNSW index key type must be one of: 'FLOAT[N]'` |
 | E31 | HNSW drops NULL vectors and accepts zero vectors as NaN | 3-row fixture, one NULL and one zero | indexed query returned 2 rows, brute force 3; cosine to zero is `nan` |
-| E32 | HNSW needs a literal `FLOAT[N]` query vector | `::DOUBLE[N]`, scalar subquery, tie-breaker | all fell back to a sequential scan |
+| E32 | HNSW top-k needs a literal `FLOAT[N]` query vector | `::DOUBLE[N]`, scalar subquery, prepared `$1`, ordinal | cast and subquery fell back to a scan; prepared and ordinal used a full index scan without top-k pushdown |
 | E33 | `hnsw_prefilter=false` can return zero rows on a selective filter | 300k rows, 300 matches, `LIMIT 10` | prefilter on returned 10; off returned 0 |
 | E34 | HNSW `OFFSET` repeats the first page on 2.0.0 | indexed page 2 versus brute force | indexed `[1,2]`, brute `[3,4]` |
 | E35 | HNSW is outside `memory_limit`; compaction did not reclaim capacity | 589 MB index under 100 MB limit; 90 percent delete then compact | no OOM; count and capacity unchanged |
 | E36 | RRF over FTS and HNSW works on 2.0.0 | 4-row and 20k-row fixtures | stable ranks; window outside `match_bm25`, literal limits |
-| E37 | dbt 2.0.9 bundles DuckDB 1.5.4; a `dbc` system driver wins | clean cache, then `dbc install duckdb` | `v1.5.4` and storage 999 error; then `v2.0.0` and storage 69 |
+| E37 | dbt 2.0.9 bundles DuckDB 1.5.4; a `dbc` system driver won at 2.0.9 | clean cache, then `dbc install duckdb` | `v1.5.4` and the 999 header error; then `v2.0.0` and storage 69; driver order is not guaranteed |
 | E38 | dbt v2 cannot set storage version through the profile | `settings.storage_compatibility_version` | file header stayed 999; `STORAGE_VERSION` is an `ATTACH` option |
 | E39 | dbt `merge` and `delete+insert` without `unique_key` silently append | two runs | merge emitted `ON (FALSE)`; row count doubled |
 | E40 | dbt v2 Python models and materialized views fail | build probe | `Python models are not supported`; `get_create_materialized_view_as_sql has not been implemented` |
 | E41 | Two dbt processes on one file fail on the lock; threads in one process work | parallel `dbt run` | `Could not set lock on file` |
-| E42 | Without `schema`, `this` in a dbt hook renders `public` while the model lands in `main` | post-hook probe | `"h"."public"."m"` versus `main.m`; `schema: main` fixed it |
+| E42 | Without `schema`, dbt 2.0.9 renders `this` as `public` during hook compilation while the model lands in `main` | hook log and executed SQL | log `"h"."public"."m"`; executed hook SQL and table in `main`; `schema: main` made both `main` |
 
 ## Manual dbt probes
 
