@@ -10,32 +10,30 @@ description: >
 
 # Data files
 
-Run DuckDB with the `duckdb` skill. For Shapefile and GeoPackage, see `duckdb-spatial`. GeoJSON reads natively through the JSON reader. To attach or manage native database files, see `duckdb-session`. For Lakehouse catalogs, see `duckdb-lakehouse`. For `VARIANT` columns, see `duckdb-variant`.
+Execute DuckDB with `duckdb`. For Shapefile, GeoPackage, or FlatGeobuf, see `duckdb-spatial`. GeoJSON reads natively through `read_json`. For database catalogs and multi-database attachments, see `duckdb-session` or `duckdb-lakehouse`. For semi-structured `VARIANT` columns, see `duckdb-variant`.
 
-Do not build one macro that mentions every reader. A missing extension then fails the whole statement. Pick the reader from the path.
+Never build a single unified macro for all readers. A missing extension fails the entire statement. Pick the reader from the file path. When resolving a bare filename, search under the working tree and skip `.git`. In new SQL, write canonical names `read_csv`, `read_json`, and `read_parquet`; `read_csv_auto`, `read_json_auto`, and `parquet_scan` are legacy aliases.
 
-## Reader
+## Reader dispatch
 
 | Path | Statement |
 | --- | --- |
-| `.csv`, `.tsv` | `FROM read_csv('path')`; `.tsv` sniffs the tab |
+| `.csv`, `.tsv` | `FROM read_csv('path')`; `.tsv` sniffs the tab delimiter |
 | `.tab`, `.txt` | `FROM read_csv('path')`; bare paths do not dispatch |
-| `.json` | `FROM read_json('path')`; array or NDJSON, auto-detected |
+| `.json` | `FROM read_json('path')`; auto-detects array or NDJSON |
 | `.jsonl`, `.ndjson` | `FROM read_json('path', format = 'newline_delimited')` |
-| `.parquet`, `.pq`, or a directory of Parquet | `FROM read_parquet('path')`; `.parquet` bare-reads, `.pq` needs explicit function |
-| `.avro` | `FROM read_avro('path')`; autoloads |
-| `.xlsx` | `FROM read_xlsx('path')`; autoloads |
+| `.parquet`, `.pq`, or directory | `FROM read_parquet('path')`; `.parquet` bare-reads, `.pq` requires explicit function |
+| `.avro` | `FROM read_avro('path')`; autoloads `avro` |
+| `.xlsx` | `FROM read_xlsx('path')`; autoloads `excel` |
 | `.sqlite`, `.sqlite3` | `ATTACH 'path' AS s (TYPE sqlite);` then `SHOW TABLES` |
-| `.db`, `.duckdb` | `FROM read_duckdb('path', table_name = '...')` or `FROM 'path'`; a bare read works only for a single-table file. `schema_name` selects a schema in a multi-schema file. `.db` is DuckDB, not SQLite |
-| `.geojson`, `.geojsonl` | `FROM read_json('path', geojson := true)` or `FROM 'path'` |
-| `.shp`, `.gpkg`, `.fgb` | `LOAD spatial;` then `ST_Read('path')` |
-| anything else | `DESCRIBE FROM 'path'` and switch to the reader the error names |
+| `.db`, `.duckdb` | `FROM read_duckdb('path', table_name = '...')` or bare `FROM 'path'`. Bare reads require a single-table file. Use `schema_name` for multi-schema files. `.db` is DuckDB, not SQLite |
+| `.geojson`, `.geojsonl` | `FROM read_json('path', geojson := true)` or bare `FROM 'path'` |
+| `.shp`, `.gpkg`, `.fgb` | `LOAD spatial;` then `FROM ST_Read('path')` |
+| unknown extension | `DESCRIBE FROM 'path'` and switch to the reader named in the error |
 
-`read_json_auto`, `read_csv_auto`, and `parquet_scan` still exist as aliases. Write the short name in new SQL.
+## Preview and metadata
 
-A bare filename resolves under the working tree. Skip `.git`.
-
-## Preview
+Inspect schema, initial rows, and total row count:
 
 ```sql
 DESCRIBE FROM read_parquet('path');
@@ -43,18 +41,21 @@ FROM read_parquet('path') LIMIT 20;
 SELECT count(*) AS n FROM read_parquet('path');
 ```
 
-On a large remote Parquet file, skip `count(*)` and use metadata:
+When inspecting a large remote Parquet file, skip `count(*)` to avoid downloading data pages. Query file metadata directly:
 
 ```sql
 SELECT num_rows, file_size_bytes
 FROM parquet_file_metadata('path');
 ```
 
-Do not sum `row_group_num_rows` from `parquet_metadata`: it repeats once per column in a row group, so a 5-row 3-column file reports 15. Use `parquet_file_metadata`, `count(*)`, or `DISTINCT file_name, row_group_id, row_group_num_rows`.
+Never sum `row_group_num_rows` from `parquet_metadata`. The row count repeats for every column in each row group, so a 5-row, 3-column file reports 15 rows. Use `parquet_file_metadata`, run `count(*)`, or query distinct groups:
 
-Do not page with bare `LIMIT/OFFSET` when `preserve_insertion_order=false` and multiple threads are active. Pages can duplicate and drop rows while the total still matches. Page on a unique key or `(filename, file_row_number)`. The contract and proof are in [references/pagination.md](references/pagination.md).
+```sql
+SELECT sum(row_group_num_rows)
+FROM (SELECT DISTINCT file_name, row_group_id, row_group_num_rows FROM parquet_metadata('path'));
+```
 
-For a directory or bucket, list names and sizes without downloading bodies:
+To list remote bucket contents or directories without downloading payload bodies, read metadata with `read_blob`:
 
 ```sql
 SELECT filename, size, last_modified
@@ -63,70 +64,103 @@ ORDER BY filename
 LIMIT 50;
 ```
 
+When `preserve_insertion_order = false` and multiple threads run, never page with bare `LIMIT` and `OFFSET`. Concurrent pipeline sinks reorder batches, causing queries to duplicate and drop rows while returning the expected row total. Page on a unique key (`WHERE id > :last_id ORDER BY id LIMIT :page_size`) or on `(filename, file_row_number)`. For the pagination contract and proof, see [references/pagination.md](references/pagination.md).
+
 ## Convert
+
+To convert formats, write with `COPY ... TO`:
 
 ```sql
 COPY (FROM 'input.csv') TO 'output.parquet' (FORMAT parquet);
 ```
 
-| Extension | Clause |
-| --- | --- |
-| `.parquet`, `.pq` | `(FORMAT parquet)` |
-| `.csv` | `(FORMAT csv, HEADER)` |
-| `.tsv` | `(FORMAT csv, HEADER, DELIMITER '\t')` |
-| `.json` | `(FORMAT json, ARRAY true)` |
-| `.jsonl`, `.ndjson` | `(FORMAT json, ARRAY false)` |
-| `.xlsx` | `(FORMAT xlsx)` after `INSTALL excel; LOAD excel;` |
+| Format | Extension | COPY options |
+| --- | --- | --- |
+| Parquet | `.parquet`, `.pq` | `(FORMAT parquet)` |
+| CSV | `.csv` | `(FORMAT csv, HEADER)` |
+| TSV | `.tsv` | `(FORMAT csv, HEADER, DELIMITER '\t')` |
+| JSON array | `.json` | `(FORMAT json, ARRAY true)` |
+| NDJSON | `.jsonl`, `.ndjson` | `(FORMAT json, ARRAY false)` |
+| Excel | `.xlsx` | `(FORMAT xlsx)` after `INSTALL excel; LOAD excel;` |
 
-`PARTITION_BY (col)` writes a partitioned directory of Parquet, CSV, or JSON. Use `OVERWRITE` for a full rebuild, `OVERWRITE_OR_IGNORE` only when the partition set is unchanged, and `APPEND` to keep old files. `FILENAME_PATTERN` names the files, `PER_THREAD_OUTPUT` parallelizes writes, and `FILE_SIZE_BYTES` caps each file. `ORDER_BY (...)` sorts rows inside each partition. `RETURN_FILES` returns `Count` and `Files`.
+When writing partition directories, tune output behavior with these options:
+- `PARTITION_BY (col)` splits writes into hive-partitioned directory trees for Parquet, CSV, or JSON.
+- `OVERWRITE` deletes the target directory before writing a full rebuild.
+- `OVERWRITE_OR_IGNORE` overwrites only modified partitions, keeping untouched partitions.
+- `APPEND` adds files into existing partition directories without deleting prior files.
+- `FILENAME_PATTERN 'data_{i}'` sets the output filename template.
+- `PER_THREAD_OUTPUT true` writes one file per thread concurrently.
+- `FILE_SIZE_BYTES 134217728` rolls to a new file when the target size (e.g. 128 MB) is reached.
+- `ORDER_BY (col)` sorts rows within each output file.
+- `RETURN_FILES true` returns written file paths and row counts in the query result.
 
-The format matrix, the CSV/JSON/Parquet parameters, and the secrets table are in [references/formats.md](references/formats.md).
+For full parameter listings, reader options, and types, see [references/formats.md](references/formats.md).
 
 ## Ingest a batch
 
-For a repeatable load, read [references/ingest.md](references/ingest.md). It owns the contract from inspect to typed rows, quarantine, partitioned write, and row-count proof. A one-file conversion stays in `Convert` above.
+When running a repeatable production load instead of a one-off conversion, follow the batch pipeline in [references/ingest.md](references/ingest.md).
 
-The short form is: read raw, cast explicitly, split good and bad, write `good` to partitioned Parquet, persist `bad` and any parser rejects, and prove `input = good + bad + distinct reject lines`. Do not use `ignore_errors` as a repair.
+Follow the six-step ingest contract:
+1. **Read raw**: Read text inputs with `all_varchar = true` and `store_rejects = true` to preserve original strings and capture syntax errors.
+2. **Cast explicitly**: Define schema types in SQL; avoid automatic type sniffing in production pipelines.
+3. **Split rows**: Route valid records to `good` and failed casts or business-rule violations to `bad` alongside failure reasons.
+4. **Persist valid data**: Write `good` rows to hive-partitioned Parquet files.
+5. **Persist quarantined data**: Store `bad` rows and parser rejects in separate quarantine tables or files.
+6. **Prove row conservation**: Confirm that `input_rows = good_rows + bad_rows + count(DISTINCT reject_line)`.
 
-## Remote files
+Never use `ignore_errors = true` to repair a pipeline. Silently dropping malformed rows invalidates data completeness proofs.
+
+## Remote files and secrets
+
+Load the remote file extension before accessing cloud storage or HTTP:
 
 ```sql
 LOAD httpfs;
 ```
 
-| Store | Secret |
+Configure credentials using secrets:
+
+| Target | Secret command |
 | --- | --- |
-| S3 with an existing AWS profile | `CREATE OR REPLACE SECRET (TYPE s3, PROVIDER credential_chain);` |
-| S3 with keys | `CREATE OR REPLACE SECRET (TYPE s3, PROVIDER config, KEY_ID '...', SECRET '...', REGION 'us-east-1');` |
-| Public bucket that only needs a region | `CREATE OR REPLACE SECRET (TYPE s3, PROVIDER config, REGION 'us-west-2');` |
-| Cloudflare R2 | `CREATE OR REPLACE SECRET (TYPE r2, ACCOUNT_ID '...', KEY_ID '...', SECRET '...');` and use `r2://`; the endpoint is derived |
-| GCS | `CREATE OR REPLACE SECRET (TYPE gcs, KEY_ID '...', SECRET '...');` HMAC keys, and `gs://` or `gcs://` |
-| Azure | `CREATE OR REPLACE SECRET (TYPE azure, PROVIDER config, ACCOUNT_NAME '...');` for a public container; a service principal uses `PROVIDER service_principal` |
-| HTTPS | `LOAD httpfs;` and no secret unless the server requires one |
+| S3 with AWS CLI profile | `CREATE OR REPLACE SECRET (TYPE s3, PROVIDER credential_chain);` |
+| S3 with explicit keys | `CREATE OR REPLACE SECRET (TYPE s3, PROVIDER config, KEY_ID '...', SECRET '...', REGION 'us-east-1');` |
+| S3 public bucket with region | `CREATE OR REPLACE SECRET (TYPE s3, PROVIDER config, REGION 'us-west-2');` |
+| Cloudflare R2 | `CREATE OR REPLACE SECRET (TYPE r2, ACCOUNT_ID '...', KEY_ID '...', SECRET '...');` prefix `r2://` |
+| Google Cloud Storage | `CREATE OR REPLACE SECRET (TYPE gcs, KEY_ID '...', SECRET '...');` prefix `gs://` or `gcs://` |
+| Azure Blob / Data Lake | `CREATE OR REPLACE SECRET (TYPE azure, PROVIDER config, ACCOUNT_NAME '...');` prefix `azure://` or `az://` |
+| HTTPS / HTTP | `LOAD httpfs;` without a secret unless basic or bearer authentication is required |
 
-`credential_chain` autoloads the `aws` extension and fails closed when no profile exists. A public bucket needs no credential secret. A region pin is not a credential.
+`PROVIDER credential_chain` autoloads the `aws` extension and fails closed if no AWS profile is found. Public buckets require no credential secret; a region pin is configuration, not a credential. For Azure service principals, use `PROVIDER service_principal` with `TENANT_ID`, `CLIENT_ID`, and `CLIENT_SECRET`.
 
-Do not put access keys in the URL. DuckDB 2.0 treats `?s3_access_key_id=...` as part of the object key. The old behavior is `SET s3_enable_deprecated_url_parameters = true` after `LOAD httpfs`.
+Never place access keys in URLs. DuckDB 2.0 treats `?s3_access_key_id=...` as part of the object key path. To restore the legacy behavior during migrations, run `SET s3_enable_deprecated_url_parameters = true;`.
 
-Async I/O is on for Parquet, uncompressed seekable UTF-8 CSV, and native DuckDB storage, including files read through DuckLake. JSON stays synchronous. Defaults are `async_threads` = four times `threads` (capped at 256), `read_ahead_depth = -1`, `http_retries = 3`, and `http_retry_backoff = 4.0`. Leave them alone unless the user asks to tune a fast network. The full option list is in [references/formats.md](references/formats.md).
+Asynchronous I/O accelerates Parquet, seekable uncompressed UTF-8 CSV, and native DuckDB storage (including DuckLake scans). JSON reads remain synchronous. Default settings are `async_threads = 4 * threads` (capped at 256), `read_ahead_depth = -1`, `http_retries = 3`, and `http_retry_backoff = 4.0`. Retain defaults unless tuning for high-bandwidth networks (see [references/formats.md](references/formats.md)).
 
-## Sandbox a local file
+## Sandbox local files
 
-On a local file the user did not ask to join with the network, install and load every extension first, then restrict the process:
+To restrict filesystem and network access for untrusted queries, load all necessary extensions first, then restrict the session in order:
 
 ```sql
-SET allowed_directories = ['/absolute/input'];  -- one tree
--- or one exact file: SET allowed_paths = ['/absolute/file.csv'];
+-- Step 1: Allow specific directories or exact paths
+SET allowed_directories = ['/absolute/input'];
+-- or exact files: SET allowed_paths = ['/absolute/file.csv'];
+
+-- Step 2: Disable external access and lock configuration
 SET enable_external_access = false;
 SET allow_persistent_secrets = false;
 SET lock_configuration = true;
 ```
 
-`allowed_directories` allows a tree. `allowed_paths` allows exact files. Both must come before `enable_external_access = false`; afterward the setting is rejected. To block local disk but keep remote reads, use `SET disabled_filesystems = 'LocalFileSystem';`. Preload `httpfs` first; HTTPS still needs a readable CA bundle. `enable_external_access = false` also blocks remote reads. Skip the local allow-list for `s3://`, `gs://`, `gcs://`, `r2://`, `az://`, `azure://`, `abfs://`, `abfss://`, `http://`, and `https://`, but do not assume remote is unrestricted after `enable_external_access=false`.
-
-`-safe` is not a substitute. It blocks all external file access, including the file the user named, while still opening the database path on the command line. The full safety matrix and the `-safe` ordering rule are in `duckdb`.
+Execution order is critical:
+- Always set `allowed_directories` or `allowed_paths` before setting `enable_external_access = false`. Once `enable_external_access` is false, DuckDB rejects any changes to allow-lists.
+- `allowed_directories` permits an entire directory tree. `allowed_paths` permits exact files.
+- To block local disk while permitting remote network reads, set `disabled_filesystems = 'LocalFileSystem'`. Preload `httpfs` before disabling local access; HTTPS operations require local disk access to read the system CA certificate bundle.
+- Setting `enable_external_access = false` blocks all network operations and all local filesystem paths outside `allowed_directories` or `allowed_paths`. Remote URL schemes (`s3://`, `gs://`, `r2://`, `azure://`, `https://`) bypass the local allow-list but fail once external access is disabled.
+- Never rely on the CLI `-safe` flag for fine-grained sandboxing. The `-safe` flag disables all external file access unconditionally (blocking even user-provided input files), permitting reads only from the database file opened at launch. For full security matrices, see `duckdb`.
 
 ## Verify
+
+Run the verification pipeline to test CSV reading and Parquet writing:
 
 ```bash
 tmp=$(mktemp -d)
@@ -135,15 +169,15 @@ duckdb -agent -c "COPY (FROM '$tmp/in.csv') TO '$tmp/out.parquet' (FORMAT parque
 rm -rf "$tmp"
 ```
 
-The describe must show `id` and `name`. The count must be `2`.
+The schema must display `id` and `name`. The row count must return `2`.
 
 ## References
 
-- [Data import](https://duckdb.org/docs/2.0/data/overview.html) owns the format overview.
-- [CSV](https://duckdb.org/docs/2.0/data/csv/overview.html) owns the CSV parameters.
-- [JSON](https://duckdb.org/docs/2.0/data/json/loading_json.html) owns the JSON formats and parameters.
-- [Parquet](https://duckdb.org/docs/2.0/data/parquet/overview.html) owns the Parquet reader and writer.
-- [COPY](https://duckdb.org/docs/2.0/sql/statements/copy.html) owns the copy options.
-- [Secrets manager](https://duckdb.org/docs/2.0/configuration/secrets_manager.html) owns secret creation and scope.
-- [I/O](https://duckdb.org/docs/2.0/data/io.html) owns asynchronous reads and tuning.
-- Reader dispatch replaces the `read_any` macro in https://github.com/duckdb/duckdb-skills (MIT). The keyless `TYPE s3, PROVIDER config, REGION` secret was accepted by DuckDB 2.0.0.
+- [Data import](https://duckdb.org/docs/2.0/data/overview.html) documents format overviews and readers.
+- [CSV](https://duckdb.org/docs/2.0/data/csv/overview.html) documents CSV sniff and import options.
+- [JSON](https://duckdb.org/docs/2.0/data/json/loading_json.html) documents JSON auto-detection and shapes.
+- [Parquet](https://duckdb.org/docs/2.0/data/parquet/overview.html) documents Parquet reader, writer, and compression options.
+- [COPY](https://duckdb.org/docs/2.0/sql/statements/copy.html) documents output formatting and partitioning parameters.
+- [Secrets manager](https://duckdb.org/docs/2.0/configuration/secrets_manager.html) documents secret scopes and cloud providers.
+- [I/O](https://duckdb.org/docs/2.0/data/io.html) documents asynchronous I/O settings and tuning.
+- Reader dispatch replaces the `read_any` macro in https://github.com/duckdb/duckdb-skills (MIT). DuckDB 2.0.0 supports keyless `TYPE s3, PROVIDER config, REGION` secrets.

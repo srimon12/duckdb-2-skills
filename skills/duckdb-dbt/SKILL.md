@@ -9,15 +9,15 @@ description: >
 
 # dbt on DuckDB
 
-Two products share the name. `dbt-duckdb` is the v1 Python adapter. dbt v2 ships its own DuckDB adapter inside the `dbt` package and does not use `dbt-duckdb`.
+Two products share the name. `dbt-duckdb` is the v1 Python adapter. dbt v2 packages its own built-in DuckDB adapter inside `dbt` and does not use `dbt-duckdb`.
 
-Check the package before writing a profile:
+Before configuring a project, verify the installed adapter:
 
 ```bash
 dbt --version
 ```
 
-dbt v2 prints one line, for example `dbt 2.0.9`, with no `Core` or `Plugins` block. dbt v1 prints `dbt-core` and a separate `dbt-duckdb` plugin. `dbt debug` names the adapter as `duckdb (remote)`.
+If dbt v2 is installed, it outputs a single line (such as `dbt 2.0.9`) with no `Core` or `Plugins` block. If `dbt-core` and `dbt-duckdb` appear, the environment runs v1. When connected, `dbt debug` reports the adapter as `duckdb (remote)`.
 
 ## Contract
 
@@ -31,27 +31,21 @@ Proof:       version query, storage tag, dbt build, lock check
 
 ## Prove the stack
 
-Run these before changing a project:
+Before modifying project code, prove the binary and driver stack:
 
-1. `dbt --version` must print a 2.x line. A v1 install prints `Core` and `Plugins`.
-2. `dbt debug` must pass and report `duckdb (remote)`.
-3. `dbt show --inline "select version()"` must return the DuckDB build you intend to use.
-4. If the build is not 2.0, install the system driver with `dbc install duckdb`.
-5. Check the storage tag with the DuckDB CLI, not with dbt.
+1. Run `dbt --version`; the output must be a single 2.x line.
+2. Run `dbt debug`; the output must report `duckdb (remote)`.
+3. Run `dbt show --inline "select version()"` to verify the engine version.
+4. If the reported engine is not 2.0, run `dbc install duckdb` to install the system driver.
+5. Inspect `tags['storage_version']` via DuckDB CLI, never via dbt.
 
-dbt v2 downloads a bundled ADBC driver on first use. At dbt 2.0.9 that driver reports DuckDB 1.5.4, writes a storage-64 (`v1.0.0+`) file, and cannot read storage 69:
+On first invocation, dbt v2 downloads a bundled ADBC driver. At dbt 2.0.9, this bundled driver reports DuckDB 1.5.4, writes storage 64 (`v1.0.0+`), and fails when reading storage 69:
 
 ```text
 IO Error: Trying to read a database file with version number 999, but we can only read versions between 64 and 68.
 ```
 
-DuckDB 1.5.5 and earlier print the raw header field `999` for a file created by 2.0. DuckDB 1.5.6 prints `69` for the same file. Do not read `999` as the storage version.
-
-At dbt 2.0.9 a system driver installed by `dbc` won over the bundled one. After `dbc install duckdb`, the same command returns `v2.0.0`, opens storage 69, and `tags['storage_version']` is `v2.0.0+`. Do not rely on that order across dbt releases; prove the active driver with the version query.
-
-The vendor docs say the bundled driver cannot load extensions. At dbt 2.0.9 it loaded `httpfs`, `spatial`, `fts`, `vss`, and `ducklake` in a probe. Do not rely on that. Install the system driver for 2.0-only features and prove the engine with the version query.
-
-`pip install duckdb==2.0.0` does not change the driver dbt uses. `STORAGE_VERSION` is an `ATTACH` option, not a dbt profile key. A dbt v2 profile cannot create a pre-2.0 file by setting `storage_compatibility_version`.
+When reading a 2.0 file, DuckDB 1.5.5 prints raw header number `999`; 1.5.6 prints `69`. Do not interpret `999` as the storage version. When `dbc install duckdb` installs the system driver, dbt returns `v2.0.0`, opens storage 69, and reports `tags['storage_version']` as `v2.0.0+`. Always verify the active driver with the version query. Running `pip install duckdb==2.0.0` does not change the driver dbt uses. `STORAGE_VERSION` is an `ATTACH` option, not a dbt profile key; setting `storage_compatibility_version` in a dbt profile cannot create a pre-2.0 file.
 
 ## Profile
 
@@ -64,9 +58,7 @@ analytics:
       path: ./warehouse.duckdb
       schema: main
       threads: 1
-      extensions:
-        - httpfs
-        - parquet
+      extensions: [httpfs, parquet]
       settings:
         memory_limit: 4GB
       attach:
@@ -78,46 +70,42 @@ analytics:
           provider: credential_chain
 ```
 
-Set `schema` explicitly. Without it, dbt 2.0.9 renders `this` as `<database>.public.<model>` during hook compilation while the model builds in `main`. Set `schema: main` so both agree.
+In `profiles.yml`, set `schema: main` explicitly. Without explicit `schema`, hook compilation renders `this` as `<database>.public.<model>` while the model builds in `main`.
 
-`settings` applies DuckDB configuration after the database is attached. `attach` accepts `duckdb`, `sqlite`, and `postgres` paths and uses the basename as the alias. `secrets` creates `__dbt_secret_N` entries in `duckdb_secrets()`.
-
-`plugins` and `filesystems` are v1 adapter keys. `external_root` applies only when an external model omits `location`. See [references/project.md](references/project.md) for the full profile table.
+For runtime settings, `settings` applies DuckDB configuration after attachment. For external data, `attach` mounts `duckdb`, `sqlite`, or `postgres` databases using the filename basename as the alias. For cloud authentication, `secrets` configures `__dbt_secret_N` entries in `duckdb_secrets()`. When migrating from v1, remove `plugins` and `filesystems`. When an `external` model omits `location`, `external_root` defines its directory prefix. See [references/project.md](references/project.md) for full profile options.
 
 ## Models
 
-| Materialization | dbt v2 on DuckDB | Use |
+| Materialization | Status | Notes |
 | --- | --- | --- |
-| `table`, `view`, `incremental`, `ephemeral` | Supported | Normal models |
-| `seed`, `snapshot` | Supported | Small fixtures and history |
-| `external` | Supported | Parquet or CSV outside the warehouse |
-| `materialized_view` | Not implemented | Use `table` and a refresh job |
-| Python model | Not supported | Keep it in `duckdb-python` |
+| `table`, `view`, `incremental`, `ephemeral` | Supported | Standard SQL models |
+| `seed`, `snapshot` | Supported | CSV fixtures and slowly changing dimensions |
+| `external` | Supported | Single Parquet/CSV file at `location` (no `partition_by`) |
+| `materialized_view` | Unimplemented | Replaced by `table` plus scheduled refresh |
+| Python model | Unsupported | Delegated to `duckdb-python` |
 
-An external model writes one file at `location`. The parent directory must exist, and `location` cannot be a directory. `partition_by` is not applied to external models; DuckLake uses `partitioned_by` on `table` and `incremental` models.
-
-`dbt build` runs seeds, models, and tests as one unit. A successful `dbt run` is not a test. `--store-failures` writes failed and passed test rows to `main_dbt_test__audit.<test_name>`. Model contracts work when every column has a `data_type`.
+When writing external models, `location` must name a single target file, not a directory, and its parent directory must exist. `partition_by` is not supported on external models; use `partitioned_by` on DuckLake `table` or `incremental` models. When executing transformations, run `dbt build` rather than `dbt run`; `dbt build` executes seeds, models, and tests as one unit. To inspect test failures, pass `--store-failures` to write audit rows to `main_dbt_test__audit.<test_name>`. If enforcing model contracts, define explicit `data_type` on every column in YAML.
 
 ## Incremental models
 
-| Strategy | Required | Rerun behavior | Failure |
+| Strategy | Required | Rerun behavior | Failure mode |
 | --- | --- | --- | --- |
-| `append` | None | Inserts every source row | Duplicates on every run |
-| `delete+insert` | `unique_key` | Deletes matching keys, inserts source | Without a key it silently inserts |
-| `merge` | `unique_key` | `MERGE ... UPDATE BY NAME INSERT BY NAME` | Without a key it emits `ON (FALSE)` and appends |
-| `microbatch` | `event_time`, `begin`, `batch_size` | Filters inputs by event-time window | Warns when no ref has `event_time` |
+| `append` | None | Inserts all source rows | Duplicates rows on rerun |
+| `delete+insert` | `unique_key` | Deletes matching keys, inserts source | Silently appends if `unique_key` is omitted |
+| `merge` | `unique_key` | `MERGE ... UPDATE BY NAME INSERT BY NAME` | Emits `ON (FALSE)` and appends without key |
+| `microbatch` | `event_time`, `begin`, `batch_size` | Filters inputs by event window | Warns if upstream ref lacks `event_time` |
 
-A `merge` target row matched by two source rows aborts:
+If duplicate source keys match a single target row during `merge`, the query aborts:
 
 ```text
 MERGE INTO command cannot affect the same target row more than once.
 ```
 
-Deduplicate the source or use `delete+insert`. `--full-refresh` rebuilds the target and is the proof that the model is reproducible. A dbt incremental model is not a trigger-maintained view; read `duckdb-sql` for that pattern.
+Deduplicate incoming rows prior to merge, or select `delete+insert`. When verifying model reproducibility, run `dbt build --full-refresh` to rebuild the target table from scratch. An incremental model is not a trigger-maintained view; see `duckdb-sql` for dynamic materializations.
 
 ## Hooks and search indexes
 
-A dbt table rebuild drops FTS and HNSW indexes on the model. Recreate the index in a post-hook after the model lands:
+Because a dbt `table` rebuild drops associated FTS and HNSW indexes, recreate them in a `post_hook`:
 
 ```sql
 {{ config(
@@ -126,37 +114,37 @@ A dbt table rebuild drops FTS and HNSW indexes on the model. Recreate the index 
 ) }}
 ```
 
-An incremental update leaves an FTS index stale because incremental FTS triggers cover `INSERT` and `DELETE`, not `UPDATE`. Rebuild the index after the model, or write with delete plus insert. Read `duckdb-search` for index freshness and metric matching.
+When updating incremental models, note that DuckDB FTS triggers capture `INSERT` and `DELETE`, but not `UPDATE`. If records update in place, rebuild the search index in a post-hook or execute `delete+insert`. See `duckdb-search` for index freshness and vector metric matching.
 
 ## Orchestration
 
-A local `.duckdb` file lives on one worker. A retry or the next task can land on a different worker and see an empty path. Persist the warehouse to S3, Parquet, or DuckLake, or pin the job to one worker with a mounted volume.
+If running on distributed workers, pin the pipeline to a single local worker with a persistent volume, or persist storage to S3, Parquet, or DuckLake; a new node will see an empty filesystem.
 
-Threads inside one dbt process can write one file. Two dbt processes cannot:
+While multiple threads within one dbt process safely write to one DuckDB file, multiple concurrent processes cannot:
 
 ```text
 IO Error: Could not set lock on file "...": Conflicting lock is held in ... (PID ...)
 ```
 
-Run `dbt build` from Airflow, Dagster, or cron. Do not append `dbt test` by hand, and do not point two concurrent jobs at the same local file.
+Orchestrate via Airflow, Dagster, or cron using a single `dbt build` invocation. Never run concurrent writers against the same database file, and do not separate `dbt run` and `dbt test`.
 
 ## Catalogs
 
-dbt v2 uses `catalogs.yml` with the new spec by default. `flags: use_catalogs_v2: true` is redundant in v2; set it to `false` only for the old spec. A model with `catalog_name` needs the catalog in `catalogs.yml`.
+In dbt v2, `catalogs.yml` with the v2 specification is active by default; `flags: use_catalogs_v2: true` is redundant and only set to `false` to revert to legacy catalogs. When a model specifies `catalog_name`, declare that catalog in `catalogs.yml`.
 
-A DuckLake catalog can also be attached through the profile with `path: "ducklake:my_lake.ddb"`. A local `.duckdb` catalog is one writer. A shared deployment needs PostgreSQL or every process must be `READ_ONLY`. Read `duckdb-lakehouse` before choosing.
+To attach a DuckLake catalog, configure the profile with `path: "ducklake:my_lake.ddb"`. Because a local `.duckdb` catalog allows only one writer, shared multi-writer deployments require PostgreSQL or `READ_ONLY` processes. Consult `duckdb-lakehouse` before architectural selection.
 
 ## Move from v1
 
-1. Record `dbt --version`, the `dbt-duckdb` version, the active DuckDB build, and the file storage tag.
-2. Install dbt v2 beside the project. Do not remove the v1 environment yet.
-3. Run `dbc install duckdb` if the project uses extensions or a 2.0 file.
-4. Copy `profiles.yml`. Set `schema` explicitly and remove `plugins`, `filesystems`, and v1 external keys.
-5. Run `dbt debug`, `dbt show --inline "select version()"`, then `dbt build`.
-6. Check storage before pointing v2 at a production file. If an old reader must open the result, convert with the CLI `ATTACH ... (STORAGE_VERSION 'v1.5.6')` and `COPY FROM DATABASE`; dbt does not expose that as a profile setting.
-7. Keep v1 until one full build and test pass.
+1. Record `dbt --version`, `dbt-duckdb` version, DuckDB engine build, and database storage tag.
+2. Install dbt v2 in an isolated environment beside the existing project without removing v1.
+3. Run `dbc install duckdb` if the project uses DuckDB 2.0 files or extensions.
+4. Copy `profiles.yml`, set `schema: main` explicitly, and remove `plugins`, `filesystems`, and v1 external keys.
+5. Execute `dbt debug`, `dbt show --inline "select version()"`, and `dbt build`.
+6. If older readers must open output files, pin storage using DuckDB CLI `ATTACH ... (STORAGE_VERSION 'v1.5.6')` and `COPY FROM DATABASE`; dbt profiles expose no storage version flag.
+7. Keep the v1 environment until a complete `dbt build` passes models and tests.
 
-Do not assume parity. Python models and materialized views are not implemented. External models write a single file and ignore partitioning. Seeds and snapshots work.
+Verify feature parity: Python models and materialized views are not implemented; external models write a single file and ignore `partition_by`. Seeds and snapshots remain fully supported.
 
 ## Stop rules
 
@@ -179,14 +167,14 @@ dbt show --inline "select version()"
 dbt build
 ```
 
-The version query must return the intended DuckDB build. `dbt debug` must connect. `dbt build` must finish with zero failed models and tests. Then check the file:
+Confirm that the version query returns the intended DuckDB build, `dbt debug` connects, and `dbt build` finishes with zero failed models and tests. Then verify file storage:
 
 ```bash
 duckdb -no-agent -json warehouse.duckdb \
   -c "SELECT tags['storage_version'] AS v FROM duckdb_databases() WHERE database_name = current_database();"
 ```
 
-The tag must match the readers that will open the file: `v2.0.0+` for DuckDB 2.0, `v1.5.0+` for a file pinned to a 1.5.6 reader.
+The tag must match the readers that open the file: `v2.0.0+` for DuckDB 2.0, or `v1.5.0+` for a file pinned to a 1.5.6 reader.
 
 ## References
 
@@ -196,5 +184,5 @@ The tag must match the readers that will open the file: `v2.0.0+` for DuckDB 2.0
 - [dbt-duckdb](https://github.com/duckdb/dbt-duckdb) owns the v1 adapter.
 - [DuckDB dbt announcement](https://duckdb.org/2026/09/22/dbt-fusion.html) owns the built-in adapter and driver caveat.
 - [dbc](https://docs.columnar.tech/dbc/) owns the driver install.
-- [references/project.md](references/project.md) has the profile keys, materialization matrix, exact errors, and migration checklist.
-- Read `duckdb-lakehouse` for catalog choice, `duckdb-search` for index freshness, and `duckdb-migrate` for storage pins.
+- [references/project.md](references/project.md) has profile keys, materialization matrices, exact error strings, and migration details.
+- Read `duckdb-lakehouse` for catalog selection, `duckdb-search` for index freshness, and `duckdb-migrate` for storage pins.

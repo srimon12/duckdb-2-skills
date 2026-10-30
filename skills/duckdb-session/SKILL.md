@@ -1,102 +1,110 @@
 ---
 name: duckdb-session
 description: >
-  Attach DuckDB database files and restore them on later CLI calls with a
-  state.sql init file. Covers storage version checks, schema exploration,
-  checkpoints, and safe detach. Use when the user says attach, open this
-  database, switch database, or wants state to survive between commands.
+  Attach native DuckDB database files and persist session state across CLI calls
+  with a state.sql init file. Covers storage version detection, schema
+  introspection, WAL checkpoints, locking, and safe detach. Use when attaching
+  or opening a database, switching catalogs, or persisting state across commands.
 ---
 
 # Database sessions
 
-The CLI is one process per command. `ATTACH` dies with the process. Persist the attach in a SQL init file and pass it with `-init`.
+DuckDB CLI executions terminate after each command, discarding runtime `ATTACH` bindings. To persist attached databases across invocations, record attachment statements in an initialization script and pass `-init <path>` on startup.
 
-Run commands with the `duckdb` skill's binary rules. This skill attaches native DuckDB files. SQLite is `duckdb-files`. DuckLake, Iceberg, and Delta are `duckdb-lakehouse`. Quack, Postgres, and MySQL are `duckdb-quack`.
+For execution binary rules, see `duckdb`. For SQLite databases, see `duckdb-files`. For DuckLake, Iceberg, and Delta catalogs, see `duckdb-lakehouse`. For Quack, Postgres, and MySQL connections, see `duckdb-quack`.
 
-Do not write secret values into the state file. Store `ATTACH` lines and `CREATE SECRET` statements that refer to a provider chain or an existing secret name.
+Never store raw secrets in the state file. Record only `ATTACH` commands and `CREATE SECRET` statements referencing an external provider chain or pre-existing secret name.
 
-## State file
+## State file discovery
 
-Look in this order:
+Search for a state file in this exact sequence:
 
-1. `.duckdb/state.sql` in the project.
-2. `.duckdb-skills/state.sql` in the project, the path used by the upstream duckdb-skills plugin.
-3. `$HOME/.duckdb-skills/<project-id>/state.sql`, where `<project-id>` is the absolute project root with `/` replaced by `-`.
+1. `.duckdb/state.sql` in the project root.
+2. `.duckdb-skills/state.sql` in the project root (upstream duckdb-skills plugin convention).
+3. `$HOME/.duckdb-skills/<project-id>/state.sql` (`<project-id>` replaces `/` with `-` in the absolute project root).
 
-If none exists, create `.duckdb/state.sql` (unless the project root is `$HOME`, where `.duckdb-skills/` avoids colliding with `~/.duckdb/`). Tell the user the path. If the file belongs outside the repo, use the home location. Offer to add `.duckdb/` to `.gitignore` when the file lives in the project.
+If no state file exists:
+- When the project root is `$HOME`, create `$HOME/.duckdb-skills/state.sql` to avoid colliding with `~/.duckdb/`.
+- When session persistence belongs outside the repository, write to the `$HOME/.duckdb-skills/<project-id>/` location.
+- Otherwise, create `.duckdb/state.sql`, report the path to the user, and offer to add `.duckdb/` to `.gitignore`.
 
-Reconcile first, then append. Never replace the file. It may already hold secrets, macros, and `LOAD` statements.
+## State file reconciliation
 
-## Reconcile the state file
+Treat the state file as append-only. Never overwrite or truncate it, as it may contain user macros, variables, and `LOAD` statements. Before appending, execute this reconciliation procedure:
 
-The file is append-only, so reconcile it before you append.
+1. **Read existing statements**: Parse the file for existing `ATTACH`, `USE`, `LOAD`, `SET`, and `CREATE SECRET` commands. Never echo or display secret credentials.
+2. **Resolve and compare**: Resolve each `ATTACH` path to an absolute path. Derive the alias from the filename up to the first dot (`a.b.c.db` becomes `a`). If the alias contains hyphens, spaces, or leading digits, enclose it in double quotes. Inspect attached catalogs via `duckdb_databases()`.
+3. **Handle collisions**:
+   - If alias and path match: skip the attachment.
+   - If alias matches but points to a different path: halt and ask the user. `ATTACH IF NOT EXISTS` keys on alias and silently retains the original path.
+   - If path matches under a second alias: halt. DuckDB rejects duplicate paths with `Unique file handle conflict`.
+4. **Guard missing files**: Before attaching a nonexistent path, verify with `test -f`. DuckDB 2.0 creates missing files as storage version 69, unreadable by DuckDB 1.x. Confirm with the user before generating new files.
+5. **Append missing delta**: Append only missing `ATTACH` statements. Maintain at most one `USE <alias>;` in the state file so subsequent attachments do not alter the active catalog.
+6. **Validate lifecycle**: Test the state file in a fresh process without `-init`, then with `-init`. Confirm expected catalogs appear in `duckdb_databases()`. If external processes require file access, checkpoint and detach before handoff.
 
-1. Read the file. Collect `ATTACH`, `USE`, `LOAD`, `SET`, and `CREATE SECRET` references. Do not print secret values.
-2. For each `ATTACH`, resolve the absolute path and alias. Compare them with `duckdb_databases()`.
-3. Same alias and same path means skip. Same alias and a different path means stop and ask. `ATTACH IF NOT EXISTS` is keyed on the alias and would keep the old path silently.
-4. Run `test -f` before creating a missing path. A new file is storage version 69 and 1.x cannot open it.
-5. Append only the missing statements. Keep at most one `USE`. A second attach must not change the default.
-6. Verify in a fresh process. Open once without `-init`, then with `-init`, and check one row per alias. Checkpoint and detach on handoff if other processes need the file.
+## Attach semantics and options
 
-## Attach
-
-Resolve the path to an absolute path. If the file is missing, ask before creating it. A new file created by DuckDB 2.0 uses storage version 69, which DuckDB 1.x cannot open. Say that before you create it. To keep a new file readable by 1.5, follow `duckdb-migrate` and set the storage version at creation.
-
-The alias is the file name up to the first dot. `a.b.c.db` becomes `a`. Quote an alias that contains `-`, a space, or a leading digit.
-
-`ATTACH IF NOT EXISTS` is keyed on the alias, not the path. The same alias with a different path is a silent no-op. The same path under a second alias fails with `Unique file handle conflict`. A missing path is created as a new storage-version-69 file. Before appending, check the path with `test -f`.
-
-If the path is not already attached, append:
+To persist a database without mutating existing aliases, append:
 
 ```sql
 ATTACH IF NOT EXISTS '/absolute/path/analytics.duckdb' AS analytics;
 ```
 
-Options that matter:
+Common attach options:
 
-| Option | Use |
+| Option | Function |
 | --- | --- |
-| `READ_ONLY` | Open a file that other processes only read, or a file over HTTPS or S3. |
-| `STORAGE_VERSION 'v1.5.6'` | New file uses storage 68. DuckDB 1.5.6 can read it. DuckDB 1.4 cannot. `v1.5.0` writes the same header. |
-| `ENCRYPTION_KEY '...'` | Open an encrypted database. Load `httpfs` first for OpenSSL speed. |
-| `TYPE sqlite` | A SQLite file. Use `duckdb-files`, not this skill. |
-| `ATTACH OR REPLACE` | Replace an existing alias. Destructive; ask first. |
+| `READ_ONLY` | Mount files for concurrent readers or remote storage over HTTPS/S3. |
+| `STORAGE_VERSION 'v1.5.6'` | Create new storage version 68 files readable by DuckDB 1.5.6. DuckDB 1.4 cannot read them. `v1.5.0` writes an identical header. |
+| `ENCRYPTION_KEY '...'` | Open an encrypted database. Load `httpfs` first for OpenSSL hardware acceleration. |
+| `TYPE sqlite` | Open a SQLite file. Hand off to `duckdb-files`. |
+| `ATTACH OR REPLACE` | Forcefully rebind an existing alias. Destructive; confirm with user first. |
 
-If the user asked to make this database the default, or the state file has no `USE` yet, add `USE analytics;`. A second attach should not silently change the default database. Without any `USE`, the default is `memory`, so a bare `SHOW TABLES` can look empty even after an attach.
+If the user requested a default catalog or the state file lacks a `USE` command, append `USE analytics;`. Without an explicit `USE`, DuckDB defaults to `memory`, causing bare `SHOW TABLES;` to appear empty despite valid attachments.
 
-`-init` is CLI-only. Python and other clients must issue `ATTACH` in code. The init file may hold SQL and dot commands, and a parse or SQL error aborts startup with exit 1.
+The `-init` flag is CLI-specific; Python and client drivers must issue `ATTACH` programmatically. Init files execute both SQL and dot commands; any SQL or syntax error immediately aborts startup with exit code 1.
 
-Open once without `-init` to validate, then again with `-init` to prove the state file:
+To validate attachment in isolation before persisting, run once directly, then verify with `-init`:
 
 ```bash
 duckdb -json -c "ATTACH '/absolute/path/analytics.duckdb' AS analytics; SELECT database_name, path, tags['storage_version'] AS storage_version FROM duckdb_databases();"
 duckdb -init .duckdb/state.sql -json -c "SHOW TABLES;"
 ```
 
-`tags['storage_version']` is a compatibility floor, not the storage number. A 69 file reports `v2.0.0+`, which means 1.x cannot open it. A 68 file reports `v1.5.0+`. Opening a 1.x file does not upgrade it, and an ordinary write keeps its old version. `ATTACH existing (STORAGE_VERSION 'latest')` plus a write upgrades that file to 69. Do not pass `latest` unless the user asked to move the file.
+## Storage version management
 
-## Explore
+Inspect active storage versions via:
 
 ```sql
 SELECT database_name, path, tags['storage_version'] AS storage_version, readonly, type
 FROM duckdb_databases()
 WHERE NOT internal;
+```
 
+`tags['storage_version']` reports the minimum compatibility floor, not raw internal integers. Storage version 69 reports `v2.0.0+` (DuckDB 1.x cannot open). Storage version 68 reports `v1.5.0+`.
+
+Opening a legacy 1.x file in DuckDB 2.0 does not upgrade it; standard reads and writes preserve existing storage versions in place. Upgrading an existing file to storage 69 occurs only when mounting via `ATTACH '<path>' AS alias (STORAGE_VERSION 'latest');` followed by a write. Never pass `STORAGE_VERSION 'latest'` unless the user explicitly requested a file format upgrade. To pin formats for older readers, follow `duckdb-migrate`.
+
+## Catalog exploration
+
+Introspect tables within the target catalog:
+
+```sql
 SELECT schema_name, table_name, estimated_size, column_count
 FROM duckdb_tables()
 WHERE database_name = 'analytics' AND NOT internal
 ORDER BY schema_name, table_name;
 ```
 
-For each table the user cares about, up to 20:
+Inspect table schemas for up to 20 relevant tables:
 
 ```sql
 DESCRIBE analytics.main.table_name;
 ```
 
-`estimated_size` is an estimate. Only when the user asked for an exact number or the estimate is small, use `count()`.
+`estimated_size` represents an approximation. If the user requires exact row counts or `estimated_size` is small, run `count(*)`.
 
-Nested schemas need a join. `duckdb_tables()` carries `schema_oid`; `duckdb_schemas()` carries `oid`, `schema_name`, and `parent_schema`.
+If schemas are nested, join `duckdb_tables()` with `duckdb_schemas()` on both schema and database OIDs:
 
 ```sql
 SELECT s.parent_schema, t.schema_name, t.table_name
@@ -105,22 +113,24 @@ JOIN duckdb_schemas() AS s ON t.schema_oid = s.oid AND t.database_oid = s.databa
 WHERE t.database_name = 'analytics' AND s.parent_schema IS NOT NULL;
 ```
 
-Report the absolute path, the alias, the state file path, the storage version, and the tables. Later skills in this pack should pass `-init` with the same state file.
+Report the absolute path, alias, state file path, storage version, and discovered tables. Pass `-init` with the state file in subsequent skill invocations.
 
-## Concurrency and durability
+## Concurrency, durability, and detach
 
-Across processes, a native DuckDB file allows one writer or many readers, not both. A writer process excludes read-only processes with a lock error, and a reader excludes a writer. Within one process, multiple connections can write under MVCC, but a second connection with a different configuration (for example `read_only=True`) fails. For concurrent read and write across processes, use Quack or DuckLake.
+Across processes, native DuckDB files enforce single-writer or multi-reader exclusivity. A writer process locks the database against read-only processes, and an active reader blocks incoming writers. Within a single process, multiple connections share read-write access under MVCC, though opening a secondary connection with differing configuration (such as `read_only=True`) fails. For concurrent cross-process read and write access, hand off to `duckdb-quack` or `duckdb-lakehouse`.
+
+To persist WAL changes to the database file:
 
 ```sql
-CHECKPOINT analytics;        -- flush the WAL to the data file
-FORCE CHECKPOINT analytics;  -- wait for the checkpoint lock, then flush
+CHECKPOINT analytics;        -- Flush WAL to database file; fails if transactions are active
+FORCE CHECKPOINT analytics;  -- Wait for checkpoint lock, then flush (supported since 1.4)
 ```
 
-`CHECKPOINT` fails if a transaction is running. `FORCE CHECKPOINT` waits from 1.4 onward. A clean exit checkpoints and removes the WAL. `checkpoint_on_detach` takes `ENABLED`, `DISABLED`, or `DEFAULT`, not a boolean.
+On clean process termination, DuckDB checkpoints and removes the WAL. The setting `checkpoint_on_detach` accepts `ENABLED`, `DISABLED`, or `DEFAULT` (not boolean values).
 
-`VACUUM` does not reclaim space. `CHECKPOINT` frees deleted-row blocks for reuse; it does not guarantee that the `.db` file shrinks. On older storage, checkpoint vacuum skips tables with ART indexes unless `vacuum_rebuild_indexes` is set at startup or attach time. That fallback is deprecated.
+`VACUUM` does not shrink database files on disk. `CHECKPOINT` frees deleted-row storage blocks for internal reuse without guaranteeing file truncation. On legacy storage versions, checkpoint vacuum skips tables containing ART indexes unless `vacuum_rebuild_indexes` was configured at startup or attach time (deprecated fallback).
 
-`DETACH` releases the file lock. You cannot detach the default database; `USE` another one first.
+To release cross-process file locks, detach the database. DuckDB prevents detaching the active catalog; switch catalogs before detaching:
 
 ```sql
 ATTACH ':memory:' AS memory_db;
@@ -128,53 +138,54 @@ USE memory_db;
 DETACH analytics;
 ```
 
-Closing the only Python connection releases the cross-process lock. Locks persist while another connection or process holds the file. When the lock matters, detach the database in SQL.
+Terminating the sole Python process releases database file locks. Because locks persist as long as any connection holds the file handle, explicitly issue `DETACH` in SQL when immediate lock release is required.
 
-## Move or copy
+## Copy, export, and sharing
+
+To transfer schemas and data directly between catalogs:
 
 ```sql
 COPY FROM DATABASE analytics TO archive;
 ```
 
-For a file-format migration, use `duckdb-migrate`. For a backup, export into an empty directory because `EXPORT DATABASE` writes SQL and CSV by default without clearing existing files; add `(FORMAT parquet)` for Parquet. `IMPORT DATABASE` needs a target database with no conflicting objects.
+`COPY FROM DATABASE` requires an already-attached target catalog without conflicting table names; the destination database storage version governs the output file format.
 
-`COPY FROM DATABASE` needs an attached target with no conflicting table names. The target's storage version controls the output.
+To back up a database, target an empty directory: `EXPORT DATABASE 'backup_dir' (FORMAT parquet);`. Default export outputs SQL and CSV without purging existing files. To restore, ensure the target catalog contains no colliding objects and run `IMPORT DATABASE 'backup_dir';`. For cross-version format conversions, see `duckdb-migrate`.
 
-## Share views, not data
-
-A views-only catalog is a tiny `.duckdb` file that holds view definitions over remote Parquet. Upload it and let consumers attach it read-only. The catalog carries the schema contract, not the data.
-
-Create it in a new file:
+To share datasets without distributing data files or credentials, publish a views-only catalog. A views-only catalog is a lightweight `.duckdb` file containing view definitions over remote object storage:
 
 ```sql
+-- Publisher creates catalog
 CREATE VIEW sales AS
 SELECT * FROM read_parquet('s3://bucket/sales/*.parquet');
 
--- consumer
+-- Consumer mounts catalog read-only
 LOAD httpfs;
 ATTACH 'https://example.com/catalog.duckdb' AS shared (READ_ONLY);
 SELECT * FROM shared.sales;
 ```
 
-The consumer still needs access to every data source, including S3 credentials. A local path in the view works only when every consumer sees the same path. Use `duckdb-files` for secrets and `duckdb-quack` for a live writable endpoint.
+Consumers require direct read permissions and storage credentials for the underlying object store. Local file paths inside views work only when all consumers share identical filesystem paths. For secret management, see `duckdb-files`. For a hosted writable endpoint, see `duckdb-quack`.
 
 ## Verify
+
+Validate the state file and attached catalogs in an isolated CLI call:
 
 ```bash
 duckdb -init .duckdb/state.sql -agent -c \
   "SELECT database_name, tags['storage_version'] FROM duckdb_databases() WHERE NOT internal;"
 ```
 
-The alias appears once, with the expected storage version. A second run must not duplicate the `ATTACH`, because the state file uses `ATTACH IF NOT EXISTS`.
+Confirm each configured alias appears exactly once with its expected storage version. Verify idempotency: repeated execution must not duplicate the `ATTACH` because the state file specifies `ATTACH IF NOT EXISTS`.
 
 ## References
 
-- [ATTACH and DETACH](https://duckdb.org/docs/2.0/sql/statements/attach.html) owns the options and the storage-version rule.
-- [CHECKPOINT](https://duckdb.org/docs/2.0/sql/statements/checkpoint.html) owns WAL behavior.
-- [Concurrency](https://duckdb.org/docs/2.0/connect/concurrency.html) owns the one-writer rule.
-- [Storage](https://duckdb.org/docs/2.0/internals/storage.html) owns the version table.
-- [Views-only database](https://duckdb.org/docs/2.0/guides/network_cloud_storage/duckdb_views_only.html) owns catalog sharing.
-- [Reclaiming space](https://duckdb.org/docs/2.0/operations_manual/footprint_of_duckdb/reclaiming_space.html) owns checkpoint and vacuum behavior.
-- [duckdb_databases](https://duckdb.org/docs/2.0/sql/meta/duckdb_table_functions.html#duckdb_databases) owns the catalog columns. The live function has more columns than the manual table; use `DESCRIBE`.
-- `duckdb_secrets()` redacts `secret=` but still shows `key_id=`. Report names and types only, never the row.
-- The shared `state.sql` convention comes from the `attach-db` skill in https://github.com/duckdb/duckdb-skills (MIT). The default path here is `.duckdb/state.sql`.
+- [ATTACH and DETACH](https://duckdb.org/docs/2.0/sql/statements/attach.html) defines syntax, flags, and storage constraints.
+- [CHECKPOINT](https://duckdb.org/docs/2.0/sql/statements/checkpoint.html) documents WAL flushing and locking mechanisms.
+- [Concurrency](https://duckdb.org/docs/2.0/connect/concurrency.html) covers process exclusivity and thread safety.
+- [Storage](https://duckdb.org/docs/2.0/internals/storage.html) specifies storage version numbers and format compatibility.
+- [Views-only database](https://duckdb.org/docs/2.0/guides/network_cloud_storage/duckdb_views_only.html) details catalog sharing architectures.
+- [Reclaiming space](https://duckdb.org/docs/2.0/operations_manual/footprint_of_duckdb/reclaiming_space.html) covers WAL checkpoints and vacuum limitations.
+- [duckdb_databases](https://duckdb.org/docs/2.0/sql/meta/duckdb_table_functions.html#duckdb_databases) catalogs system introspection functions.
+- `duckdb_secrets()` masks secret values while displaying `key_id`. Log secret names and provider types only; never display row contents.
+- The state file pattern adapts the upstream `attach-db` skill from https://github.com/duckdb/duckdb-skills (MIT).

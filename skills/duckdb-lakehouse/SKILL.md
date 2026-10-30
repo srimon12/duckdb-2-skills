@@ -9,35 +9,35 @@ description: >
 
 # Lakehouse catalogs
 
-Object-storage secrets and plain Parquet or CSV on S3 live in `duckdb-files`. This skill starts once a catalog or lake table is involved.
+For raw Parquet or CSV on object storage without a catalog, hand off to `duckdb-files`. This skill governs table formats and catalogs: DuckLake, Iceberg, Delta Lake, and Unity Catalog.
 
-Run SQL with the `duckdb` skill. `INSTALL AND LOAD` the needed extension (`ducklake`, `iceberg`, `delta`, or `unity_catalog`). They autoload on first use when install is allowed.
+Run SQL with `duckdb`. Extensions (`ducklake`, `iceberg`, `delta`, `unity_catalog`) autoload on first use when installation is permitted; otherwise execute `INSTALL AND LOAD <extension>;`.
 
 ## Identify the path first
 
-Identify the path before choosing the extension. If no signal is present, list the directory and stop. Do not glob the data directory to decide; a catalog is authoritative.
+Before selecting an extension, identify the path format by inspecting directory signals. If no signal matches, list the directory and halt. Never glob data files when a catalog is authoritative.
 
 | Signal | Format | First move |
 | --- | --- | --- |
-| `_delta_log/` | Delta | `delta_scan` or `ATTACH ... (TYPE delta)` |
-| `metadata/version-hint.text` and `metadata/*.metadata.json` | Iceberg | `iceberg_scan` or a REST attach |
-| `ducklake:` URI or `ducklake_*` metadata tables | DuckLake | `ATTACH 'ducklake:...'` |
-| Parquet or CSV files only | Files | `duckdb-files` |
+| `_delta_log/` | Delta | Run `delta_scan` or `ATTACH ... (TYPE delta)` |
+| `metadata/version-hint.text` and `metadata/*.metadata.json` | Iceberg | Run `iceberg_scan` or attach a REST catalog |
+| `ducklake:` URI or `ducklake_*` metadata tables | DuckLake | Run `ATTACH 'ducklake:...'` |
+| Parquet or CSV files only | Plain files | Hand off to `duckdb-files` |
 
 ## Choose the format
 
 | Format | Concurrent writers | Catalog | Time travel | DuckDB write support | Best fit |
 | --- | --- | --- | --- | --- | --- |
-| Native `.duckdb` | One writer process | None | No | Full DDL and DML | Single-process analytics, app state |
-| DuckLake | Yes, through the catalog database | DuckDB file, SQLite, or PostgreSQL | Snapshot id or timestamp | DDL and DML with the limits below, `MERGE`, transactions | DuckDB-native lakehouse, multi-writer ACID |
-| Iceberg | Yes, through a REST catalog | REST catalog for writes | Snapshot id or timestamp | Create, insert, update, delete, merge, alter; merge-on-read only | Cross-engine lakehouse with an existing catalog |
-| Delta | Optimistic log; Unity for managed tables | None for an external table by path | Table version or timestamp | Create and append only | Reading existing Delta, append-only ingestion |
+| Native `.duckdb` | Single process | None | No | Full DDL and DML | Single-process analytics, embedded app state |
+| DuckLake | Multi-writer (catalog DB) | DuckDB file, SQLite, or PostgreSQL | Snapshot ID or timestamp | DDL, DML, `MERGE`, ACID transactions | DuckDB-native lakehouse, multi-writer ACID |
+| Iceberg | Multi-writer (REST catalog) | REST catalog for writes | Snapshot ID or timestamp | Create, insert, update, delete, merge, alter (merge-on-read) | Cross-engine lakehouse with existing REST catalog |
+| Delta | Optimistic log (Unity for managed) | None for path-based tables | Table version or timestamp | Create and append only | Reading existing Delta, append-only ingestion |
 
-Do not pick a format by habit. The write surface and the concurrency model differ more than the file layout.
+Select by write requirements and concurrency architecture, not file layout.
 
 ## DuckLake
 
-DuckLake 1.1 needs DuckDB 2.0.0 or newer. The 2.0 extension reads and writes a 1.0 catalog. New catalogs default to 1.1 unless `ducklake_default_version` says otherwise.
+DuckLake 1.1 requires DuckDB 2.0.0+. DuckDB 2.0 reads and writes 1.0 catalogs seamlessly. New catalogs default to 1.1 unless configured otherwise by `ducklake_default_version`.
 
 ```sql
 ATTACH 'ducklake:metadata.ducklake' AS lake;
@@ -45,11 +45,10 @@ ATTACH 'ducklake:sqlite:metadata.sqlite' AS lake (DATA_PATH 'my_files/');
 ATTACH 'ducklake:postgres:dbname=postgres' AS lake (DATA_PATH 's3://bucket/path/');
 ```
 
-A DuckDB-file catalog defaults `DATA_PATH` to `<metadata>.files`. A new SQLite or PostgreSQL catalog needs `DATA_PATH` explicitly. The metadata file is a catalog, not a native database of user tables.
+When attaching DuckDB-file catalogs, `DATA_PATH` defaults to `<metadata>.files`. When creating SQLite or PostgreSQL catalogs, provide `DATA_PATH` explicitly. The metadata target is a catalog store, not a native database of user tables.
+Key attach options: `READ_ONLY`, `CREATE_IF_NOT_EXISTS`, `DATA_INLINING_ROW_LIMIT`, `DUCKLAKE_VERSION '1.0'`, `ENCRYPTED`, `AUTOMATIC_MIGRATION`, `OVERRIDE_DATA_PATH`, `SNAPSHOT_VERSION`, and `SNAPSHOT_TIME` (see [references/catalogs.md](references/catalogs.md)).
 
-Useful options: `READ_ONLY`, `CREATE_IF_NOT_EXISTS`, `DATA_INLINING_ROW_LIMIT`, `DUCKLAKE_VERSION '1.0'`, `ENCRYPTED`, `AUTOMATIC_MIGRATION`, `OVERRIDE_DATA_PATH`, `SNAPSHOT_VERSION`, and `SNAPSHOT_TIME`. The full table is in [references/catalogs.md](references/catalogs.md).
-
-When the user wants a 1.1 feature, migrate. Back up the catalog and the data files. Stop writes, compaction, and cleanup. Make every client 1.1-capable. Reset the default, then migrate with write access:
+When upgrading a 1.0 catalog for 1.1 features, back up metadata and data files, halt active writes, compaction, and cleanup, and verify client support. Reset the default version, then attach with write access:
 
 ```sql
 RESET ducklake_default_version;
@@ -57,11 +56,10 @@ ATTACH 'ducklake:metadata.ducklake' AS lake (AUTOMATIC_MIGRATION true);
 SELECT value FROM lake.options() WHERE option_name = 'version';
 ```
 
-Migration is irreversible. A leftover `ducklake_default_version='1.0'` makes a later plain attach fail with `Cannot downgrade a DuckLake catalog`. After the migration, omit `AUTOMATIC_MIGRATION`.
+Migration is irreversible. If `ducklake_default_version='1.0'` remains set, subsequent normal attaches fail with `Cannot downgrade a DuckLake catalog`. Once migrated, omit `AUTOMATIC_MIGRATION` on routine attaches.
+Version 1.1 enables nested schemas, the `"NULL"` type, epoch transforms (`epoch_year`, `epoch_month`, `epoch_day`, `epoch_hour`), `VARIANT` inlining into PostgreSQL or SQLite, multi-snapshot Puffin deletes, exact string statistics, `row_group_count`, and cross-schema compaction after `ADD COLUMN`.
 
-Version 1.1 is required for nested schemas, the `"NULL"` type, `epoch_month` and the other epoch transforms, `VARIANT` inlining into PostgreSQL or SQLite, multi-snapshot Puffin deletes, exact string statistics, `row_group_count`, and cross-schema compaction after `ADD COLUMN`.
-
-Snapshots and time travel:
+Query snapshots and time travel:
 
 ```sql
 SELECT * FROM lake.t AT (VERSION => 3);
@@ -70,9 +68,11 @@ SELECT * FROM ducklake_snapshots('lake');
 SELECT ducklake_current_snapshot('lake');
 ```
 
-`VERSION` is a snapshot id. A timestamp before the first snapshot or in the future fails. The `AT` expression cannot contain a subquery.
+`VERSION` specifies a snapshot ID, not a sequential commit number. Timestamps before the initial snapshot or in the future fail. The `AT` expression rejects subqueries.
+Constraints support `NOT NULL` only. Primary keys, unique keys, check constraints, and secondary indexes are unsupported. Use `MERGE INTO` for upserts. DuckLake provides row lineage and an incremental change feed.
 
-Inside `CHECKPOINT`, maintenance runs in this order: flush inlined data, expire snapshots, merge adjacent files, rewrite data files, cleanup old files, delete orphaned files. Back up first. Set `rewrite_delete_threshold`, `expire_older_than`, and `delete_older_than` with `lake.set_option`; `auto_compact=false` skips compaction; `ducklake_target_file_size` overrides `target_file_size`. Dry-run cleanup and orphan deletion. Thresholds are in [references/catalogs.md](references/catalogs.md).
+During `CHECKPOINT`, maintenance executes in strict order: (1) flush inlined data, (2) expire snapshots, (3) merge adjacent files, (4) rewrite data files, (5) cleanup old files, (6) delete orphaned files.
+Before running maintenance, back up catalog files. Configure options via `CALL lake.set_option(...)`: `rewrite_delete_threshold`, `expire_older_than`, and `delete_older_than`. Set `auto_compact=false` to skip compaction; override target file size with `ducklake_target_file_size`.
 
 ```sql
 CALL ducklake_merge_adjacent_files('lake', 'orders', schema => 'sales', max_compacted_files => 10);
@@ -81,38 +81,30 @@ CALL ducklake_expire_snapshots('lake', older_than => now() - INTERVAL '30 days',
 CALL ducklake_cleanup_old_files('lake', older_than => now() - INTERVAL '7 days', dry_run => true);
 ```
 
-`ducklake_cleanup_old_files` removes only files DuckLake scheduled for deletion. `ducklake_delete_orphaned_files` scans the data path and can delete files DuckLake never wrote. Run both with `dry_run` first, and never point orphan cleanup at a shared directory.
-
-Constraints are `NOT NULL` only. Use `MERGE INTO` for upserts. DuckLake has row lineage and a change feed, but no primary keys, unique keys, check constraints, or indexes.
+While `ducklake_cleanup_old_files` removes only scheduled expired files, `ducklake_delete_orphaned_files` scans storage and deletes unreferenced files DuckLake never wrote. Always pass `dry_run => true` first. Never run orphan deletion on a shared directory.
 
 ## Iceberg
 
-`iceberg_scan(path)` reads a table directly and is read-only. Writes go through an attached REST catalog.
+Direct scans via `iceberg_scan(path)` are read-only. For writes, attach an Iceberg REST catalog:
 
 ```sql
-CREATE SECRET iceberg_auth (
-    TYPE iceberg,
-    CLIENT_ID '...',
-    CLIENT_SECRET '...',
-    OAUTH2_SERVER_URI 'https://auth.example.com/oauth/token'
-);
-
-ATTACH 'my_warehouse' AS ice
-    (TYPE iceberg, SECRET iceberg_auth, URI 'https://catalog.example.com/v1');
+CREATE SECRET iceberg_auth (TYPE iceberg, CLIENT_ID '...', CLIENT_SECRET '...',
+    OAUTH2_SERVER_URI 'https://auth.example.com/oauth/token');
+ATTACH 'my_warehouse' AS ice (TYPE iceberg, SECRET iceberg_auth, URI 'https://catalog.example.com/v1');
 ```
 
-`URI` is the catalog URL. `ENDPOINT` is deprecated. Passing both fails. For AWS Glue, use `ENDPOINT_TYPE 'glue'` and `AUTHORIZATION_TYPE 'sigv4'`. Glue does not assign a table location server-side, so `CREATE TABLE` needs `DEFAULT_TABLE_LOCATION_FROM_NAMESPACE true` or an explicit `WITH ('location' = '...')`. For Amazon S3 Tables, use `ENDPOINT_TYPE 's3_tables'`.
+Specify catalog URL with `URI`. `ENDPOINT` is deprecated; passing both fails. For AWS Glue, specify `ENDPOINT_TYPE 'glue'` and `AUTHORIZATION_TYPE 'sigv4'`; Glue requires `DEFAULT_TABLE_LOCATION_FROM_NAMESPACE true` or explicit `WITH ('location' = '...')`. For Amazon S3 Tables, specify `ENDPOINT_TYPE 's3_tables'`.
 
-Writes require a REST catalog. `UPDATE`, `DELETE`, and `MERGE` use merge-on-read positional deletes. They fail on sorted tables, copy-on-write is unsupported, and the table's `write.update.mode` and `write.delete.mode` must be `merge-on-read`. Iceberg v3 adds `VARIANT`, `TIMESTAMP_NS`, and binary deletion vectors. `GEOGRAPHY` is unsupported.
+Writes require a REST catalog. `UPDATE`, `DELETE`, and `MERGE` employ merge-on-read positional deletes. Writes fail on sorted tables; copy-on-write is unsupported; table properties `write.update.mode` and `write.delete.mode` must be `merge-on-read`. Iceberg v3 adds `VARIANT`, `TIMESTAMP_NS`, and binary deletion vectors. `GEOGRAPHY` is unsupported.
 
-Time travel uses a snapshot id or a timestamp, not a table version:
+Query historical state by snapshot ID or timestamp:
 
 ```sql
 SELECT * FROM ice.t AT (VERSION => 7635660646343998149);
 SELECT * FROM iceberg_snapshots('ice.t');
 ```
 
-Before copying a version number from Delta, read `iceberg_snapshots`. The numbers mean different things.
+Before copying a version number from Delta, inspect `iceberg_snapshots`. `VERSION` expects a 64-bit snapshot ID, not a sequential table version.
 
 ## Delta
 
@@ -120,14 +112,14 @@ Before copying a version number from Delta, read `iceberg_snapshots`. The number
 INSTALL AND LOAD delta;
 ATTACH 's3://my_bucket/path' AS events (TYPE delta);
 SELECT * FROM events;
-
 CREATE TABLE events.events (id BIGINT, region VARCHAR) PARTITIONED BY (region);
 INSERT INTO events VALUES (1, 'eu');
 ```
 
-The table name in `CREATE TABLE` must be exactly the attached name. `CREATE TABLE events.other` fails. `ATTACH` does not verify that the path is a Delta table; a typo attaches an empty database and fails on the first read. Check for `_delta_log/` first.
+Before attaching, confirm `_delta_log/` exists. `ATTACH` performs no metadata validation; an invalid path mounts an empty database that fails only on first read.
+When creating tables, the table name must match the attached database name exactly: `CREATE TABLE events.events (...)`. Executing `CREATE TABLE events.other` fails.
 
-No `UPDATE`, `DELETE`, `MERGE INTO`, `ALTER TABLE`, `DROP TABLE`, `CREATE TABLE AS`, `CREATE OR REPLACE TABLE`, `RETURNING`, or `ON CONFLICT`. No constraints, `DEFAULT`, generated columns, `SORTED BY`, `TIME`, or unsigned integers. Delta writes from DuckDB are append-only.
+Delta writes from DuckDB are append-only. DuckDB rejects `UPDATE`, `DELETE`, `MERGE INTO`, `ALTER TABLE`, `DROP TABLE`, `CREATE TABLE AS`, `CREATE OR REPLACE TABLE`, `RETURNING`, and `ON CONFLICT`. Constraints, `DEFAULT`, generated columns, `SORTED BY`, `TIME`, and unsigned integers are unsupported.
 
 Time travel:
 
@@ -137,40 +129,35 @@ SELECT * FROM events.events AT (TIMESTAMP => TIMESTAMPTZ '2026-09-01 12:00:00+00
 ATTACH 's3://my_bucket/path' AS events_v5 (TYPE delta, VERSION 5);
 ```
 
-A version and a timestamp together are rejected. A pinned attach is read-only.
+Passing both `VERSION` and `TIMESTAMP` fails. Attachments pinned to a version or timestamp are strictly read-only.
 
-`VARIANT` columns work at the top level. DuckDB shreds them only when the table property `delta.enableVariantShredding` is true, and `CREATE TABLE` cannot set it. A `VARIANT` nested inside a struct, list, or map can be created but not written. `delta_column_mapping_policy` defaults to `strict` in 2.0; `SET delta_column_mapping_policy = 'lenient'` restores the 1.5 read for id-mode files without field ids.
-
-Catalog-managed tables, including Unity Catalog managed tables, cannot be read through `delta_scan` or `ATTACH ... (TYPE delta)`. Attach the catalog.
+`VARIANT` columns work at the top level. DuckDB shreds them only when `delta.enableVariantShredding` is true, which `CREATE TABLE` cannot set. Nested `VARIANT` columns can be created but not written. In DuckDB 2.0, `delta_column_mapping_policy` defaults to `strict`; set to `'lenient'` to restore DuckDB 1.5 reading for ID-mode files lacking field IDs.
+For catalog-managed tables (such as Unity Catalog managed tables), do not read via `delta_scan` or `ATTACH ... (TYPE delta)`; attach through `unity_catalog`.
 
 ## Unity Catalog
 
 ```sql
 CREATE SECRET (TYPE s3, PROVIDER config, REGION 'us-east-1');
-CREATE SECRET uc (
-    TYPE unity_catalog,
-    TOKEN '...',
-    ENDPOINT 'https://...',
-    AWS_REGION 'us-east-1'
-);
-
+CREATE SECRET uc (TYPE unity_catalog, TOKEN '...', ENDPOINT 'https://...', AWS_REGION 'us-east-1');
 ATTACH 'my_catalog' AS uc (TYPE unity_catalog, DEFAULT_SCHEMA 'main');
 ```
 
-Create the storage secret for the table path before `ATTACH`; the catalog secret only authenticates the REST endpoint. `DEFAULT_SCHEMA` is required for Unity Catalog OSS. Time travel uses `AT (VERSION => 5)` or `AT (TIMESTAMP => ...)`.
+Before calling `ATTACH`, create the storage secret (e.g. S3); the `unity_catalog` secret authenticates the REST endpoint only. When connecting to Unity Catalog OSS, `DEFAULT_SCHEMA 'main'` is required. Time travel accepts `AT (VERSION => 5)` or `AT (TIMESTAMP => TIMESTAMPTZ '...')`.
 
-Unity Catalog reads, inserts, and creates tables. It does not support `UPDATE`, `DELETE`, `DROP TABLE`, `ALTER TABLE`, or view and schema DDL. Managed tables use catalog-managed commits. `CHECKPOINT` does not apply; use `unity_catalog_checkpoint_table`. `USE_IRC_SCAN_PLAN` uses Databricks server-side planning, but tables with equality deletes fail under it.
+Unity Catalog supports reads, inserts, and table creations. Managed tables utilize catalog-managed commits. DuckDB rejects `UPDATE`, `DELETE`, `DROP TABLE`, `ALTER TABLE`, and schema or view DDL.
+Standard `CHECKPOINT` does not apply; invoke `CALL unity_catalog_checkpoint_table('uc', 'schema', 'table')` instead.
+To use Databricks server-side scan planning, pass `USE_IRC_SCAN_PLAN true`. If tables contain equality deletes, omit or disable this option, as equality deletes fail under IRC scan planning.
 
 ## Traps
 
-| Trap | Result | Move |
+| Condition | Consequence | Correct move |
 | --- | --- | --- |
-| Attach a DuckLake metadata file as a native file | You see only `ducklake_*` tables. | Use the `ducklake:` prefix. |
-| Attach a native DuckDB file as DuckLake | DuckLake adds catalog tables and hides user tables. | Use a dedicated catalog file. |
-| Glob a catalog's data directory | You read stale, merged, and deleted files. Counts differ from the catalog. | Query through the catalog, or use `ducklake_list_files`. |
-| Mix DuckDB versions on a DuckDB-file catalog | A newer write can make the metadata file unreadable to older DuckDB. | One release for every client, or PostgreSQL/SQLite. |
-| `AT (VERSION => 5)` across formats | DuckLake and Iceberg use snapshot ids; Delta uses table version 5. | Check the snapshot list first. |
-| `cleanup_all => true` or orphan deletion | Ignores age, or deletes untracked files in the data path. | Dry-run; prefer `older_than`; never target a shared directory. |
+| Attaching DuckLake metadata file as native database | Only internal `ducklake_*` tables appear. | Prepend the `ducklake:` URI prefix. |
+| Attaching native DuckDB database as DuckLake | DuckLake injects catalog schemas and hides existing tables. | Maintain a dedicated, isolated catalog file. |
+| Globbing catalog data directories directly | Queries return stale, uncompacted, or deleted data files. | Query through the catalog or inspect via `ducklake_list_files`. |
+| Mixing DuckDB versions on DuckDB-file catalog | Writes from newer releases render metadata unreadable to older clients. | Pin all clients to the same version, or back catalog by PostgreSQL/SQLite. |
+| Using `AT (VERSION => 5)` across formats | DuckLake and Iceberg expect snapshot IDs; Delta expects sequential versions. | Inspect snapshot catalogs (`ducklake_snapshots`, `iceberg_snapshots`) first. |
+| Running `cleanup_all => true` or orphan deletion blindly | Bypasses retention bounds or deletes untracked files in `DATA_PATH`. | Execute with `dry_run => true` first; never run orphan deletion on shared paths. |
 
 ## Verify
 
@@ -183,16 +170,16 @@ duckdb -agent -c "INSTALL ducklake; LOAD ducklake;
 rm -rf "$tmp"
 ```
 
-The result must be `42`. A catalog error means the `ducklake` extension did not load or the path already held a non-DuckLake database.
+The output must return `42`. A catalog error indicates the `ducklake` extension failed to load or the path contains an incompatible non-DuckLake database.
 
 ## References
 
-- [DuckLake extension](https://duckdb.org/docs/2.0/core_extensions/ducklake.html) owns the DuckDB page.
-- [DuckLake manual](https://ducklake.select/docs/stable/) owns attach, migration, maintenance, and limits.
-- [DuckLake 1.1](https://ducklake.select/2026/10/21/ducklake-11/) owns the 1.1 feature list.
-- [Iceberg options](https://duckdb.org/docs/2.0/core_extensions/iceberg/iceberg_options.html) owns the attach matrix.
-- [Iceberg writes](https://duckdb.org/docs/2.0/core_extensions/iceberg/writing_to_iceberg.html) owns the merge-on-read limits.
-- [Delta](https://duckdb.org/docs/2.0/core_extensions/delta.html) owns create, time travel, and variant.
-- [Unity Catalog](https://duckdb.org/docs/2.0/core_extensions/unity_catalog.html) owns attach and write limits.
-- The full option, signature, and 1.0-vs-1.1 tables are in [references/catalogs.md](references/catalogs.md).
-- DuckLake attach, migration, time travel, Delta create, and the exact-name rule were probed on DuckDB 2.0.0 with DuckLake extension `417a9117f5`.
+- [DuckLake extension](https://duckdb.org/docs/2.0/core_extensions/ducklake.html) covers extension loading and core capabilities.
+- [DuckLake manual](https://ducklake.select/docs/stable/) details catalog attachment, migrations, maintenance procedures, and limits.
+- [DuckLake 1.1](https://ducklake.select/2026/10/21/ducklake-11/) outlines the 1.1 specification and feature additions.
+- [Iceberg options](https://duckdb.org/docs/2.0/core_extensions/iceberg/iceberg_options.html) documents REST catalog parameters and auth settings.
+- [Iceberg writes](https://duckdb.org/docs/2.0/core_extensions/iceberg/writing_to_iceberg.html) specifies merge-on-read semantics and write constraints.
+- [Delta](https://duckdb.org/docs/2.0/core_extensions/delta.html) details Delta Lake attachment, time travel, and variant support.
+- [Unity Catalog](https://duckdb.org/docs/2.0/core_extensions/unity_catalog.html) describes REST catalog attachment, storage secrets, and write limits.
+- Complete option signatures, maintenance APIs, and version matrices are cataloged in [references/catalogs.md](references/catalogs.md).
+- DuckLake attachment, migration, time travel, Delta table creation, and the exact-name rule verified on DuckDB 2.0.0 with DuckLake extension `417a9117f5`.

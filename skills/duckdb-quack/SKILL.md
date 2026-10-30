@@ -1,48 +1,52 @@
 ---
 name: duckdb-quack
 description: >
-  Serve a DuckDB 2.0 database with the Quack protocol, or route a session to
-  Quack, PostgreSQL, or MySQL with CONNECT. Covers tokens, TLS, reverse
+  Serve DuckDB 2.0 over HTTP with the Quack protocol, or route a session to
+  Quack, PostgreSQL, or MySQL with CONNECT. Covers tokens, TLS reverse
   proxies, pushdown, and connection management. Use when the user says quack,
   duckdb -serve, duckdb -connect, CONNECT, or remote pushdown.
 ---
 
 # Quack and CONNECT
 
-Quack turns a DuckDB process into an HTTP server. The extension installs and loads on first use. Defaults are `quack:localhost` on port `9494` over plain HTTP. Result bodies use DuckDB's serialization, so decimals, intervals, and nested types stay typed.
+Quack turns a DuckDB process into an HTTP server, defaulting to `quack:localhost` on port `9494` over plain HTTP. DuckDB automatically installs and loads the extension on first use. Result payloads use native DuckDB binary serialization, keeping decimals, intervals, and nested structures strongly typed.
 
-The protocol is still beta. The Quack FAQ says it is fine for prototyping and not production-ready. Breaking changes may touch the protocol, function names, and default settings. A server exposes the full SQL surface, including writes, as the user who started it.
+The protocol is in beta and suited for prototyping, not production. Upgrades may introduce breaking changes across the wire protocol, function names, and default settings. An active server exposes the entire SQL surface, including writes, under the host OS identity of the user who started it.
 
-Run the CLI with the `duckdb` skill. A server is long-running. Start it in the background and do not block the session on it.
+Because a server process is long-running, start it in the background and do not block the active session. For CLI execution guidelines, consult `duckdb`.
 
 ## Serve
+
+To serve a database over HTTP from the CLI, run:
 
 ```bash
 duckdb analytics.duckdb -serve
 ```
 
-`-serve` with no database path serves an in-memory database. On a machine with no default `quack` secret, `-serve` creates a persistent secret named `__default_quack` with scope `quack:`, so `duckdb -connect` works without extra setup. A bare `CALL quack_serve()` does not create it unless `create_secret_if_not_exists => true`.
+When omitting the database path, `-serve` serves an in-memory database. When no default Quack secret exists, `-serve` generates a token and persists an unencrypted secret named `__default_quack` (scope `quack:`, mode 600) so `duckdb -connect` works immediately. Because possession of the token grants full read and write access to every session table, delete `__default_quack` when stopping the server, or load a named secret from a vault.
+
+To manage the server lifecycle in SQL, invoke `quack_serve` or `quack_stop`:
 
 ```sql
 CALL quack_serve('quack:localhost', token = 'my_token');
 CALL quack_stop('quack:localhost');
 ```
 
-`quack_stop` stops a server in the current process only. From another process it returns `No server found listening on ...` and the server keeps running. Pass the exact listen URI, including a non-default port.
+Tokens require at least 4 characters. When a default `quack` secret exists, `quack_serve` reuses its token; otherwise it generates a token and returns it in `auth_token`. A bare `CALL quack_serve()` does not persist the token unless `create_secret_if_not_exists => true`.
 
-The token is at least 4 characters. If a default `quack` secret exists, its token is reused. Otherwise the server generates one and returns it in `auth_token`. Pass `create_secret_if_not_exists => true` to persist a generated token.
-
-`duckdb -serve` stores its token in a persistent, unencrypted `quack` secret, mode 600. Possession of the token grants full read and write access to every table in the session. Delete the default secret when the server stops, or use a named secret from a secret manager.
+To halt the server, run `quack_stop()` within the originating process. When invoked from a different process, `quack_stop` fails with `No server found listening on ...` while the server keeps running. Always pass the exact listen URI, including any custom port.
 
 | Parameter | Default | Use |
 | --- | --- | --- |
-| `listen_uri` | `quack:localhost` | Host and port. |
-| `token` | reused or generated | Shared secret. |
-| `secret` | unset | Name of an existing `quack` secret to use. |
-| `create_secret_if_not_exists` | `false` | Persist the generated token as the default `quack` secret. |
-| `allow_other_hostname` | `false` | Permit a non-local bind such as `0.0.0.0`. Testing only. |
-| `disable_ssl` | `true` for local, else `false` | Plain HTTP versus HTTPS. |
-| `ssl_cert_file`, `ssl_key_file` | generated | Certificate and key. |
+| `listen_uri` | `quack:localhost` | Host and port to bind. |
+| `token` | reused or generated | Shared authentication token (at least 4 characters). |
+| `secret` | unset | Name of an existing `quack` secret to load. |
+| `create_secret_if_not_exists` | `false` | Persist generated token as default `quack` secret. |
+| `allow_other_hostname` | `false` | Permit non-local bind such as `0.0.0.0` (testing only). |
+| `disable_ssl` | `true` local, `false` remote | Plain HTTP versus HTTPS. |
+| `ssl_cert_file`, `ssl_key_file` | generated | Certificate and private key paths. |
+
+To inspect running servers or generate self-signed TLS certificates, run:
 
 ```sql
 SELECT * FROM quack_server_list();
@@ -50,9 +54,11 @@ SELECT * FROM quack_active_connections();
 CALL quack_generate_keys('/path/to/keys');
 ```
 
-`quack_generate_keys` writes a self-signed `server.pem` and `private_key.pem` and returns the fingerprint. Put that fingerprint in the client's `SSL_FINGERPRINT`.
+`quack_generate_keys` writes `server.pem` and `private_key.pem` to the target path and returns the SHA-256 fingerprint. Pass that fingerprint to the client's `SSL_FINGERPRINT` option.
 
 ## Connect
+
+To route an interactive session to an attached Quack instance, run:
 
 ```sql
 ATTACH 'quack:localhost' AS qk (TOKEN 'my_token');
@@ -61,9 +67,17 @@ SELECT count(*) FROM events;
 DISCONNECT;
 ```
 
-`DISCONNECT` with nothing connected raises. While `CONNECT` is active, unqualified names run on the remote. Local in-memory databases and local DuckDB files do not accept `CONNECT`.
+While `CONNECT` is active, unqualified table names resolve and execute on the remote database. When no remote session is active, running `DISCONNECT` raises an error. Local in-memory databases and local DuckDB files reject `CONNECT`.
 
-When you want the attachment as a catalog and the local session stays put, qualify names:
+To route directly without prior attachment, pass the URI and token to `CONNECT`:
+
+```sql
+CONNECT 'quack:localhost:9494' (TOKEN 'my_token');
+SELECT 42;
+DISCONNECT;
+```
+
+To query remote tables while keeping the local session active, qualify names against the attached catalog:
 
 ```sql
 ATTACH 'quack:localhost' AS remote_db (TOKEN 'my_token');
@@ -71,28 +85,26 @@ FROM remote_db.t;
 FROM remote_db.query('SELECT 42');
 ```
 
-One ad-hoc query:
+To execute a single ad-hoc query without attaching a catalog, use `quack_query`:
 
 ```sql
 FROM quack_query('quack:localhost', 'SELECT 42', token = 'my_token');
 ```
 
-One Quack connection per thread. `con.cursor()` shares the remote session and concurrent calls fail with `superseded by a new query`; use one attached connection per thread.
+When querying Quack concurrently, enforce one Quack connection per thread. Calling `con.cursor()` in Python shares the underlying remote session; concurrent queries across shared cursors fail with `superseded by a new query`.
 
-Client-side parameter binding against a Quack table fails with `Values were not provided`. Stage values in a DataFrame or temp table. From a local session, `CONNECT` first and use SQL `PREPARE`/`EXECUTE`; Python DB-API binding still fails after `CONNECT`.
-
-`ATTACH` options:
+When binding parameters against Quack tables, client-side parameter binding fails with `Values were not provided`. To supply parameterized values, stage them in a DataFrame or local temporary table, or route the session with `CONNECT` and run SQL `PREPARE` and `EXECUTE`. Python DB-API binding continues to fail even after `CONNECT`.
 
 | Option | Use |
 | --- | --- |
-| `TOKEN` | Override any matching Quack secret. |
-| `TYPE quack` | Pin the secret type. |
-| `DISABLE_SSL` | Force plain HTTP. |
-| `SSL_FINGERPRINT` | Trust a specific self-signed certificate. |
-| `CLIENT_ID` | Client identifier, at least 4 characters. |
-| `HEARTBEAT_TIMEOUT` | Lease timeout in seconds. |
+| `TOKEN` | Explicit token overriding matching Quack secrets. |
+| `TYPE quack` | Secret type qualifier. |
+| `DISABLE_SSL` | Force plain HTTP over local connections. |
+| `SSL_FINGERPRINT` | Trust a specific self-signed certificate fingerprint. |
+| `CLIENT_ID` | Client identifier string (at least 4 characters). |
+| `HEARTBEAT_TIMEOUT` | Connection lease timeout in seconds. |
 
-A secret scoped to the URI keeps the token out of every statement:
+To keep tokens out of query statements, store credentials in a scoped secret:
 
 ```sql
 CREATE SECRET (
@@ -103,25 +115,19 @@ CREATE SECRET (
 ATTACH 'quack:localhost:9494' AS remote_db (TYPE quack);
 ```
 
-The scope must match the URI exactly. `SCOPE 'quack:'` covers the default `quack:` URI, not an explicit host and port.
+The `SCOPE` pattern must match the target URI exactly. `SCOPE 'quack:'` covers only the default `quack:` URI, not explicit host and port strings.
 
-A direct session route works too:
-
-```sql
-CONNECT 'quack:localhost:9494' (TOKEN 'my_token');
-SELECT 42;
-DISCONNECT;
-```
-
-Other client functions: `quack_query_by_name(catalog, query)` for an attached catalog, `quack_cancel(catalog, connection_id)`, `quack_connection_id(catalog)`, and `quack_clear_cache()`.
+For attached catalog administration, use `quack_query_by_name(catalog, query)`, `quack_connection_id(catalog)`, `quack_cancel(catalog, connection_id)`, and `quack_clear_cache()`.
 
 ## Security
 
-The default bind is localhost, plain HTTP, no TLS. That is correct on one machine. For any other host, keep `quack_serve` on localhost and put a TLS reverse proxy in front. The proxy guide recommends a 256 MB body limit, 600-second read and send timeouts, HTTP/1.1 keep-alive, and buffering off. Clients must name port 443 explicitly because Quack's default remains 9494. Non-local client URIs assume HTTPS.
+By default, Quack binds to `localhost` over plain HTTP without TLS. On a single machine, this is correct.
 
-Do not set `allow_other_hostname = true` for a shared network. `0.0.0.0` is not local. Unless the user explicitly asks and a TLS proxy is in front, refuse it. Do not paste a token into a shell history, a committed file, or `state.sql`. Use a named secret.
+When exposing DuckDB across machines, keep `quack_serve` on `localhost` and terminate TLS with a reverse proxy in front. Configure the proxy with a 256 MB request body limit, 600-second read and send timeouts, HTTP/1.1 keep-alive enabled, response buffering disabled, and listen on port 443. Because Quack defaults to port 9494, connecting clients must explicitly specify port 443. Non-local client URIs assume HTTPS.
 
-A token is OS-user access, not tenant isolation. The server can read and write files as its user and install extensions. To reduce that surface, start the server first, then lock it:
+Refuse `allow_other_hostname = true` on shared networks (`0.0.0.0` is not local). Reject direct external exposure unless the user explicitly mandates it behind a verified TLS proxy. Never record tokens in shell history, version control, or `state.sql`; use named secrets.
+
+A Quack token provides host OS-user access, not tenant isolation. Authenticated clients can read or write host files and install extensions permitted to the server user. To restrict capabilities, start the server first, then lock configuration:
 
 ```sql
 CALL quack_serve('quack:localhost', token = 'my_token');
@@ -129,17 +135,17 @@ SET enable_external_access = false;
 SET lock_configuration = true;
 ```
 
-Locking before `quack_serve` fails because the server reads `~/.duckdb/stored_secrets` at startup. The default authorization callback allows every query. Replace it when the server is shared.
+Locking configuration before `quack_serve` fails because the server reads `~/.duckdb/stored_secrets` at startup.
 
-The server checks a token on connect and runs an authorization callback before each query. The defaults allow every authenticated query.
+The server validates the token on connection and triggers an authorization callback before each query. Default callbacks permit all authenticated queries; override them when sharing an instance. `quack_authentication_function` accepts `(sid, client_token, server_token)` and returns `BOOLEAN`. `quack_authorization_function` accepts `(sid, query)` and returns `BOOLEAN` to allow or deny, or `VARCHAR` SQL to replace the incoming query.
 
-Do not replace that callback with a regular expression on the query text. A data-modifying CTE starts with `WITH`, and a comment can hide the first keyword, so a prefix check that allows `WITH` still runs writes. Before setting `quack_authorization_function`, read the security page.
+To enforce row filters or tenant boundaries, return rewritten SQL via the `VARCHAR` signature. Never inspect or authorize queries with regular expressions on query text. SQL comments can disguise leading keywords, and data-modifying CTEs begin with `WITH`, allowing write queries to bypass `SELECT`-prefix filters. Before configuring `quack_authorization_function`, consult the security documentation.
 
-`quack_authentication_function` takes `(sid, client_token, server_token)` and returns `BOOLEAN`. `quack_authorization_function` takes `(sid, query)` and returns `BOOLEAN` to allow or deny, or `VARCHAR` SQL to replace the query. Use the `VARCHAR` form for row filters; never a regex on query text. Both run on a fresh server-side connection, so they cannot rely on session state.
+Both callbacks run inside a fresh server-side connection and cannot depend on session state.
 
 ## Postgres and MySQL
 
-`CONNECT` also routes the session at PostgreSQL and MySQL. The pushdown optimizer sends the SQL to that server.
+To route an interactive session directly to PostgreSQL or MySQL with SQL pushdown optimization, run `CONNECT`:
 
 ```sql
 CONNECT 'postgres:dbname=mydb host=localhost';
@@ -147,31 +153,41 @@ SELECT count(*) FROM orders;
 DISCONNECT;
 ```
 
-The string starts with `postgres:` and then a libpq connection string. Do not use an unadorned URI scheme like `postgres:` followed by double slashes for CONNECT. The 2.0 connect page names MySQL and does not show a MySQL connection-string example, so open the MySQL extension page before writing one.
+When routing PostgreSQL sessions, prefix the string with `postgres:`, followed by either a libpq key-value string or a standard URI:
 
-The current PostgreSQL forms are `CONNECT 'postgres:dbname=mydb host=localhost'` and `CONNECT 'postgres:postgresql://localhost/mydb'`. A bare URI without `postgres:` (such as `CONNECT 'postgresql://localhost/mydb'`) is treated as a local file and fails. In contrast, `ATTACH 'postgresql://localhost/mydb' (TYPE postgres)` does work. For MySQL, use `CONNECT 'mysql:host=localhost database=mydb'`; `mysql://...` fails the same way.
+```sql
+CONNECT 'postgres:dbname=mydb host=localhost';
+CONNECT 'postgres:postgresql://localhost/mydb';
+```
 
-For direct reads and writes without routing the session, use `postgres_query`, `postgres_execute`, `mysql_query`, and `mysql_execute`. `postgres_scan`, `postgres_scan_pushdown`, and `mysql_scan` are absent from the 2.0.0 binary. Secrets and pooling live on the extension pages.
+When omitting the `postgres:` prefix (such as `CONNECT 'postgresql://localhost/mydb'`), DuckDB interprets the URI as a local database file path and fails. Conversely, catalog attachment accepts the unadorned URI: `ATTACH 'postgresql://localhost/mydb' (TYPE postgres);`.
+
+When routing MySQL sessions, run `CONNECT 'mysql:host=localhost database=mydb';`. Omitting `mysql:` or using a bare URI fails identically.
+
+To execute queries directly without routing session state, call `postgres_query`, `postgres_execute`, `mysql_query`, or `mysql_execute`. Note that `postgres_scan`, `postgres_scan_pushdown`, and `mysql_scan` are absent in the DuckDB 2.0.0 binary.
 
 ## Verify
 
+To verify Quack server and client operation, run across two terminals:
+
 ```bash
-# terminal 1: keep the process alive
+# Terminal 1: start server and keep process active
 duckdb -serve
 
-# terminal 2: use the default secret that -serve created
+# Terminal 2: connect using the persistent __default_quack secret
 duckdb -connect -c "SELECT 42 AS a;"
 ```
 
-The second command must return `42`. A `-c` process exits immediately after `quack_serve`, so do not start a server that way.
+Confirm the second command returns `42`. Because passing `-c` exits immediately after executing `quack_serve`, never attempt to start a persistent server via `duckdb -c 'CALL quack_serve();'`.
 
 ## References
 
-- [Quack overview](https://duckdb.org/docs/2.0/quack/overview.html) owns the protocol and URI scheme.
-- [Quack reference](https://duckdb.org/docs/2.0/quack/reference.html) owns the functions, options, and settings.
-- [Quack security](https://duckdb.org/docs/2.0/quack/security.html) owns exposure, auth, and authorization.
-- [Reverse proxy](https://duckdb.org/docs/2.0/quack/setup/reverse_proxy.html) owns the nginx and Caddy recipes.
-- [CONNECT and DISCONNECT](https://duckdb.org/docs/2.0/sql/statements/connect.html) owns session routing and the connection strings.
-- [PostgreSQL extension](https://duckdb.org/docs/2.0/core_extensions/postgres/overview.html) and [MySQL extension](https://duckdb.org/docs/2.0/core_extensions/mysql.html) own the direct functions.
-- [Quack FAQ](https://duckdb.org/quack/faq.html) states the beta status.
-- A local server on port 9497 answered `quack_query` on DuckDB 2.0.0. The default port and the token behavior come from the 2.0 pages.
+Consult these references when configuring advanced network topologies, proxy rules, authentication hooks, or external pushdown:
+
+- [Quack overview](https://duckdb.org/docs/2.0/quack/overview.html) details the protocol and URI scheme.
+- [Quack reference](https://duckdb.org/docs/2.0/quack/reference.html) covers functions, options, and configuration settings.
+- [Quack security](https://duckdb.org/docs/2.0/quack/security.html) covers exposure risks, authentication, and authorization hooks.
+- [Reverse proxy](https://duckdb.org/docs/2.0/quack/setup/reverse_proxy.html) provides nginx and Caddy deployment recipes.
+- [CONNECT and DISCONNECT](https://duckdb.org/docs/2.0/sql/statements/connect.html) explains session routing and connection strings.
+- [PostgreSQL extension](https://duckdb.org/docs/2.0/core_extensions/postgres/overview.html) and [MySQL extension](https://duckdb.org/docs/2.0/core_extensions/mysql.html) document direct execution functions.
+- [Quack FAQ](https://duckdb.org/quack/faq.html) notes beta status and architectural limits.

@@ -1,15 +1,15 @@
 ---
 name: duckdb-extensions
 description: >
-  Install, load, and update DuckDB 2.0 extensions, including community
-  extensions and self-hosted repositories. Covers signing, platform support,
-  offline installs, and version pinning. Use when an extension is missing, the
-  user passes a repository name, or asks to update DuckDB extensions.
+  Install, load, and update DuckDB 2.0 extensions, community extensions,
+  and self-hosted repositories. Covers key signing, platform support,
+  air-gapped manual installs, and version pinning. Use when an extension is
+  missing, the user passes a repository, or when updating DuckDB extensions.
 ---
 
 # Extensions
 
-Before installing, require the 2.0 CLI from `duckdb`. An extension installed by 1.5 is the wrong build for 2.0.
+Before installing an extension, verify the 2.0 CLI from `duckdb`. Extensions installed by 1.5 are the wrong build for 2.0.
 
 ## Install and load
 
@@ -18,20 +18,20 @@ INSTALL AND LOAD spatial;
 INSTALL AND LOAD h3 FROM community;
 ```
 
-`INSTALL AND LOAD` is new in 2.0. It skips the install when the extension is cached and skips the load when it is already loaded.
+In DuckDB 2.0, activate extensions with `INSTALL AND LOAD`. If the extension binary is already cached, DuckDB skips the download. If the extension is already loaded in the session, DuckDB skips loading.
 
 | Form | Effect |
 | --- | --- |
-| `INSTALL name` | Install from `core`. |
+| `INSTALL name` | Install from the official `core` repository. |
 | `INSTALL name FROM community` | Install from the community repository. |
-| `INSTALL name FROM core_nightly` | Nightly core build. |
-| `INSTALL name FROM 'https://...'` | A repository URL. |
-| `INSTALL name VERSION '<version>'` | Pin only a version the repository publishes for the 2.0 platform. The `extension_version` shown by `duckdb_extensions()` is a candidate, but an unverified tag or hash returns HTTP 404. Test in a scratch `extension_directories` path first. |
-| `FORCE INSTALL name` | Re-download and overwrite the cached copy. Without `FORCE`, an installed extension is a no-op, even if the version or repository changed. |
-| `INSTALL '/path/ext.duckdb_extension'` | Install a downloaded file. |
-| `LOAD name` | Load an installed extension. |
+| `INSTALL name FROM core_nightly` | Install from the nightly core build. |
+| `INSTALL name FROM 'https://...'` | Install directly from a custom repository URL. |
+| `INSTALL name VERSION '<version>'` | Pin a published version for the 2.0 platform. If the version tag or hash is unverified, DuckDB returns HTTP 404. Test version pins in an isolated scratch directory using `extension_directories` before production use. |
+| `FORCE INSTALL name` | Re-download and overwrite the cached binary. If omitted, `INSTALL` is a no-op when an extension already exists, even if the version or repository source changed. |
+| `INSTALL '/path/ext.duckdb_extension'` | Install from a downloaded binary file. |
+| `LOAD name` | Load an installed extension into the current session. |
 
-`LOAD` also installs a known extension when `autoinstall_known_extensions` is on, which is the default. Loading an extension loads its dependencies.
+When `autoinstall_known_extensions` is `true` (default), `LOAD name` installs a known extension before loading. Loading an extension automatically loads all dependencies.
 
 ## Update
 
@@ -40,11 +40,14 @@ UPDATE EXTENSIONS;
 UPDATE EXTENSIONS (spatial, httpfs);
 ```
 
-The result columns are `extension_name`, `repository`, `update_result`, `previous_version`, and `current_version`. The statement does not reload. Before depending on the new binary, restart the process.
+To update repository extensions to their latest builds, run `UPDATE EXTENSIONS`. Result columns are `extension_name`, `repository`, `update_result`, `previous_version`, and `current_version`.
 
-`UPDATE EXTENSIONS` only touches `REPOSITORY` installs. It re-downloads the repository's current build, so it replaces a pinned version. `CUSTOM_PATH` installs are skipped. Re-run `FORCE INSTALL ... VERSION` after an update to restore a pin.
+Because `UPDATE EXTENSIONS` writes new binaries to disk without reloading running in-memory modules, restart the process before depending on updated extensions.
 
-Statically linked extensions in official builds, including `autocomplete`, `core_functions`, `icu`, `json`, `parquet`, and `shell`, are not updated this way. They ship with the binary.
+Update rules:
+- Only `REPOSITORY` installs are updated. `UPDATE EXTENSIONS` skips `CUSTOM_PATH` installs.
+- If an extension has a pinned version, `UPDATE EXTENSIONS` overwrites it with the repository's latest build. To restore a pinned version after updating, run `FORCE INSTALL name VERSION '<version>'`.
+- Statically linked extensions (`autocomplete`, `core_functions`, `icu`, `json`, `parquet`, and `shell`) ship inside the DuckDB binary and cannot be updated with `UPDATE EXTENSIONS`.
 
 ## Inspect
 
@@ -54,11 +57,14 @@ FROM duckdb_extensions()
 ORDER BY extension_name;
 ```
 
-`install_mode` is `STATICALLY_LINKED`, `REPOSITORY`, `CUSTOM_PATH`, `NOT_INSTALLED`, or `UNKNOWN`. `installed_from` names the repository for `REPOSITORY` and the source path for `CUSTOM_PATH`. `signature_key_fingerprint` is populated for signed repository installs.
+Inspection columns in `duckdb_extensions()`:
+- `install_mode`: `STATICALLY_LINKED`, `REPOSITORY`, `CUSTOM_PATH`, `NOT_INSTALLED`, or `UNKNOWN`.
+- `installed_from`: repository name for `REPOSITORY` installs, or source file path for `CUSTOM_PATH` installs.
+- `signature_key_fingerprint`: SHA-256 public key fingerprint for signed repository builds.
 
 ## Repositories
 
-Work in progress. The syntax can change.
+Custom repository syntax is experimental (WIP) and subject to change.
 
 ```sql
 SET allow_extension_repositories = 'allowed';
@@ -74,38 +80,52 @@ FROM duckdb_extension_repositories();
 DROP EXTENSION REPOSITORY my_repo;
 ```
 
-`allow_extension_repositories` is `undecided` by default, and then you cannot add a repository. `allowed` permits adds. `forbidden` blocks adds and distrusts custom repositories already stored. While the process runs, the setting only moves toward stricter, or from `undecided` to `allowed`.
+Repository permission states in `allow_extension_repositories`:
+- `undecided` (default): blocks adding custom repositories.
+- `allowed`: permits repository registration.
+- `forbidden`: blocks registration and distrusts custom repositories already stored on disk.
+- Process rule: the setting only transitions toward stricter states (`undecided` to `allowed`, or any state to `forbidden`). It cannot relax during a running process.
 
-At `CREATE`, DuckDB fetches the repository public keys, pins them, and prints each SHA-256 fingerprint. Compare it with the fingerprint published out of band. `USING PUBLIC KEY '...'` pins a key without fetching it. Keys are 2048-bit RSA. The prefix can be a local path, `https`, or `s3`. Pinned repositories are stored globally under `~/.duckdb/extension_repositories/`, not in the database file, and survive restarts. `extension_repository_directory` is the trust anchor; while signature checking is on, it can only be set at startup.
-
-For a one-off mirror, `SET custom_extension_repository = 'https://mirror.example.org'` changes the default. The `core` and `community` repositories fall back to their backup mirrors automatically. A custom repository does not.
+Key management and storage:
+- When executing `CREATE EXTENSION REPOSITORY`, DuckDB fetches 2048-bit RSA public keys from the repository, pins them locally, and prints each SHA-256 fingerprint. Verify this fingerprint against the publisher's out-of-band release.
+- To pin keys offline without network requests, specify `USING PUBLIC KEY '...'`.
+- Repository prefix paths support local filesystem paths, `https`, or `s3`.
+- Repository definitions persist globally under `~/.duckdb/extension_repositories/` across restarts rather than inside database files.
+- `extension_repository_directory` defines the root trust anchor. While signature verification remains enabled, configure this setting at startup only.
+- For a one-off mirror, run `SET custom_extension_repository = 'https://mirror.example.org'`. While `core` and `community` fall back to backup mirrors automatically on connection failures, custom repositories do not provide automatic fallback.
 
 ## Platform and security
 
-Community extensions are third-party and are not maintained by DuckDB Labs. Starting in 2.0, they are not built for `osx_amd64`. Core extensions still are, and 2.1 drops `osx_amd64` entirely.
+Community extensions are third-party contributions not maintained by DuckDB Labs. DuckDB 2.0 does not build community extensions for `osx_amd64`. Core extensions still build for `osx_amd64` in 2.0, while 2.1 drops `osx_amd64` entirely.
 
-`allow_community_extensions` defaults to `true`. `allow_unsigned_extensions` defaults to `false`. `-unsigned` and `SET allow_unsigned_extensions = true` are for development only. A signed repository plus a pinned public key is the production path.
+Security settings default to `allow_community_extensions = true` and `allow_unsigned_extensions = false`. Never use `-unsigned` or `SET allow_unsigned_extensions = true` in production; use signed repositories with pinned RSA keys.
 
-Extensions live under `~/.duckdb/extensions/<duckdb-version>/<platform>/`. `extension_directories` is a list. DuckDB installs into the first entry and loads from all of them. The singular `extension_directory` is deprecated in 2.0 and warns.
+Binary directories:
+- Extensions reside under `~/.duckdb/extensions/<duckdb-version>/<platform>/`.
+- To configure multiple search paths, pass a list to `extension_directories`. DuckDB installs into the first directory and loads from all listed directories.
+- Avoid the singular `extension_directory` setting. DuckDB 2.0 deprecates it with a warning.
 
 ## Troubleshoot
 
-| Symptom | Check |
+| Symptom | Cause and fix |
 | --- | --- |
-| `HTTP 404` with a candidate list | The name is wrong, or the extension is in another repository. Try `FROM core`, `FROM community`, `FROM core_nightly`. |
-| `HTTP 451` | The CDN blocks the region. Use a mirror, a VPN, or a downloaded file. |
-| `Extension ... is not available` on a dev build | Nightly builds do not keep the stable extension set. Use a release binary. |
-| Version mismatch after a CLI upgrade | `FORCE INSTALL name` or `UPDATE EXTENSIONS`. |
-| A stale extension loads | Restart the process; `UPDATE EXTENSIONS` does not reload. |
-| A local build cannot load an extension | Platform or version mismatch. Check `duckdb_extensions().install_path`. |
+| `HTTP 404` with candidate list | Extension name misspelling or wrong repository. Check spelling or specify `FROM core`, `FROM community`, or `FROM core_nightly`. |
+| `HTTP 451` | CDN geographic access restriction. Use `custom_extension_repository` with a mirror, a VPN, or a downloaded binary. |
+| `Extension ... is not available` on dev build | Nightly development builds lack stable extensions. Switch to an official release binary. |
+| Version mismatch after CLI upgrade | Stale binary cached from previous version. Run `FORCE INSTALL name` or `UPDATE EXTENSIONS`. |
+| Stale extension loads after update | Binary updated on disk while process retains cached in-memory code. Restart the DuckDB process. |
+| Local build fails to load extension | Platform architecture or ABI mismatch. Inspect `install_path` via `duckdb_extensions()`. |
 
-When the repository is unreachable, download a file manually:
+If a repository is unreachable or air-gapped, install from a local file:
 
 ```sql
 FORCE INSTALL '/absolute/path/spatial.duckdb_extension';
 ```
 
-A `.duckdb_extension.gz` file is accepted and decompressed by `INSTALL`. Decompress it yourself only if the installer rejects the file or the file is not a DuckDB extension. `LOAD '/absolute/path/name.duckdb_extension'` skips the installed copy. The basename determines the extension name. There is no uninstall command; delete the `.duckdb_extension` file.
+File installation rules:
+- DuckDB accepts `.duckdb_extension.gz` and decompresses it automatically during `INSTALL`. Decompress manually only if the installer rejects the archive.
+- To load an extension directly without copying it into `extension_directories`, run `LOAD '/absolute/path/name.duckdb_extension'`. DuckDB derives the extension name from the filename basename.
+- To uninstall an extension, delete the `.duckdb_extension` file from disk. DuckDB provides no SQL uninstall command.
 
 ## Verify
 
@@ -116,14 +136,14 @@ FROM duckdb_extensions()
 WHERE extension_name = 'httpfs';
 ```
 
-`loaded` must be `true`. A failure names the repository URL and the platform, which is enough to tell a name error from a network error.
+Confirm `loaded` returns `true`. If `INSTALL AND LOAD` fails, inspect the error output: DuckDB returns the repository URL and target platform string, differentiating unknown extension names from network or SSL transport failures.
 
 ## References
 
-- [Installing extensions](https://duckdb.org/docs/2.0/extensions/installing_extensions.html) owns repositories, force install, and paths.
-- [LOAD and INSTALL](https://duckdb.org/docs/2.0/sql/statements/load_and_install.html) owns the statement forms.
-- [UPDATE EXTENSIONS](https://duckdb.org/docs/2.0/sql/statements/update_extensions.html) owns the result columns.
-- [Extension repositories](https://duckdb.org/docs/2.0/extensions/extension_repositories.html) owns the WIP repository SQL.
-- [Community extensions](https://duckdb.org/docs/2.0/extensions/community_extensions.html) owns the platform note.
-- [Securing extensions](https://duckdb.org/docs/2.0/operations_manual/securing_duckdb/securing_extensions.html) owns the unsigned-extension risk.
-- The `name` / `FROM community` / `UPDATE EXTENSIONS` flow comes from the `install-duckdb` skill in https://github.com/duckdb/duckdb-skills (MIT).
+- [Installing extensions](https://duckdb.org/docs/2.0/extensions/installing_extensions.html) details repository forms, force install, and directory paths.
+- [LOAD and INSTALL](https://duckdb.org/docs/2.0/sql/statements/load_and_install.html) documents statement syntax and options.
+- [UPDATE EXTENSIONS](https://duckdb.org/docs/2.0/sql/statements/update_extensions.html) documents extension updates and result columns.
+- [Extension repositories](https://duckdb.org/docs/2.0/extensions/extension_repositories.html) details experimental custom repositories and key pinning.
+- [Community extensions](https://duckdb.org/docs/2.0/extensions/community_extensions.html) covers community policies and platform architecture rules.
+- [Securing extensions](https://duckdb.org/docs/2.0/operations_manual/securing_duckdb/securing_extensions.html) specifies unsigned extension risks and trust anchors.
+- Extension installation workflows adapted from the `install-duckdb` skill in https://github.com/duckdb/duckdb-skills (MIT).

@@ -9,24 +9,26 @@ description: >
 
 # DuckDB 2.0 SQL
 
-Run statements with the `duckdb` skill. If a session file from `duckdb-session` exists, pass `-init` with it.
+Execute statements with `duckdb`. If a session file from `duckdb-session` exists, supply it via `-init`.
 
 ## Before a large query
 
-`DESCRIBE` returns the result columns without running the query. `SUMMARIZE` runs the query and computes statistics. A `LIMIT` without `ORDER BY` is not deterministic.
+To inspect result columns and types without executing a query, run `DESCRIBE SELECT ...`. To compute full column statistics across all rows, run `SUMMARIZE <table>`. When restricting query output, never run `LIMIT` without an explicit `ORDER BY`; unordered limits return nondeterministic rows.
 
 ## Lambdas
 
-The single-arrow form is disabled.
+DuckDB disables single-arrow syntax; write `lambda x: expr`. Higher-order list functions comprise `list_transform`, `list_filter`, and `list_reduce`:
 
 ```sql
 SELECT list_transform([1, 2, 3], lambda x: x + 1);
 SELECT list_transform([10, 20], lambda x, i: i);       -- [1, 2], 1-based index
 ```
 
-`lambda x, i:` gives the element and its 1-based index. A `NULL` element passes through `list_transform`; `list_filter` drops a row when the predicate is `NULL`. A subquery inside a lambda is a binder error. `SET lambda_syntax = 'enable_single_arrow'` restores the old form for the session, and 2.1 removes it.
-
-The higher-order families are `list_transform`, `list_filter`, and `list_reduce`. `COLUMNS(lambda c: ...)` filters columns by name; its optional second parameter is the 1-based column index.
+When tracking positions, use `lambda x, i:` for the element and its 1-based index.
+When encountering `NULL`, `list_transform` preserves `NULL` elements; `list_filter` drops elements whose predicate evaluates to `NULL`.
+Never write subqueries inside lambdas; subqueries raise a binder error.
+If legacy syntax is required to unblock queries, run `SET lambda_syntax = 'enable_single_arrow';` (removed in 2.1).
+To filter projection columns by name, write `COLUMNS(lambda c: ...)`; supply an optional second argument `lambda c, i:` for the 1-based column index.
 
 ## Division and decimals
 
@@ -42,12 +44,15 @@ The higher-order families are `list_transform`, `list_filter`, and `list_reduce`
 | `1 // 0`, `1 % 0` | error |
 
 ```sql
-SELECT TRY(1 // 0);  -- NULL for this expression
+SELECT TRY(1 // 0);  -- returns NULL
 ```
 
-`SET error_on_division_by_zero = false` returns `NULL` for integer division and modulo, but the setting is deprecated and warns. Prefer `TRY`.
+To catch division by zero on integer division or modulo without failing, wrap expressions in `TRY(...)`. Avoid `SET error_on_division_by_zero = false`; this setting is deprecated and emits warnings.
 
-`avg(DECIMAL)` and any `/` involving `DECIMAL` return `DOUBLE`. Use `sum(x)` for an exact sum, `decimal_average(x)` for an exact average, and `decimal_division(x, y)` for an exact quotient. Cast both `decimal_division` operands to `DECIMAL`; mixed `DECIMAL` and `INTEGER` arguments gave unstable results on 2.0.0.
+Because `avg(DECIMAL)` and standard `/` operations cast operands to `DOUBLE`, run dedicated decimal functions for exact arithmetic:
+- To sum without precision loss, use `sum(x)`.
+- To compute an exact mean, use `decimal_average(x)`.
+- To divide exact values, use `decimal_division(x, y)`. Cast both operands explicitly to `DECIMAL`; mixing `DECIMAL` and `INTEGER` arguments yielded unstable types on 2.0.0.
 
 ## Variables
 
@@ -58,7 +63,10 @@ SET VARIABLE "my var" = 9;
 SELECT $"my var";
 ```
 
-`$undefined` raises `Values were not provided ...`; `getvariable('undefined')` returns `NULL`. `$x` is also a prepared-statement parameter, and a named parameter defaults to a session variable of the same name.
+To define a session variable, run `SET VARIABLE name = value;`. Query variables using `$name` or `getvariable('name')`.
+For identifiers containing spaces or special characters, quote with double quotes: `SET VARIABLE "my var" = 9; SELECT $"my var";`.
+When querying an unassigned variable, `$undefined` raises `Values were not provided ...`, whereas `getvariable('undefined')` returns `NULL`.
+In prepared statements, parameter placeholders (`$x`) fall back to session variables of the same name when omitted from execution arguments.
 
 ## Nested schemas
 
@@ -69,30 +77,32 @@ CREATE TABLE sales.europe.orders (id INTEGER);
 SELECT * FROM sales.europe.orders;
 ```
 
-The parent must exist. `USE sales.europe`, `SET search_path = 'sales.europe'`, and `SET schema = 'sales.europe'` all fail because a nested schema cannot sit on the search path. Two-part names resolve from the top level, so `SELECT * FROM europe.orders` after `USE sales` fails. `SHOW TABLES` under `sales` does not list tables in `sales.europe`.
-
-`duckdb_schemas()` exposes `schema_name`, `parent_schema`, and `parent_schema_oid`. When the full path matters, join `duckdb_tables()` with `duckdb_schemas()` on `schema_oid = oid`.
-
-`DROP SCHEMA sales` fails while the subtree exists. `DROP SCHEMA sales CASCADE` removes it. `CREATE SCHEMA "sales.europe"` is one literal top-level name with a dot, and `USE "sales.europe"` works for that schema.
+When creating a nested schema, create the parent schema first (`CREATE SCHEMA sales; CREATE SCHEMA sales.europe;`).
+Nested schemas cannot sit on the search path: `USE sales.europe`, `SET search_path = 'sales.europe'`, and `SET schema = 'sales.europe'` all fail.
+Two-part references resolve from the catalog root, not relative to the current schema; running `SELECT * FROM europe.orders` after `USE sales` fails.
+Running `SHOW TABLES` inside `sales` lists only immediate tables, omitting `sales.europe.*`.
+To inspect full schema paths, join `duckdb_tables()` with `duckdb_schemas()` on `schema_oid = oid`, exposing `schema_name`, `parent_schema`, and `parent_schema_oid`.
+To drop a schema tree, specify `CASCADE`: `DROP SCHEMA sales CASCADE`. A bare `DROP SCHEMA sales` fails while child schemas exist.
+If a top-level schema name requires an embedded dot, quote the identifier: `CREATE SCHEMA "sales.europe"` creates a single top-level schema where `USE "sales.europe"` succeeds.
 
 ## Triggers
 
-A trigger body is exactly one data-modifying statement: `INSERT`, `UPDATE`, `DELETE`, or `MERGE`, optionally prefixed by `WITH`. A `SELECT`, DDL, `COPY`, `CALL`, or `PRAGMA` body is a parser error. A body that modifies its own table raises `Recursive trigger chains are not yet supported`.
+A trigger body must consist of exactly one data-modifying statement: `INSERT`, `UPDATE`, `DELETE`, or `MERGE`, optionally prefixed by `WITH`. Any `SELECT`, DDL, `COPY`, `CALL`, or `PRAGMA` body causes a parser error. A body modifying its own target table raises `Recursive trigger chains are not yet supported`.
 
-A table cannot mix `FOR EACH STATEMENT` and `FOR EACH ROW` triggers. A trigger on a temporary table can reference only temporary objects. `BEFORE ... FOR EACH ROW`, `AFTER UPDATE ... FOR EACH ROW`, row triggers with `REFERENCING`, `WHEN`, `INSTEAD OF`, and `CREATE TEMP TRIGGER` are not supported.
+On any single table, never mix `FOR EACH STATEMENT` and `FOR EACH ROW` triggers.
+When attaching triggers to temporary tables, reference only temporary objects; modifying main-catalog tables raises a catalog binder error.
+DuckDB does not support `BEFORE ... FOR EACH ROW`, `AFTER UPDATE ... FOR EACH ROW`, row triggers with `REFERENCING`, `WHEN`, `INSTEAD OF`, or `CREATE TEMP TRIGGER`.
 
-The support matrix, `RETURNING` rule, ordering, and inspection query are in [references/triggers.md](references/triggers.md).
+For the trigger support matrix, `RETURNING` rules, execution order, and metadata queries, read [references/triggers.md](references/triggers.md).
 
 ## DML proof
 
-For `UPDATE`, `DELETE`, or `MERGE`:
+When executing `UPDATE`, `DELETE`, or `MERGE`, follow this verification sequence:
 
-1. `BEGIN`.
-2. Count the rows the predicate matches. Deduplicate the source for `MERGE` and `UPDATE ... FROM`; a target row that matches two source rows is an error for `MERGE` and an arbitrary choice for `UPDATE ... FROM`.
-3. Run the statement. A matching row trigger can block `RETURNING`; the event rule is in [references/triggers.md](references/triggers.md). If it is blocked, compare a count before and after or use the CLI `.changes`.
-4. `COMMIT`, then count again. A zero-row update is a result, not a success.
-
-Do not use `RETURNING` as the only proof when a row trigger exists. The trigger's event decides whether it is available.
+1. `BEGIN` transaction.
+2. Count matching predicate rows. Before executing `MERGE` or `UPDATE ... FROM`, deduplicate the source table: a target row matching multiple source rows causes a runtime error in `MERGE` and updates from an arbitrary source row in `UPDATE ... FROM`.
+3. Run the DML statement. If a matching row trigger exists on the table, DuckDB blocks `RETURNING` (see event rules in [references/triggers.md](references/triggers.md)). When `RETURNING` is blocked, verify modifications via before-and-after row counts or CLI `.changes`.
+4. `COMMIT`, then re-count. Treat zero rows affected as an operation result, not proof of success. Never use `RETURNING` as the sole proof when row triggers exist.
 
 ## 2.0 syntax worth using
 
@@ -117,38 +127,38 @@ Do not use `RETURNING` as the only proof when a row trigger exists. The trigger'
 | `GROUPING_ID()` / `GROUPING()` | No arguments default to all `GROUP BY` columns |
 | `ALTER TABLE v RENAME TO v2` | Also renames a view |
 
-`COPY ... FROM` cannot be a CTE body. A `COPY ... TO` inside a CTE writes the file, but on 2.0.0 the outer query returns no rows. Treat it as a side effect and do not read a row count.
+`COPY ... FROM` cannot serve as a CTE body. A `COPY ... TO` inside a CTE executes the write, but on 2.0.0 the outer query returns zero rows. Treat CTE `COPY ... TO` purely as a side effect and do not expect a row count.
 
 ## Result traps
 
 | Trap | Behavior | Move |
 | --- | --- | --- |
-| `NULL` ordering | `ORDER BY x` puts `NULL`s last for both `ASC` and `DESC` | Write `NULLS FIRST` or `NULLS LAST` |
-| Integer versus string | `1 = '1.1'` is true; the string is cast and rounded | Cast explicitly and compare like types |
-| Decimal division | Any `/` involving `DECIMAL` returns `DOUBLE` | Use `decimal_division` |
-| Window frame | `sum(x) OVER (ORDER BY x)` shares a value across ties | Use `ROWS BETWEEN ...` for row-by-row |
-| `approx_count_distinct` | The error is data-dependent and can be several percent high or low | Use `count(DISTINCT x)` for user-visible numbers |
-| Empty-group aggregate | `sum`, `list`, and `string_agg` return `NULL`; `count` returns `0` | `coalesce(sum(x), 0)` |
-| `sum` overflow | `sum(DECIMAL(38,0))` and `sum(HUGEINT)` can overflow | Cast deliberately to `DECIMAL(38,s)` |
-| Timestamps | Casting `DATE` to `TIMESTAMPTZ` uses the session zone | Store instants as `TIMESTAMPTZ`; set the zone explicitly |
-| `CREATE OR REPLACE TABLE` | Drops constraints and indexes | Use `CREATE TABLE IF NOT EXISTS` plus `INSERT`/`MERGE` |
-| `PIVOT ... FILTER` | Accepted and silently ignored | Filter in a subquery before the pivot |
-| Simplified `UNPIVOT` | Drops `NULL` values | Use the standard form with `INCLUDE NULLS` |
-| `DISTINCT ON` without `ORDER BY` | Returns an arbitrary row | Add an `ORDER BY` starting with the `DISTINCT ON` keys |
-| `USING SAMPLE` | Written after `WHERE` but applied before it | Put the filter in a subquery before sampling |
-| `NEAREST ... AND <filter>` | The filter joins the distance key and returns a non-nearest row | Filter the right side in a CTE first |
-| `1 IN (0, NULL)` | Returns `NULL`; list `IN [0, NULL]` returns false | Use `IS NOT DISTINCT FROM` or `coalesce` |
-| `~`, `!~` | 2.0 matches a substring; 1.x matched the full string | Use `regexp_full_match` for the 1.x behavior; see `duckdb-migrate` |
+| `NULL` ordering | `ORDER BY x` puts `NULL`s last for both `ASC` and `DESC` | Write `NULLS FIRST` or `NULLS LAST` explicitly |
+| Integer versus string | `1 = '1.1'` evaluates to true; string is cast to integer and rounded | Cast explicitly and compare matching data types |
+| Decimal division | Any `/` involving `DECIMAL` returns `DOUBLE` | Use `decimal_division(x, y)` |
+| Window frame | `sum(x) OVER (ORDER BY x)` defaults to `RANGE ...` and ties share cumulative totals | Specify `ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW` for row-by-row accumulation |
+| `approx_count_distinct` | Error is data-dependent and can swing several percent | Use exact `count(DISTINCT x)` for user-facing metrics |
+| Empty-group aggregate | `sum`, `list`, and `string_agg` return `NULL`; `count` returns `0` | Wrap with `coalesce(sum(x), 0)` |
+| `sum` overflow | `sum(DECIMAL(38,0))` and `sum(HUGEINT)` can silently overflow | Cast explicitly to `DECIMAL(38,s)` |
+| Timestamps | Casting `DATE` to `TIMESTAMPTZ` evaluates in session time zone | Store instants as `TIMESTAMPTZ`; set time zone explicitly |
+| `CREATE OR REPLACE TABLE` | Drops existing constraints, primary keys, and indexes without warning | Use `CREATE TABLE IF NOT EXISTS` plus `INSERT` or `MERGE` |
+| `PIVOT ... FILTER` | Accepted by parser and silently ignored | Compute filtered aggregates in a CTE prior to pivoting |
+| Simplified `UNPIVOT` | Silently drops rows with `NULL` values | Use standard `UNPIVOT (... INCLUDE NULLS)` |
+| `DISTINCT ON` without `ORDER BY` | Selects an arbitrary row for each group | Add `ORDER BY` starting with the `DISTINCT ON` key columns |
+| `USING SAMPLE` | Written after `WHERE` but evaluated before the filter | Place filter in a subquery prior to sampling |
+| `NEAREST ... AND <filter>` | Filter joins the distance ranking key, returning non-nearest rows | Filter candidate rows in a CTE before joining |
+| `1 IN (0, NULL)` | Scalar returns `NULL`; list `1 IN [0, NULL]` returns false | Use `IS NOT DISTINCT FROM` or `coalesce` |
+| `~`, `!~` | 2.0 matches substrings; 1.x matched full string | Use `regexp_full_match` for 1.x semantics; see `duckdb-migrate` |
 
-Friendly-SQL examples and the edge cases behind these rows are in [references/friendly-sql.md](references/friendly-sql.md).
+For friendly-SQL patterns and edge-case examples behind these traps, read [references/friendly-sql.md](references/friendly-sql.md).
 
 ## Parser
 
-The PEG parser is the default and errors carry `LINE n:` and a caret. If a query that worked on 1.5 fails to parse, `SET enable_legacy_parser = true;` autoloads the extension and switches for the session. The legacy parser rejects the simplified `FROM ... NEAREST` form; an explicit `INNER JOIN ... NEAREST` still parses. It is a grammar fallback, not a semantic time machine. File an issue with the query, use the fallback only to unblock, and remove it from saved SQL.
+The PEG parser is active by default; syntax errors report `LINE n:` with an exact position caret. If a query that parsed in 1.5 fails under 2.0, run `SET enable_legacy_parser = true;` to autoload the extension and switch parsers for the session. Note that the legacy parser rejects simplified `FROM ... NEAREST` syntax; explicit `INNER JOIN ... NEAREST` still parses. Treat the legacy parser strictly as a temporary syntax fallback to unblock migrations, not a semantic time machine. File an upstream issue, unblock immediately, and remove the setting from production SQL.
 
 ## Before optimizing
 
-For plan reading, `EXPLAIN` versus `EXPLAIN ANALYZE`, profiling, and spill diagnosis, use `duckdb-profile`. `EXPLAIN (SQL)` stays here because it is a SQL rendering feature, not a plan.
+When reading execution plans, comparing `EXPLAIN` against `EXPLAIN ANALYZE`, profiling operator bottlenecks, or diagnosing memory spills, hand off to `duckdb-profile`. `EXPLAIN (SQL)` belongs here because it decompiles optimized query representations back into executable SQL rather than reporting runtime profile metrics.
 
 ## Verify
 
@@ -162,12 +172,12 @@ Expect `[2, 3, 4]`, `NULL`, and `2.500000`.
 
 ## References
 
-- [Friendly SQL](https://duckdb.org/docs/2.0/sql/dialect/friendly_sql.html) owns the clause list.
-- [Lambda functions](https://duckdb.org/docs/2.0/sql/functions/lambda.html) owns the syntax and function families.
-- [CREATE TRIGGER](https://duckdb.org/docs/2.0/sql/statements/create_trigger.html) owns the trigger contract. The support matrix and `RETURNING` rule are in [references/triggers.md](references/triggers.md).
-- [Nested schemas](https://duckdb.org/docs/2.0/sql/statements/create_schema.html) owns the path rules.
+- [Friendly SQL](https://duckdb.org/docs/2.0/sql/dialect/friendly_sql.html) owns clause syntax. Detailed examples are in [references/friendly-sql.md](references/friendly-sql.md).
+- [Lambda functions](https://duckdb.org/docs/2.0/sql/functions/lambda.html) owns lambda syntax and function families.
+- [CREATE TRIGGER](https://duckdb.org/docs/2.0/sql/statements/create_trigger.html) owns trigger specifications. Support matrices and `RETURNING` rules are in [references/triggers.md](references/triggers.md).
+- [Nested schemas](https://duckdb.org/docs/2.0/sql/statements/create_schema.html) owns schema path resolution.
 - [FROM and JOIN](https://duckdb.org/docs/2.0/sql/query_syntax/from.html) owns `NEAREST`, `ASOF`, and `POSITIONAL`.
-- [WITH](https://duckdb.org/docs/2.0/sql/query_syntax/with.html) owns data-modifying CTEs.
-- [MERGE INTO](https://duckdb.org/docs/2.0/sql/statements/merge_into.html) and [UPDATE](https://duckdb.org/docs/2.0/sql/statements/update.html) own the multi-match rules.
-- [PEG parser](https://duckdb.org/docs/2.0/sql/peg_parser.html) and [legacy parser](https://duckdb.org/docs/2.0/core_extensions/legacy_parser.html) own the fallback.
-- The friendly-SQL list started from the `query` skill in https://github.com/duckdb/duckdb-skills (MIT). The lambda, trigger, nested-schema, division, and multi-match rules were probed on DuckDB 2.0.0.
+- [WITH](https://duckdb.org/docs/2.0/sql/query_syntax/with.html) owns data-modifying CTE specifications.
+- [MERGE INTO](https://duckdb.org/docs/2.0/sql/statements/merge_into.html) and [UPDATE](https://duckdb.org/docs/2.0/sql/statements/update.html) own multi-match rules.
+- [PEG parser](https://duckdb.org/docs/2.0/sql/peg_parser.html) and [legacy parser](https://duckdb.org/docs/2.0/core_extensions/legacy_parser.html) own parser fallback settings.
+- Friendly-SQL origins trace to the `query` skill in https://github.com/duckdb/duckdb-skills (MIT). Lambda, trigger, schema, division, and multi-match behaviors were verified on DuckDB 2.0.0.
