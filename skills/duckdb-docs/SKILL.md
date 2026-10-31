@@ -28,17 +28,19 @@ Store the database at `$HOME/.duckdb/docs/duckdb-docs.duckdb` or `ducklake-docs.
 
 ```bash
 mkdir -p "$HOME/.duckdb/docs"
-```
-
-```sql
+cache="$HOME/.duckdb/docs/duckdb-docs.duckdb"  # ducklake-docs.duckdb for DuckLake
+tmp="$cache.tmp"
+duckdb -c "
 INSTALL httpfs; LOAD httpfs;
 INSTALL fts; LOAD fts;
 ATTACH 'https://duckdb.org/data/docs-search.duckdb' AS remote (READ_ONLY);
-ATTACH '/tmp/docs-refresh.tmp' AS tmp;
+ATTACH '$tmp' AS tmp;
 COPY FROM DATABASE remote TO tmp;
+"
+mv "$tmp" "$cache"
 ```
 
-Move the temp file over the cache path (`mv /tmp/docs-refresh.tmp "$HOME/.duckdb/docs/duckdb-docs.duckdb"`).
+Use a temp path unique to this cache. Never refresh both indexes into the same file.
 
 Always open the cache with `-readonly` and as the main database. Opening as an attached catalog prevents `fts_main_docs_chunks.match_bm25` from resolving unqualified internal schema references. Opening in read-write mode locks out concurrent sessions.
 
@@ -82,7 +84,7 @@ Follow this response protocol:
 ### Fallback protocol
 
 When normal cache query execution is obstructed:
-- If the local cache is missing and network connectivity is active, query the hosted index directly with `ATTACH 'https://duckdb.org/data/docs-search.duckdb' AS remote (READ_ONLY); USE remote;`.
+- If the local cache is missing and network connectivity is active, query the hosted index directly with `ATTACH 'https://duckdb.org/data/docs-search.duckdb' AS remote (READ_ONLY); USE remote;`. For a DuckLake question, use `https://ducklake.select/data/docs-search.duckdb` instead.
 - If the network is unreachable, read a stale local cache in `-readonly` mode and issue a staleness warning.
 - If neither cache nor network is available, report the failure and direct the user to `https://duckdb.org/docs/2.0/` or `https://ducklake.select/docs/stable/`. Refuse to invent signatures from memory.
 

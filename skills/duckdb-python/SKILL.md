@@ -2,10 +2,10 @@
 name: duckdb-python
 description: >
   Write, optimize, or migrate Python applications using DuckDB 2.0.
-  Covers connections, cursor threading, lazy relations, DB-API streaming
-  results, Arrow and Polars zero-copy interchange, batch appenders, and
-  2.0 API migration traps. Use when writing or migrating Python code that
-  imports duckdb.
+  Covers installation, connections, transactions, cursor threading, lazy
+  relations, DB-API streaming results, Arrow and Polars zero-copy
+  interchange, batch appenders, and 2.0 API migration traps. Use when
+  writing or migrating Python code that imports duckdb.
 ---
 
 # Python client on DuckDB 2.0
@@ -131,7 +131,7 @@ with con.appender("people") as appender:
 The appender supports operations via `action="insert"`, `"upsert"`, `"update"`, and `"delete"`:
 - When specifying `action="update"` or `"delete"`, pass `key=["col1", ...]`, a list of key column names identifying target rows.
 - When specifying `action="upsert"`, DuckDB matches against the target table's primary key or unique constraint. The table must define exactly one conflict target; passing `key` with upsert is rejected.
-- To load transformed stream batches, use `con.query_appender(statement, columns, source=...)`. Here `columns` is a dictionary mapping column names to data types; `statement` reads from the virtual table `appender_data`, and optional `source` queries read from `appender_buffer`.
+- To load transformed stream batches, use `con.query_appender(statement, columns, source=...)`. Here `columns` is a list and `source` takes the dict of column names to data types; `statement` reads from the virtual table `appender_data`, and optional `source` queries read from `appender_buffer`.
 - Manage appender lifecycles with context managers (`with con.appender(...)`). A `with` block automatically calls `flush()` upon clean exit and calls `clear()` to discard uncommitted rows if an exception occurs. Outside a context manager, explicitly call `appender.flush()` to commit rows, or `appender.clear()` to discard buffered rows. The appender has no `close()` method.
 - Never share an appender instance across threads. Ensure open streaming `con.execute()` results are finished before calling `flush()`.
 

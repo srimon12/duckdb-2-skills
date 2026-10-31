@@ -91,7 +91,8 @@ SELECT * FROM read_json('places.geojson', geojson := true);
 To export results, choose native GeoJSON or GDAL drivers:
 
 ```sql
-COPY (SELECT * FROM result) TO 'out.geojson' (FORMAT GEOJSON); -- or FORMAT GEOJSONL
+COPY (SELECT * FROM result) TO 'out.geojson' (FORMAT GEOJSON);
+COPY (SELECT * FROM result) TO 'out.geojsonl' (FORMAT GEOJSONL);
 COPY (SELECT * FROM result) TO 'out.gpkg' WITH (FORMAT GDAL, DRIVER 'GPKG', SRS 'EPSG:4326');
 ```
 
@@ -167,7 +168,7 @@ SELECT ST_AsGeoJSON(ST_Point(-73.985, 40.748)) AS point,
 "
 ```
 
-The output point must be a GeoJSON `Point` with coordinates `[-73.985, 40.748]`. The spheroidal distance must return a positive value near 1,813 meters.
+The output point must be a GeoJSON `Point` with coordinates `[-73.985, 40.748]`. The spheroidal distance must return a positive value near 1,838 meters.
 
 ## References
 

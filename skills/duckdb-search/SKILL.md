@@ -21,7 +21,7 @@ Before writing SQL, choose among four search paths. Full-text ranks by keywords,
 | Which vectors are closest to this embedding? | HNSW | `CREATE INDEX ... USING HNSW` |
 | Combine keywords and embeddings | Two indexes | Fuse the ranks in SQL |
 
-For one-off queries, small tables, or narrow pre-filters, run a sequential scan without an index.
+For one-off queries, small tables, or narrow pre-filters, a sequential scan is usually faster than an index.
 
 ## Contract
 
@@ -122,7 +122,7 @@ SELECT id FROM items ORDER BY array_cosine_distance(emb, [1, 0, 0]::FLOAT[3]) LI
 
 When querying, pass the query vector as a literal `FLOAT[N]`. Any `::DOUBLE[N]` cast, scalar subquery, `DESC` sort, missing `LIMIT`, tie-breaker like `ORDER BY dist, id`, or dynamic `LIMIT (SELECT k)` silently triggers a full sequential scan. Prepared `$1` vectors and ordinal `ORDER BY 1` use HNSW but execute a full index scan without top-k pushdown. Sort by `array_cosine_distance` or `1.0 - array_cosine_similarity`; bare `array_cosine_similarity` is never accelerated.
 
-When filtering, retain the default `hnsw_prefilter = true`. Setting it to `false` on a selective filter can return zero rows. To improve recall, raise `hnsw_ef_search` (default 64). On DuckDB 2.0.0, never use `OFFSET`; the index scan repeats the first page. Query `LIMIT (k + offset)` and slice results in the client.
+When filtering, retain the default `hnsw_prefilter = true`. Setting it to `false` on a selective filter can return zero rows. Prefiltering costs a full scan of the filter columns, so a very selective filter over a large table is not free. To improve recall, raise `hnsw_ef_search` (default 64). On DuckDB 2.0.0, never use `OFFSET`; the index scan repeats the first page. Query `LIMIT (k + offset)` and slice results in the client.
 
 Because HNSW allocations occur outside the buffer manager, index memory does not count toward `memory_limit`. Budget 0.6 to 3 KB per vector. Checkpoints serialize the entire index, and the first table access deserializes it. Because deletes only mark entries and `hnsw_compact_index` does not reclaim capacity in 2.0.0, rebuild the index after large deletes. See [references/vss.md](references/vss.md).
 

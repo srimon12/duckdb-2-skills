@@ -45,6 +45,8 @@ On first invocation, dbt v2 downloads a bundled ADBC driver. At dbt 2.0.9, this 
 IO Error: Trying to read a database file with version number 999, but we can only read versions between 64 and 68.
 ```
 
+The vendor docs say the bundled driver cannot load extensions. At dbt 2.0.9 it loaded `httpfs`, `spatial`, `fts`, `vss`, and `ducklake` in a probe. Do not rely on that; install the system driver for 2.0-only features.
+
 When reading a 2.0 file, DuckDB 1.5.5 prints raw header number `999`; 1.5.6 prints `69`. Do not interpret `999` as the storage version. When `dbc install duckdb` installs the system driver, dbt returns `v2.0.0`, opens storage 69, and reports `tags['storage_version']` as `v2.0.0+`. Always verify the active driver with the version query. Running `pip install duckdb==2.0.0` does not change the driver dbt uses. `STORAGE_VERSION` is an `ATTACH` option, not a dbt profile key; setting `storage_compatibility_version` in a dbt profile cannot create a pre-2.0 file.
 
 ## Profile

@@ -86,7 +86,7 @@ COPY (FROM 'input.csv') TO 'output.parquet' (FORMAT parquet);
 When writing partition directories, tune output behavior with these options:
 - `PARTITION_BY (col)` splits writes into hive-partitioned directory trees for Parquet, CSV, or JSON.
 - `OVERWRITE` deletes the target directory before writing a full rebuild.
-- `OVERWRITE_OR_IGNORE` overwrites only modified partitions, keeping untouched partitions.
+- `OVERWRITE_OR_IGNORE` overwrites matching paths and leaves stale partitions from earlier runs. Use it only when the partition set is unchanged.
 - `APPEND` adds files into existing partition directories without deleting prior files.
 - `FILENAME_PATTERN 'data_{i}'` sets the output filename template.
 - `PER_THREAD_OUTPUT true` writes one file per thread concurrently.

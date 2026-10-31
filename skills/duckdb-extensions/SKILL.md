@@ -84,7 +84,7 @@ Repository permission states in `allow_extension_repositories`:
 - `undecided` (default): blocks adding custom repositories.
 - `allowed`: permits repository registration.
 - `forbidden`: blocks registration and distrusts custom repositories already stored on disk.
-- Process rule: the setting only transitions toward stricter states (`undecided` to `allowed`, or any state to `forbidden`). It cannot relax during a running process.
+- Process rule: while running, the setting only moves `undecided` to `allowed` or `forbidden`, or `allowed` to `forbidden`. It cannot move back.
 
 Key management and storage:
 - When executing `CREATE EXTENSION REPOSITORY`, DuckDB fetches 2048-bit RSA public keys from the repository, pins them locally, and prints each SHA-256 fingerprint. Verify this fingerprint against the publisher's out-of-band release.

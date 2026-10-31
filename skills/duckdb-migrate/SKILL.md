@@ -92,13 +92,13 @@ COPY FROM DATABASE old TO new;
 For cross-version migration across different environments, use `EXPORT` and `IMPORT`:
 
 ```bash
-# Export using source binary (CSV default; add '(FORMAT parquet)' for Parquet)
+# Export using source binary (this example writes Parquet; omit FORMAT for CSV)
 duckdb old.db -c "EXPORT DATABASE 'export_dir' (FORMAT parquet);"
-# Import using target binary into an empty directory target
+# Import using target binary
 duckdb new.db -c "IMPORT DATABASE 'export_dir';"
 ```
 
-`IMPORT DATABASE` aborts if any same-named object or schema already exists in the target database.
+The export directory must be empty. `IMPORT DATABASE` aborts if any same-named object or schema already exists in the target database.
 
 To flush the write-ahead log (WAL) before copying, issue `CHECKPOINT` or `FORCE CHECKPOINT`. Clean exits remove the WAL automatically. To configure detachment checkpoint behavior, set `checkpoint_on_detach` to `ENABLED`, `DISABLED`, or `DEFAULT` (not boolean).
 
