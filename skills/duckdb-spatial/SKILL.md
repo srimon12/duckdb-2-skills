@@ -1,69 +1,66 @@
 ---
 name: duckdb-spatial
 description: >
-  Answer location questions with the DuckDB 2.0 spatial extension. Covers
-  distance, containment, GeoJSON, Shapefile, GeoPackage, Overture Maps, H3,
-  and R-tree indexes. Use when the user mentions maps, lat/lng, a bounding
-  box, a geospatial file, or Overture.
+  Execute spatial queries using DuckDB 2.0 spatial and H3 extensions. Covers
+  distance metrics, containment, GeoJSON, Shapefile, GeoPackage, Overture Maps,
+  and R-tree index scans. Use when the user mentions maps, lat/lng, bounding
+  boxes, geospatial files, or Overture.
 ---
 
 # Spatial queries
 
+Before calling spatial functions, install and load `spatial`, then configure coordinate order:
+
 ```sql
-INSTALL spatial;
-LOAD spatial;
+INSTALL spatial; LOAD spatial;
 SET geometry_always_xy = true;
 ```
 
-The extension is not autoloadable. `geometry_always_xy` starts unset. `ST_Transform`, `ST_Distance_Sphere`, `ST_Distance_Spheroid`, `ST_Area_Spheroid`, and `ST_Length_Spheroid` raise an `Invalid Configuration Error` while it is unset. Set `true` for longitude, latitude. `false` is accepted, but CRS-sensitive functions then read EPSG:4326 as latitude, longitude and can return wrong numbers. Read the value from `duckdb_settings()`; `current_setting('geometry_always_xy')` fails even after `LOAD spatial`.
+DuckDB does not autoload `spatial`. The session setting `geometry_always_xy` starts unset. While unset, CRS-sensitive functions (`ST_Transform`, `ST_Distance_Sphere`, `ST_Distance_Spheroid`, `ST_Area_Spheroid`, `ST_Length_Spheroid`) throw an `Invalid Configuration Error`. Always set `geometry_always_xy = true` to enforce `(longitude, latitude)` coordinate order. If set to `false`, CRS-sensitive operations interpret EPSG:4326 as `(latitude, longitude)`, causing silent calculation errors.
+To inspect this setting, query `duckdb_settings()`; calling `current_setting('geometry_always_xy')` throws an error even after `LOAD spatial`.
 
 ## Measure
 
-Build a point as `ST_Point(longitude, latitude)`. Longitude is first. Pick the function by accuracy and cost:
+Construct points as `ST_Point(longitude, latitude)`. Longitude always precedes latitude. Select measurement functions by accuracy and cost:
 
-| Need | Function | Unit and cost |
+| Goal | Function | Units and cost |
 | --- | --- | --- |
-| Same-CRS comparison | `ST_Distance` | CRS units, degrees on EPSG:4326, cheapest |
-| Fast meters on lon/lat | `ST_Distance_Sphere` | meters, spherical approximation, usually cheaper |
-| Exact meters on lon/lat | `ST_Distance_Spheroid` | meters, ellipsoid, usually slowest |
-| Radius filter | `ST_DWithin` plus bbox | uses the R-tree |
+| Same-CRS comparison | `ST_Distance` | CRS units (degrees on EPSG:4326); lowest cost |
+| Fast meters on lon/lat | `ST_Distance_Sphere` | Meters (spherical approximation); low cost |
+| Exact meters on lon/lat | `ST_Distance_Spheroid` | Meters (ellipsoidal calculation); highest cost |
+| Radial containment | `ST_DWithin` plus bbox | Boolean; leverages R-tree index |
 
-All sphere and spheroid measures on lon/lat use the session setting; only `ST_Transform` has a per-call `always_xy` argument. `ST_DWithin(geom, point, d)` uses the R-tree when the point and distance are constant at planning time; `ST_Distance(geom, point) < d` does not.
+All spherical and spheroidal calculations rely on session `geometry_always_xy`; only `ST_Transform` accepts a per-call `always_xy` parameter.
+For radius searches, write `ST_DWithin(geom, point, d)`. When `point` and `d` are constant at planning time, `ST_DWithin` invokes the R-tree index; `ST_Distance(geom, point) < d` forces a full sequential scan.
+
+When computing ellipsoidal distance between coordinates, cast points to `POINT_2D`:
 
 ```sql
 SELECT ST_Distance_Spheroid(
-    ST_Point(ST_X(geometry), ST_Y(geometry))::POINT_2D,
+    ST_Point(ST_X(geom), ST_Y(geom))::POINT_2D,
     ST_Point(-73.985, 40.748)::POINT_2D
 ) AS meters;
 ```
 
-`ST_Area_Spheroid` takes `GEOMETRY` or `POLYGON_2D`; `ST_Length_Spheroid` takes `GEOMETRY` or `LINESTRING_2D`. Both accept a `POINT_2D` cast but return `0.0`, so pass a polygon or line for a real measure. They return square meters and meters.
-
-For a CRS change, set `geometry_always_xy` or pass the optional `always_xy` argument. A CRS-typed geometry cannot cast straight to `POINT_2D`; strip the CRS with `::GEOMETRY::POINT_2D` or rebuild the point:
-
-```sql
-SELECT ST_AsText(ST_Transform(ST_Point(-73.985, 40.748), 'EPSG:4326', 'EPSG:3857'));
-```
+For geodesic area and length, pass polygons or linestrings: `ST_Area_Spheroid` accepts `GEOMETRY` or `POLYGON_2D` (square meters); `ST_Length_Spheroid` accepts `GEOMETRY` or `LINESTRING_2D` (meters). Both accept `POINT_2D` casts but return `0.0`.
+To project coordinates between CRS systems, run `ST_Transform(geom, 'EPSG:4326', 'EPSG:3857')`. Direct casts from CRS-typed geometry to `POINT_2D` fail; strip the CRS via `::GEOMETRY::POINT_2D` or rebuild with `ST_Point(ST_X(geom), ST_Y(geom))`.
 
 ## Filter before geometry
 
-`bbox` is a per-row `STRUCT(xmin, xmax, ymin, ymax)`, not a partition column. For point themes the min corner equals the point, so this is exact:
+In Parquet and lake tables, `bbox` is a per-row `STRUCT(xmin, xmax, ymin, ymax)`, not a partition column. Always filter `bbox` before evaluating expensive geometry functions:
 
 ```sql
-WHERE bbox.xmin BETWEEN -74.01 AND -73.96
-  AND bbox.ymin BETWEEN 40.72 AND 40.77
-```
+-- Points: min corner equals point coordinates
+WHERE bbox.xmin BETWEEN -74.01 AND -73.96 AND bbox.ymin BETWEEN 40.72 AND 40.77
 
-For lines and polygons, min-corner containment drops a feature that starts outside the query but intersects it. Use full overlap on both axes, then `ST_Intersects`:
-
-```sql
+-- Lines and polygons: require two-axis overlap before ST_Intersects
 WHERE bbox.xmax >= -74.01 AND bbox.xmin <= -73.96
   AND bbox.ymax >= 40.72  AND bbox.ymin <= 40.77
 ```
 
-Do not filter on `xmax` or `ymax` alone. A max predicate drops a feature that ends outside the query.
+For lines and polygons, min-corner filters drop features originating outside the query box that cross into it. Never filter on `xmax` or `ymax` alone; a max predicate drops features extending beyond the query window.
 
-For a local table with a `GEOMETRY` column, an R-tree index turns the topology predicate into an index scan:
+To accelerate topological queries on local `GEOMETRY` tables, create an R-tree index:
 
 ```sql
 CREATE INDEX my_idx ON places USING RTREE (geom);
@@ -71,59 +68,48 @@ EXPLAIN SELECT count(*) FROM places
 WHERE ST_Within(geom, ST_MakeEnvelope(-74.01, 40.72, -73.96, 40.77));
 ```
 
-The plan shows `Rtree Index Scan`. The index works for `ST_Equals`, `ST_Intersects`, `ST_Touches`, `ST_Crosses`, `ST_Within`, `ST_Contains`, `ST_Overlaps`, `ST_Covers`, `ST_CoveredBy`, `ST_ContainsProperly`, and `ST_DWithin`, when one argument is constant at planning time. After the table is loaded, build the index; bulk loading is faster than incremental inserts.
+The output plan confirms execution via `Rtree Index Scan`. R-tree indexes support `ST_Equals`, `ST_Intersects`, `ST_Touches`, `ST_Crosses`, `ST_Within`, `ST_Contains`, `ST_Overlaps`, `ST_Covers`, `ST_CoveredBy`, `ST_ContainsProperly`, and `ST_DWithin` whenever one argument is constant at planning time. Always populate tables before creating indexes; bulk loading into unindexed tables is significantly faster.
 
 ## Spatial joins
 
-For a join, build the R-tree on the filtered side, add bbox-overlap predicates on both inputs, then join on `ST_Intersects` or `ST_Within`. The planner uses deferred bounds for the other side. For a selective bbox, `EXPLAIN` must show `Rtree Index Scan` or `Spatial Join`. A `Seq Scan` on both sides means the index or the bbox predicate is missing, or the bbox is too broad to be selective.
+When joining spatial tables:
+1. Build an R-tree index on the smaller or pre-filtered table.
+2. Apply bounding-box overlap predicates on both inputs.
+3. Join using `ST_Intersects` or `ST_Within`. The planner evaluates deferred bounds for the unindexed input.
+
+Verify execution plans with `EXPLAIN`. A selective query must show `Rtree Index Scan` or `Spatial Join`. A `Seq Scan` on both sides indicates a missing index, omitted bounding-box predicates, or an unselective filter window.
 
 ## Read and write
 
-`ST_Read` reads GeoJSON, Shapefile, GeoPackage, FlatGeobuf, and GPX after `LOAD spatial`.
+To ingest spatial data, query `ST_Read` (drivers listed in `ST_Drivers()`). For large GeoJSON files, use `read_json` with `geojson := true` for higher throughput:
 
 ```sql
-SELECT * FROM ST_Read('file.geojson') LIMIT 20;
-SELECT * FROM ST_Read('file.gpkg') LIMIT 20;
-SELECT * FROM ST_Drivers();
+SELECT * FROM ST_Read('places.geojson') LIMIT 20;
+SELECT * FROM read_json('places.geojson', geojson := true);
 ```
 
-GeoJSON can also go through the JSON reader, which is faster for large files:
-
-```sql
-SELECT * FROM read_json('features.geojson', geojson := true);
-```
-
-Export one result. Native GeoJSON is the simplest path in 2.0:
+To export results, choose native GeoJSON or GDAL drivers:
 
 ```sql
 COPY (SELECT * FROM result) TO 'out.geojson' (FORMAT GEOJSON);
 COPY (SELECT * FROM result) TO 'out.geojsonl' (FORMAT GEOJSONL);
+COPY (SELECT * FROM result) TO 'out.gpkg' WITH (FORMAT GDAL, DRIVER 'GPKG', SRS 'EPSG:4326');
 ```
 
-For GeoPackage, FlatGeobuf, or Shapefile, use GDAL:
-
-```sql
-COPY (SELECT * FROM result) TO 'out.gpkg'
-WITH (FORMAT GDAL, DRIVER 'GPKG', SRS 'EPSG:4326');
-```
-
-There is no `ST_Write` function in the 2.0 spatial extension. `COPY ... FORMAT GDAL` writes a table; native `FORMAT GEOJSON` writes a FeatureCollection. Only vector drivers are supported; rasters are not.
+DuckDB 2.0 provides no `ST_Write` function. Use `COPY ... FORMAT GDAL` for tables and native `FORMAT GEOJSON` for FeatureCollections. The spatial extension supports vector drivers only; raster formats are unsupported.
 
 ## Overture, when the user has no file
 
-Overture publishes GeoParquet on a public bucket and deletes old releases. Resolve the release from the catalog on every run. Do not hardcode a release id.
+Overture publishes GeoParquet on a public S3 bucket and prunes older releases. Always resolve the active release dynamically from the STAC catalog; never hardcode a release identifier:
 
 ```sql
-LOAD httpfs;
-LOAD spatial;
+LOAD httpfs; LOAD spatial;
 SET geometry_always_xy = true;
 CREATE SECRET (TYPE s3, PROVIDER config, REGION 'us-west-2');
-SET VARIABLE latest = (
-    SELECT latest FROM 'https://stac.overturemaps.org/catalog.json'
-);
+SET VARIABLE latest = (SELECT latest FROM 'https://stac.overturemaps.org/catalog.json');
 ```
 
-Places near a point:
+To query places within a coordinate bounding box:
 
 ```sql
 FROM read_parquet(
@@ -137,9 +123,9 @@ WHERE bbox.xmin BETWEEN -74.01 AND -73.96
 LIMIT 20;
 ```
 
-`taxonomy` is `STRUCT(primary VARCHAR, hierarchy VARCHAR[], alternates VARCHAR[])`. `basic_category` is a separate flattened `VARCHAR`. There is no `categories` column. If `DESCRIBE` does not show `taxonomy`, stop and check the Overture schema page instead of guessing another name. Overture geometry is typed `GEOMETRY('OGC:CRS84')`; rebuild a `POINT_2D` with `ST_Point(ST_X(geometry), ST_Y(geometry))` rather than casting it directly.
+In places schemas, `taxonomy` is `STRUCT(primary VARCHAR, hierarchy VARCHAR[], alternates VARCHAR[])`, and `basic_category` is a flattened `VARCHAR`. There is no `categories` column. Overture geometry is typed `GEOMETRY('OGC:CRS84')`. To convert it into a `POINT_2D`, rebuild the point with `ST_Point(ST_X(geometry), ST_Y(geometry))` rather than casting directly.
 
-Other themes use the same release prefix and `theme=<name>/type=<type>/*`:
+Access other themes with path pattern `theme=<name>/type=<type>/*`:
 
 | Theme | Type |
 | --- | --- |
@@ -150,26 +136,25 @@ Other themes use the same release prefix and `theme=<name>/type=<type>/*`:
 | `base` | `land`, `water`, `infrastructure` |
 | `addresses` | `address` |
 
-Before depending on a column, run `DESCRIBE SELECT ... LIMIT 0`. The full schema notes and three worked queries are in [references/overture.md](references/overture.md).
-
-The keyless S3 secret only sets the region. Do not put keys in the URL. Overture data has its own licenses per theme; check the Overture attribution page before publishing a derived dataset.
+Before filtering unverified columns, run `DESCRIBE SELECT ... LIMIT 0`. Schema structures and worked queries are documented in [references/overture.md](references/overture.md). The keyless S3 secret sets the region only; do not pass AWS credentials. Verify per-theme data licenses before publishing derived datasets.
 
 ## H3
 
-H3 is a community extension. Install rules are in `duckdb-extensions`.
+For hexagonal hierarchical indexing, install H3 from the community repository (see `duckdb-extensions`):
 
 ```sql
-INSTALL h3 FROM community;
-LOAD h3;
+INSTALL h3 FROM community; LOAD h3;
 
 SELECT h3_latlng_to_cell(40.748, -73.985, 9) AS cell,
        h3_get_resolution(h3_latlng_to_cell(40.748, -73.985, 9)) AS res,
        h3_cell_area(h3_latlng_to_cell(40.748, -73.985, 9), 'km^2') AS area;
 ```
 
-`h3_latlng_to_cell(latitude, longitude, resolution)` is latitude first. Useful functions: `h3_cell_to_latlng` (returns `[lat, lng]`), `h3_cell_to_boundary_wkt`, `h3_get_resolution`, `h3_cell_area`, `h3_grid_disk`, `h3_cell_to_parent`, `h3_cell_to_children`. Resolutions run 0 to 15; 9 is roughly a neighborhood, and 16 returns `NULL`. Area units are `'m^2'` and `'km^2'`; `'m2'` and `'km2'` are rejected. `h3_grid_disk(cell, 1)` returns seven cells, including the center.
+Unlike `ST_Point`, `h3_latlng_to_cell(latitude, longitude, resolution)` requires latitude first. Index resolutions span 0 to 15; resolution 9 covers neighborhood scales, and resolution 16 returns `NULL`. For `h3_cell_area`, supply `'m^2'` or `'km^2'`; `'m2'` and `'km2'` are rejected. Core functions include `h3_cell_to_latlng` (returns `[lat, lng]`), `h3_cell_to_boundary_wkt`, `h3_get_resolution`, `h3_cell_to_parent`, `h3_cell_to_children`, and `h3_grid_disk` (`h3_grid_disk(cell, 1)` returns 7 cells including the center).
 
 ## Verify
+
+Run a standalone verification query to confirm geometry generation and spherical measurement:
 
 ```bash
 duckdb -no-agent -c "
@@ -183,7 +168,7 @@ SELECT ST_AsGeoJSON(ST_Point(-73.985, 40.748)) AS point,
 "
 ```
 
-The point must be a GeoJSON `Point` with `[-73.985, 40.748]`. The distance must be a positive number near 1,800 meters.
+The output point must be a GeoJSON `Point` with coordinates `[-73.985, 40.748]`. The spheroidal distance must return a positive value near 1,838 meters.
 
 ## References
 

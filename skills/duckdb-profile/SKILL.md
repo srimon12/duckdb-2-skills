@@ -10,110 +10,96 @@ description: >
 
 # Query and file diagnostics
 
-Diagnosis is a loop: frame the symptom, capture a plan, localize the dominant cost, classify the cause, change one thing, and prove the change. A plan operator is evidence, not a diagnosis.
+Diagnosis follows a six-stage loop: frame the symptom, capture a plan, localize the dominant cost, classify the cause, change one thing, and prove the change. Treat plan operators as evidence, not diagnoses.
 
-Run DuckDB with `duckdb`. Read `duckdb-sql` for query semantics, `duckdb-files` for reader and writer options, and `duckdb-python` when the time is spent outside SQL. This skill owns the diagnosis. For the full protocol and cost model, read [references/diagnosis.md](references/diagnosis.md). For the operator and JSON reference, read [references/plans.md](references/plans.md).
+Execute DuckDB with `duckdb`. For query semantics, consult `duckdb-sql`; for reader and writer parameters, consult `duckdb-files`; when time is spent outside SQL in host code, consult `duckdb-python`. For the diagnosis protocol and cost model, read [references/diagnosis.md](references/diagnosis.md). For operator specifications and JSON structures, read [references/plans.md](references/plans.md).
 
 ## Start with the symptom
 
 | Symptom | First move | Proof |
 | --- | --- | --- |
-| Slow, correct result | `EXPLAIN`, then `EXPLAIN ANALYZE` | The dominant operator's rows and time fall |
-| Out of memory | Find the blocking operator with the most intermediate rows | `system.peak_temp_dir_size` and peak memory fall |
-| A filter reads every row group | Check the filter expression and the sort order | `Row Groups Scanned` is below the total |
-| A join returns far more rows than its inputs | Check the join key and both input cardinalities | Join output approaches the expected cardinality |
-| A file changed and columns are missing or renamed | Check schema drift in `duckdb-files` first | Every file matches the expected schema |
-| A query returns a wrong value with no error | Use `duckdb-sql` result traps first | The value is correct before it is fast |
+| Slow, correct result | Run `EXPLAIN`, then `EXPLAIN ANALYZE` | Dominant operator rows and elapsed timings fall |
+| Out of memory | Locate blocking operator holding peak intermediate rows | `system.peak_temp_dir_size` and memory drop |
+| Filter reads every row group | Inspect filter expression and physical column ordering | `Row Groups Scanned` drops below total groups |
+| Join multiplies input rows | Check join key uniqueness and input cardinalities | Join output matches expected cardinality |
+| Schema changed or columns missing | Check schema drift across files in `duckdb-files` | Every file matches expected schema |
+| Wrong value returned without error | Inspect SQL semantics in `duckdb-sql` result traps | Result is proven correct before optimizing |
 
-A wrong answer is not a profiling problem until the plan or the file layout explains the wrong value.
+A wrong answer is never a profiling problem until plan execution or physical layout explains the incorrect value.
 
 ## Frame the case
 
-Record the query text, the binary version, the settings that affect the answer, the data snapshot, the wall time, the rows returned, and the bytes read. Without a baseline, "faster" is not measurable. Without a budget, the work has no stop condition.
+Before modifying queries or settings, establish the baseline: record query text, binary version, active configuration, data snapshot, wall time, returned rows, and bytes read. Without a baseline, performance gains cannot be measured; without a latency and resource budget, tuning lacks a stop condition.
 
-Change one thing at a time. Same query, same data, same binary, same settings. If the cache state changed, say so.
+Change exactly one variable at a time under identical queries, data snapshots, binaries, and settings. When the OS file cache state changes between runs, record the difference.
 
 ## Plan first
 
-`EXPLAIN` shows the physical plan and estimated rows. It does not run the query.
+To inspect estimated cardinality (`~N rows`) and the physical plan without executing queries, run `EXPLAIN`:
 
 ```sql
-EXPLAIN
-SELECT customer_id, sum(amount)
-FROM orders
-WHERE ordered_at >= DATE '2024-01-01'
-GROUP BY customer_id;
+EXPLAIN SELECT customer_id, sum(amount) FROM orders WHERE ordered_at >= DATE '2024-01-01' GROUP BY customer_id;
+EXPLAIN ANALYZE SELECT customer_id, sum(amount) FROM orders WHERE ordered_at >= DATE '2024-01-01' GROUP BY customer_id;
 ```
 
-`EXPLAIN ANALYZE` runs the query and adds actual rows and timings. It also runs writes. Never add `ANALYZE` to an `INSERT`, `UPDATE`, `DELETE`, or `COPY` unless you intend the side effect.
+`EXPLAIN ANALYZE` executes the statement, reporting actual row counts (`N rows`) and timings. Never append `ANALYZE` to `INSERT`, `UPDATE`, `DELETE`, or `COPY` unless write side effects are intended. Divergence between `~N rows` and `N rows` flags stale statistics, skewed keys, or opaque predicates; after bulk loads, run `ANALYZE <table>` to recompute statistics.
 
-```sql
-EXPLAIN ANALYZE
-SELECT ...;
-```
+To parse plans programmatically, specify JSON formats. `EXPLAIN (FORMAT JSON)` returns an array of plan nodes without execution actuals. `EXPLAIN ANALYZE (FORMAT JSON)` executes queries and returns one object containing `operator`, `query`, `io`, and `system` sections. `EXPLAIN ANALYZE` ignores the CLI `-json` flag; use explicit `(FORMAT JSON)`. Leave `legacy_metrics_format` disabled to avoid deprecated flat JSON.
 
-The first plan shows `~N rows`. The second shows `N rows`. A gap between the two is a signal. Estimates come from table statistics, Parquet footer statistics, and filters. `ANALYZE` recomputes table statistics after a large load.
-
-`EXPLAIN (FORMAT JSON)` returns an array of plan nodes and no actuals. `EXPLAIN ANALYZE (FORMAT JSON)` executes the statement and returns one object with `operator`, `query`, `io`, and `system` sections. `EXPLAIN ANALYZE` ignores `-json`; the `(FORMAT JSON)` form is the JSON path. The two JSON shapes are different. `legacy_metrics_format` returns a third, flat shape; leave it off.
-
-A metadata-only query can return the right answer with no operator tree. `count(*)`, `min`, and `max` over one table or Parquet file can be answered from metadata: the plan shows `COLUMN_DATA_SCAN` and the profile JSON is `{"result":"error"}`. That is not a query failure. Measure a real scan with a row-level filter or a data-column projection. Text timings are low-precision and can print `0µs` for a real operator; use JSON for any ranking.
-
-`EXPLAIN (FORMAT WEB)` opens an HTML plan. Full statement forms, scan fields, and the operator map are in [references/plans.md](references/plans.md).
+When queries evaluate `count(*)`, `min`, or `max` over single tables or Parquet files, DuckDB resolves answers directly from storage metadata: plans display `COLUMN_DATA_SCAN` and analyzed profiles return `{"result":"error"}`. This indicates an absent profiler root rather than query failure; benchmark physical scans by adding row-level filters or projecting data columns. Text timings print at low precision (often `0µs`); use JSON metrics for operator ranking. To inspect visual plans locally in a browser, run `EXPLAIN (FORMAT WEB)`. For statement options and scan fields, see [references/plans.md](references/plans.md).
 
 ## Localize
 
-Find the operator that owns the cost before reading the whole tree.
+Before reading full operator trees, isolate the dominant cost center:
 
-| Signal | Evidence | What it means |
+| Signal | Evidence | Diagnostic meaning |
 | --- | --- | --- |
-| Time hotspot | One operator has most of `query.cpu_time` | Optimize it first. Other changes cannot beat Amdahl's law. |
-| Estimate gap | `actual / estimated >= 100` or `<= 0.01` | Stale statistics, an unusual predicate, or skew. |
-| Scan pruning | `Row Groups Scanned` equals the total after file-list pruning | The filter does not prune row groups, or there is no filter. |
-| File pruning | `Scanning Files: N/M` is `N = M` with a partition filter | The partition predicate is not pruning. Do not use `File Filters` as the signal. |
-| Join multiplication | Join output is at least 10 times the largest input | Missing key, many-to-many key, or a bad pre-aggregation. |
-| Blocking size | A blocking operator holds millions of rows or hundreds of MB | Memory pressure and spill risk. |
-| Spill | `system.peak_temp_dir_size > 0` | The query exceeded the memory budget. |
-| I/O | `io.total_bytes_read` is large relative to the result | Projection, partition pruning, or file layout. |
+| Time hotspot | One operator consumes most of `query.cpu_time` | Optimize this operator first; Amdahl's law bounds gains elsewhere |
+| Estimate gap | `actual / estimated >= 100` or `<= 0.01` | Stale statistics, non-sargable predicate, or data skew |
+| Scan pruning | `Row Groups Scanned` equals total after file-list pruning | Filter fails to prune row groups, or no pushed filter exists |
+| File pruning | `Scanning Files: N/M` shows `N = M` with partition filter | Partition predicate is not pruning; do not use `File Filters` as signal |
+| Join multiplication | Join output exceeds 10x the largest input | Missing join key, many-to-many relationship, or bad pre-aggregation |
+| Blocking size | Operator accumulates millions of rows or hundreds of MB | High memory pressure and external spill risk |
+| Spill | `system.peak_temp_dir_size > 0` | Memory budget exceeded; operator spilled to disk |
+| Remote I/O | `io.total_bytes_read` is disproportionate to output rows | Inefficient projection, unpruned partitions, or fragmented layout |
 
-Operator timings are exclusive. Their sum is close to `query.cpu_time`, not `query.total_time`. On a parallel query the sum can exceed wall time because threads overlap. Compare shares, not sums.
+Operator timings are exclusive; their sum approximates `query.cpu_time`, not `query.total_time`. Because worker threads overlap during parallel execution, the operator sum can exceed elapsed wall time. Compare relative percentage shares rather than absolute sums.
 
 ## Explain the cause
 
-Match the evidence to one failure class. If two fit, pick the one that explains the largest row or byte count.
+Match diagnostic signals to a failure classification. If multiple classes match, prioritize the class explaining the greatest row count or byte volume:
 
 | Class | Fingerprint | First move |
 | --- | --- | --- |
-| Non-sargable filter | Every row group is scanned; the filter wraps the column in a cast or function | Rewrite as a range on the bare column |
-| Unsorted or unpartitioned data | A selective filter still reads all groups | Sort or partition by the filter column before writing |
-| Tiny files or row groups | Many files, few rows per group, high metadata overhead | Rewrite with larger files and groups |
-| Cardinality explosion | Join output dwarfs both inputs | Add the missing key, deduplicate, or pre-aggregate |
-| Stale statistics | Estimate far below actual on a base table | `ANALYZE table` |
-| Memory pressure | Large blocking operator, spill, or OOM | Reduce rows before the blocking operator |
-| Remote I/O | Low CPU, high bytes read, many requests | Project fewer columns, prune partitions, enlarge files |
-| Client path | SQL is fast but total time is slow | Fetch less, stream, or use Arrow |
-| Lock or concurrency | Waits, `ResourceInUseException`, one-writer lock | Separate readers and writers, or use Quack or DuckLake |
+| Non-sargable filter | Scans every row group; filter wraps column in cast or function | Rewrite as a range comparison on the bare column |
+| Unsorted or unpartitioned | Selective filter reads all groups despite bare column | Sort or partition by filter column prior to writing |
+| Tiny files or row groups | High file count, few rows per group, excessive metadata overhead | Compact dataset into larger files and row groups |
+| Cardinality explosion | Join output dwarfs both input cardinalities | Add missing join key, deduplicate keys, or pre-aggregate |
+| Stale statistics | Base-table estimate is far below actual row count | Run `ANALYZE <table>` |
+| Memory pressure | Large blocking operator, disk spill, or out-of-memory error | Push filters ahead of blocking operator to reduce input rows |
+| Remote I/O | Low CPU utilization, high bytes read, many remote HTTP requests | Project fewer columns, prune partitions, and enlarge files |
+| Client path | SQL execution is fast, but total client latency is high | Fetch smaller batches, stream results, or transfer via Arrow |
+| Lock or concurrency | Thread waits, `ResourceInUseException`, single-writer lock | Separate readers and writers; adopt Quack or DuckLake |
 
 ## Change one thing and prove it
 
-Prefer a query rewrite over a file rewrite, a file rewrite over a setting, and a setting over hardware.
+When optimizing, prioritize interventions in order: query rewrite > file rewrite > configuration setting > hardware scaling.
 
-| Change | Use when |
+| Condition | Intervention |
 | --- | --- |
-| Rewrite the predicate | The filter is not sargable |
-| Pre-aggregate or deduplicate | The join is many-to-many |
-| Move the filter before a blocking operator | The blocking operator sees too many rows |
-| Sort or partition the files | The same selective filter runs repeatedly |
-| `ANALYZE` | Estimates are stale after a bulk load |
-| Raise `memory_limit` | The shape is sound and the machine has headroom |
-| Set `temp_directory` | Spill is unavoidable and the temp path is local |
+| Filter wraps column in function or cast | Rewrite predicate as bare-column range |
+| Join produces many-to-many multiplication | Pre-aggregate inputs or deduplicate join keys |
+| Blocking operator sees excessive rows | Push selective filter ahead of operator |
+| Selective filter runs repeatedly on dataset | Sort or partition files on filter column |
+| Cardinality estimates diverge after bulk load | Run `ANALYZE <table>` |
+| Plan shape is sound, spill occurs, memory available | Raise `memory_limit` |
+| Spill is unavoidable on local disk | Set `temp_directory` |
 
-Re-run the same baseline. Compare wall time, `io.total_bytes_read`, `system.peak_temp_dir_size`, the dominant operator's rows and time, and the correctness check. Stop when the query meets the budget, or when the next change is larger than the remaining gap. A 5 percent change inside run-to-run noise is not a win.
-
-Do not add `LIMIT` to a blocking operator and call it a fix. The work happens before the limit. Do not raise `memory_limit` before reducing the rows entering the blocking operator.
+After applying an intervention, rerun the identical baseline. Compare elapsed wall time, `io.total_bytes_read`, `system.peak_temp_dir_size`, dominant operator rows and timings, and result correctness. A 5% timing change within run-to-run variance is not a performance win. Stop tuning once the query meets the resource budget or when the cost of further changes exceeds the remaining performance gap. Never append `LIMIT` to a blocking operator (`ORDER BY`, `GROUP BY`) and treat it as a fix; blocking work completes before rows are truncated. Never raise `memory_limit` before reducing intermediate row counts entering blocking operators.
 
 ## Parquet layout
 
-Use file metadata before `count(*)` on a remote dataset.
+When inspecting remote Parquet datasets, query file metadata before issuing `count(*)` to avoid downloading full data pages:
 
 ```sql
 SELECT file_name, num_rows, num_row_groups, file_size_bytes,
@@ -123,13 +109,11 @@ FROM parquet_file_metadata('s3://bucket/prefix/**/*.parquet')
 ORDER BY rows_per_group;
 ```
 
-A `Row Groups Scanned: 1 / 1` can mean one selected file, not a healthy dataset. The denominator is after file-list pruning. Pair it with `Scanning Files: N/M`, `Total Files Read`, and `parquet_file_metadata.num_row_groups`. `Data Read` is query-wide and includes Parquet footers and spill; if `system.peak_temp_dir_size > 0`, treat it as an upper bound.
+In scan profiles, `Row Groups Scanned: 1 / 1` can indicate a single pruned file rather than healthy dataset pruning, because denominators compute after file-list pruning. Correlate with `Scanning Files: N/M`, `Total Files Read`, and `parquet_file_metadata.num_row_groups`. `Data Read` measures cumulative FileSystem bytes including footers and temp spills; when `system.peak_temp_dir_size > 0`, treat `Data Read` as an upper bound.
 
-The default `ROW_GROUP_SIZE` is 122,880 rows. A request is rounded up to a multiple of 2,048, with a minimum of 2,048, so `ROW_GROUP_SIZE 10000` produces 10,240-row groups except the final group. `ROW_GROUP_SIZE_BYTES` is approximate; rows are written in batches. `FILE_SIZE_BYTES` can overshoot or undershoot. Use `ROW_GROUPS_PER_FILE` when the exact group count matters.
+Sizing parameters and layout heuristics: default `ROW_GROUP_SIZE` is 122,880 rows. DuckDB rounds requests up to multiples of 2,048 (minimum 2,048); `ROW_GROUP_SIZE 10000` writes 10,240-row groups. `ROW_GROUP_SIZE_BYTES` writes approximate batches, and `FILE_SIZE_BYTES` may overshoot or undershoot; specify `ROW_GROUPS_PER_FILE` when exact group counts are mandatory. For narrow tables, target 100,000 to 1,000,000 rows per group; for wide tables, target 10 to 50 MB per group; target files between 100 MB and 10 GB. Avoid single monolithic row groups that restrict concurrency to one thread, and avoid row groups under 5,000 rows where metadata scheduling dominates scan time. Validate layouts using `parquet_metadata` following writes.
 
-For narrow rows, 100,000 to 1,000,000 rows per group is a useful range. For wide rows, 10 to 50 MB per group is a better target. Files from roughly 100 MB to 10 GB are a useful range, not a rule. A single giant row group limits parallelism to one thread. Row groups below 5,000 rows often cost more in metadata and scheduling than they save. These are heuristics; confirm with `parquet_metadata` after the write.
-
-Check schema drift across files.
+If multi-file reads fail with `schema mismatch in glob`, query column definitions across files:
 
 ```sql
 SELECT file_name, name, type, logical_type
@@ -137,11 +121,11 @@ FROM parquet_schema('data/**/*.parquet')
 ORDER BY file_name, name;
 ```
 
-A `schema mismatch in glob` error is the signal. `read_parquet(..., union_by_name = true)` fills missing columns with `NULL`. It is a read repair, not a producer fix. Quarantine or backfill the files first. Use `parquet_file_metadata` for the total; the metadata rules live in `duckdb-files`.
+While `read_parquet(..., union_by_name = true)` handles missing columns by populating `NULL`, treat it as an emergency read repair rather than an upstream producer solution; quarantine or rewrite drifted files. For total file metadata and reader options, consult `duckdb-files`.
 
 ## Automate
 
-`scripts/plan_lint.py` runs the capture and localization steps, then prints ranked findings with evidence and a proof command. It is plan-only by default and never executes the query unless `--analyze` is passed.
+To automate capture and localization, run `scripts/plan_lint.py` to produce ranked findings with supporting evidence and proof commands. By default, the linter operates plan-only without executing queries:
 
 ```bash
 python3 scripts/plan_lint.py --db app.duckdb --query-file slow.sql
@@ -150,11 +134,11 @@ python3 scripts/plan_lint.py --query "SELECT ..." --json
 python3 scripts/plan_lint.py --self-test
 ```
 
-`--analyze` executes the statement and refuses a statement that looks like a write unless `--allow-write` is also passed. `--readonly` requires `--db` and opens the file with `-readonly`. The exit code is 1 for a high or critical finding and 0 otherwise, so a script can gate on it. Pass `--set memory_limit=4GB` to reproduce production settings. The linter recognizes a metadata-only plan and reports that no profile tree exists. It does not replace the before-and-after proof.
+To execute queries during linting, pass `--analyze`. To prevent accidental mutations, `--analyze` refuses write statements unless `--allow-write` is explicitly provided. When inspecting persistent databases, pass `--db <file>` and `--readonly` to open connections with `-readonly`. To mirror production constraints, supply settings via `--set memory_limit=4GB`. The linter detects metadata-only plans and reports the absent profile tree without failing. Script CI pipelines using exit codes (1 for high or critical findings, 0 otherwise). Automated linting supplements but never replaces before-and-after baseline proofs.
 
 ## Profile and hand off
 
-For repeatable profiles, use settings.
+For repeatable session profiling, configure settings:
 
 ```sql
 SET enable_profiling = 'json';
@@ -162,9 +146,9 @@ SET profiling_output = '/tmp/query.json';
 SET tracked_metrics = ['query.*', 'operator.*', 'io.*', 'system.*'];
 ```
 
-`tracked_metrics` affects `json` and `no_output`; `query_tree` uses a fixed metric set. The example above includes `io.*` and `system.*`; without them, bytes and spill disappear. `profiling_output` is overwritten by each statement, so the file holds the last statement, and `EXPLAIN ANALYZE` ignores the file entirely. Session `enable_profiling` also changes a bare `EXPLAIN ANALYZE` output format; use explicit `(FORMAT TEXT)` or `(FORMAT JSON)`. `profiling_mode` is deprecated and has no effect. `legacy_metrics_format` is deprecated and changes the JSON shape. `operator.cpu_time` is advertised but not emitted; use `operator.timing`. `CALL enable_profiling(...)` and `CALL disable_profiling()` are the table-function form. `duckdb_available_metrics()` lists metric names. Read [references/plans.md](references/plans.md) before building a metrics pipeline.
+`tracked_metrics` governs `json` and `no_output`; `query_tree` uses fixed metrics. Always include `io.*` and `system.*`; omitting them drops I/O byte counts and spill indicators. Each statement overwrites `profiling_output`, retaining only the final statement; `EXPLAIN ANALYZE` bypasses this file completely. Session `enable_profiling` alters bare `EXPLAIN ANALYZE` outputs; specify explicit `(FORMAT TEXT)` or `(FORMAT JSON)`. `profiling_mode` is deprecated (no-op). `legacy_metrics_format` is deprecated (alters JSON schema). `operator.cpu_time` is documented but unpopulated; read `operator.timing`. Table functions provide programmatic control via `CALL enable_profiling(...)` and `CALL disable_profiling()`; query available metrics with `SELECT * FROM duckdb_available_metrics();`. For metrics pipeline schemas, read [references/plans.md](references/plans.md).
 
-`duckdb -ui` is the local browser UI. `duckdb` owns the flag and the install caveat. `EXPLAIN (FORMAT WEB)` is the built-in plan fallback. The UI page is served locally but fetches its assets from `https://ui.duckdb.org`; queries run locally, but the page is remote. Do not use it for offline or restricted-network data.
+For visual query trees, `duckdb -ui` launches the local browser interface (`duckdb` owns the flag and install requirements). Alternatively, run `EXPLAIN (FORMAT WEB)` for built-in HTML plan visualization. Note that while queries execute locally, `-ui` fetches web assets from `https://ui.duckdb.org`; never launch it in air-gapped, offline, or restricted-network environments.
 
 ## Verify
 
@@ -178,13 +162,13 @@ EXPLAIN ANALYZE SELECT count(*) FROM '$tmp/sorted.parquet' WHERE id = 99999;
 rm -rf "$tmp"
 ```
 
-The plan must show one row group scanned out of ten. The row-level filter forces a real scan; a bare `count(*)` can be metadata-only. Run `EXPLAIN` on the same query and confirm it shows `~N rows` and no actual timings.
+The plan must report one row group scanned out of ten. The row-level filter forces physical scanning, whereas an unconstrained `count(*)` may evaluate as metadata-only. Run `EXPLAIN` on the identical query to verify it outputs `~N rows` without execution timings.
 
 ```bash
 python3 scripts/plan_lint.py --self-test
 ```
 
-The self-test builds a cross join, a non-sargable Parquet filter, a sargable point lookup, and a metadata-only count. It must find the cross product, the full scan, and the missing profile, and must not flag the point lookup. It also checks that a hidden second statement and a malformed `--set` are rejected.
+The self-test constructs a cross join, a non-sargable Parquet filter, a sargable point lookup, and a metadata-only aggregate. Verification requires flagging the cross product, full scan, and absent profile, while passing the point lookup without warnings. It also confirms rejection of hidden secondary statements and malformed `--set` options.
 
 ## References
 
