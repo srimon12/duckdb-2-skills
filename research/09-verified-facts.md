@@ -101,7 +101,7 @@ Numbers below use the `E` prefix. The full probe log and decisions are in `slice
 | E31 | HNSW drops NULL vectors and accepts zero vectors as NaN | 3-row fixture, one NULL and one zero | indexed query returned 2 rows, brute force 3; cosine to zero is `nan` |
 | E32 | HNSW top-k needs a literal `FLOAT[N]` query vector | `::DOUBLE[N]`, scalar subquery, prepared `$1`, ordinal | cast and subquery fell back to a scan; prepared and ordinal used a full index scan without top-k pushdown |
 | E33 | `hnsw_prefilter=false` can return zero rows on a selective filter | 300k rows, 300 matches, `LIMIT 10` | prefilter on returned 10; off returned 0 |
-| E34 | HNSW `OFFSET` repeats the first page on 2.0.0 | indexed page 2 versus brute force | indexed `[1,2]`, brute `[3,4]` |
+| E34 | HNSW `OFFSET` repeats the first page on 2.0.0 | indexed page 2 versus brute force; `OFFSET 4` on 4 rows | indexed `[1,2]`, brute `[3,4]`; indexed `OFFSET 4` still `[1,2]`. Upstream: duckdb/duckdb-vss#110 |
 | E35 | HNSW is outside `memory_limit`; compaction did not reclaim capacity | 589 MB index under 100 MB limit; 90 percent delete then compact | no OOM; count and capacity unchanged |
 | E36 | RRF over FTS and HNSW works on 2.0.0 | 4-row and 20k-row fixtures | stable ranks; window outside `match_bm25`, literal limits |
 | E37 | dbt 2.0.9 bundles DuckDB 1.5.4; a `dbc` system driver won at 2.0.9 | clean cache, then `dbc install duckdb` | `v1.5.4` and the 999 header error; then `v2.0.0` and storage 69; driver order is not guaranteed |
@@ -193,3 +193,13 @@ Rows 61-77 and E25-E32 are automated in `scripts/probe.py`. E34 and E36 are also
 | 80 | `EXPLAIN (FORMAT WEB)` works without the UI extension | `EXPLAIN (FORMAT WEB) SELECT 42` | writes a temporary HTML file and opens it |
 | 81 | `duckdb -ui -readonly` is unsupported | read the UI page | the UI writes notebook state; use a separate UI catalog |
 | 82 | `EXPLAIN ANALYZE (FORMAT JSON)` is an object, not an array | `EXPLAIN ANALYZE (FORMAT JSON) SELECT ...` | `io`, `operator` tree, `type=TABLE_SCAN`, `row_groups_scanned` |
+
+## Fragile-behavior review
+
+Rows 91-93 are automated in `scripts/probe.py`. Row 93 skips when the Python `duckdb` 2.x package is absent. Binary `v2.0.0 (Cyanoptera) d54cbbe3df` on Linux x86_64, Python package `duckdb` 2.0.0.
+
+| # | Fact | Command | Observed |
+| --- | --- | --- | --- |
+| 91 | `decimal_division` mis-binds an `INTEGER` argument on 2.0.0 | `decimal_division(10.00, 4)`, `decimal_division(127, 4.00)`, `decimal_division(10.00, 4::DECIMAL(10,0))` | `result out of range for result type` although `typeof` is `DECIMAL(15,13)`; `0.000000` (expected `31.75`); `2.5000000000000`. Upstream fix: duckdb/duckdb#28420, labeled for a 2.0 backport, not tested on a released binary |
+| 92 | The 2.0.0 CLI hides the `COPY ... TO` CTE count | `WITH w AS (COPY (SELECT * FROM range(3)) TO 'x.parquet' (FORMAT parquet)) SELECT * FROM w` in `-json`; same through stdin after `.changes on`; same with `RETURN_STATS` | empty stdout, exit 0; `changes:   3   total_changes: 3`; one row with `count` `3`; the file holds 3 rows |
+| 93 | The engine returns the `COPY ... TO` CTE count | Python `duckdb.connect().execute(<same SQL>).fetchall()` | `[(3,)]`; the file holds 3 rows. Matches `sql/statements/copy.md` |

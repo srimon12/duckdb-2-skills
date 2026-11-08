@@ -120,7 +120,7 @@ Ranked by what an agent gets wrong without them.
 | --- | --- | --- | --- |
 | Regex `~` changed meaning | 1.x full match becomes 2.0 substring match; more rows pass. | Use `regexp_full_match` or the deprecated `regex_match_operator_semantics='full'` for old behavior; write `~` only when partial is intended. | `pattern_matching.md:218`; P4 |
 | `UPDATE ... FROM` multi-match | Target row updated once from an unspecified source row; results can change across plans. | Deduplicate the source or make the `ON` key unique. `MERGE` errors instead. | `update.md:113-129`; P9 |
-| `COPY` in a CTE returns no count | The write happens, but `SELECT rows_written FROM copied` returns an empty result in 2.0.0, while the manual says the CTE returns rows written. | Use `COPY` in a CTE only for its side effect; do not branch on its row count. | `copy.md:179-193`; P11 |
+| `COPY` in a CTE returns no count | Superseded by `02-sql.md` F15: the engine returns the count (Python sees `[(3,)]`); the 2.0.0 CLI does not render it. | Use `.changes on`, `RETURN_STATS`/`RETURN_FILES`, or a client API; count the output file. | `copy.md:179-193`; P11; `02-sql.md` P4b |
 | `decimal_division` with an INTEGER operand | Results were not stable across identical 2.0.0 processes: `0.0`, `0.333...`, or out-of-range. | Cast both operands to DECIMAL and pass a scale; or use `CAST(a AS DECIMAL(38,s)) / b`. Retest on 2.0.1. | P5 |
 | `error_on_division_by_zero` | Still works, but the binary warns the setting is deprecated and will be removed. | Prefer `TRY(expr)` per expression; mention the setting only as a session-wide bridge. | P8; `migration.md:126-135` |
 | `table_function_identifier_conversion` | The setting that controls the old behavior is itself deprecated. `DISABLE_IMPLICIT_STRING` raises a binder error. | Quote table-function arguments: `read_csv('file.csv')`; do not generate bare identifiers. | P8; `sql_quirks.md:104` |
@@ -156,7 +156,7 @@ Ranked by what an agent gets wrong without them.
 | Preview: async I/O includes DuckDB’s native format. | The shipped 2.0 manual also lists native storage as async. JSON is the synchronous case. | Treat the manual as the shipped contract. |
 | Preview: `CONNECT 'postgres://localhost/mydb'`. | Manual and `duckdb-quack`: `CONNECT 'postgres:dbname=mydb host=localhost'`. | Use the manual form; `postgres://` is a preview artifact. |
 | Manual: `decimal_division` “using exact decimal arithmetic”. | Binary: mixed DECIMAL/INTEGER arguments can return wrong or unstable results. | Binary wins; require both-DECIMAL casts and a scale, and flag the 2.0.0 bug. |
-| Manual: a `COPY` CTE “returns the number of rows written”. | Binary: the write happens but `SELECT rows_written FROM copied` returns no rows. | Do not rely on the count; use the write for its side effect only. |
+| Manual: a `COPY` CTE “returns the number of rows written”. | Engine agrees (Python `[(3,)]`); the 2.0.0 CLI prints no row for it. | Superseded by `02-sql.md` F15: treat empty CLI output as a display gap, not zero rows. |
 | Manual and skills: `SET error_on_division_by_zero=false` is a supported bridge. | Binary: setting warns “deprecated and will be removed”. | Behavior still works; prefer `TRY`, mention the setting as temporary. |
 | Manual: `table_function_identifier_conversion` controls conversion. | Binary: the setting itself is deprecated. | Quote arguments; treat the setting as a migration aid only. |
 | Manual: storage version 69. | `duckdb_databases()`: `v2.0.0+`. | Same fact, different representation; do not compare the tag to `69`. |

@@ -183,6 +183,71 @@ def check_decimal_division(tmp: Path, network: bool) -> tuple[bool, str]:
     return str(got["v"]).startswith("2.5"), str(got)
 
 
+def check_decimal_division_mixed(tmp: Path, network: bool) -> tuple[bool, str]:
+    # Released 2.0.0 mis-binds INTEGER arguments; duckdb/duckdb#28420 carries the upstream fix.
+    ok_err, detail = expect_error("SELECT decimal_division(10.00, 4) AS v", tmp, "result out of range")
+    got = one(
+        "SELECT decimal_division(127, 4.00) AS wrong,"
+        " decimal_division(10.00, 4::DECIMAL(10,0)) AS cast_both",
+        tmp,
+    )
+    ok = ok_err and str(got["wrong"]).startswith("0.0") and str(got["cast_both"]).startswith("2.5")
+    return ok, f"(10.00,4): {detail}; {got}"
+
+
+def check_copy_cte_cli(tmp: Path, network: bool) -> tuple[bool, str]:
+    out = tmp / "copy-cte-cli.parquet"
+    sql = f"WITH w AS (COPY (SELECT * FROM range(3)) TO '{out}' (FORMAT parquet)) SELECT * FROM w;"
+    plain = duckdb(sql, tmp)
+    out.unlink(missing_ok=True)
+    changes = subprocess.run(
+        [DUCKDB, "-dark-mode", "-no-agent", "-json"],
+        input=".changes on\n" + sql + "\n",
+        cwd=tmp,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    written = one(f"SELECT count(*) AS n FROM '{out}'", tmp)["n"]
+    stats_out = tmp / "copy-cte-stats.parquet"
+    stats = rows(
+        f"WITH w AS (COPY (SELECT * FROM range(3)) TO '{stats_out}' (FORMAT parquet, RETURN_STATS))"
+        " SELECT * FROM w;",
+        tmp,
+    )
+    ok = (
+        plain.returncode == 0
+        and plain.stdout.strip() == ""
+        and "changes:   3" in changes.stdout
+        and written == 3
+        and len(stats) == 1
+        and str(stats[0]["count"]) == "3"
+    )
+    return ok, (
+        f"plain stdout={plain.stdout.strip()!r}; .changes={changes.stdout.strip()!r};"
+        f" file rows={written}; RETURN_STATS count={stats[0]['count'] if stats else None}"
+    )
+
+
+def check_copy_cte_python(tmp: Path, network: bool) -> tuple[bool, str]:
+    try:
+        import duckdb as pyduckdb  # type: ignore
+    except Exception:
+        return True, "skipped (duckdb Python package not importable)"
+    if not getattr(pyduckdb, "__version__", "").startswith("2."):
+        return True, f"skipped (duckdb {getattr(pyduckdb, '__version__', '?')})"
+    out = tmp / "copy-cte-py.parquet"
+    con = pyduckdb.connect()
+    try:
+        got = con.execute(
+            f"WITH w AS (COPY (SELECT * FROM range(3)) TO '{out}' (FORMAT parquet)) SELECT * FROM w"
+        ).fetchall()
+        written = con.execute(f"SELECT count(*) FROM '{out}'").fetchone()[0]
+    finally:
+        con.close()
+    return got == [(3,)] and written == 3, f"fetchall={got} file rows={written}"
+
+
 def check_secure_view(tmp: Path, network: bool) -> tuple[bool, str]:
     got = one("CREATE TABLE t(a INT); INSERT INTO t VALUES (1); CREATE SECURE VIEW v AS SELECT * FROM t; SELECT a FROM v", tmp)
     return got["a"] == 1, str(got)
@@ -1300,6 +1365,7 @@ CHECKS = [
     Check("VARIANT order hierarchy", check_variant_order_hierarchy),
     Check("regex ~ is partial", check_regex_partial),
     Check("decimal_division exact", check_decimal_division),
+    Check("decimal_division mixed INTEGER bug", check_decimal_division_mixed),
     Check("SECURE VIEW", check_secure_view),
     Check("R-tree index scan", check_rtree),
     Check("read_parquet schema rename", check_parquet_schema),
@@ -1362,6 +1428,8 @@ CHECKS = [
     Check("async_threads setting", check_async_threads),
     Check("json_merge_patch", check_json_merge_patch),
     Check("data-modifying CTE with RETURNING", check_data_modifying_cte),
+    Check("COPY CTE count hidden by CLI", check_copy_cte_cli),
+    Check("COPY CTE count in Python", check_copy_cte_python),
     Check("temporary secret creation", check_secret_manager),
     Check("Python connection configuration", check_python_connection_config),
     Check("docs index versions", check_docs_index),

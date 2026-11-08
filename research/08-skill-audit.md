@@ -81,6 +81,16 @@ A third pass checked the new text against the 2.0 docs, the extension sources, a
 | `attach[].options` is a v2 profile key. | v2 parses and drops `options`; only `path`, `alias`, `type`, `read_only`, and `is_ducklake` reach the attachment. |
 | The default FTS tokenizer makes `s3` unsearchable, and a prepared or ordinal HNSW query falls back to a sequential scan. | `s3` indexes as `s`, so a query matches the wrong token. A prepared vector and ordinal `ORDER BY` use HNSW as a full scan without top-k pushdown, not a sequential scan. |
 
+## Fragile-behavior review
+
+A fourth pass re-ran the three 2.0.0 behaviors the pack flagged as fragile, in the CLI and the Python package, and searched the DuckDB trackers.
+
+| Behavior | Verdict | Change |
+| --- | --- | --- |
+| `COPY ... TO` in a CTE returns zero rows | Not an engine bug. Python returns `[(3,)]`; the CLI does not render the count, while `.changes on` and `RETURN_STATS` show it. | `duckdb-sql` now says the CTE returns the count and the CLI hides it. Probes 92 and 93. |
+| `decimal_division` with an `INTEGER` argument | Real bug, already fixed upstream in duckdb/duckdb#28420 with a 2.0 backport label. Released 2.0.0 still fails. | `duckdb-sql` keeps the cast-both rule and names the overflow and wrong-value cases. Probe 91. |
+| HNSW ignores `OFFSET` | Real duckdb-vss bug. `OFFSET` past the end of the table still returns the first page, which ANN approximation cannot explain. No matching public report was found. | Reported as [duckdb/duckdb-vss#110](https://github.com/duckdb/duckdb-vss/issues/110). `duckdb-search` keeps its stop rule and links the issue. Probe E34. |
+
 ## Cross-cutting
 
 - Descriptions no longer contain slash commands. Plugin installs namespace the skill, Codex uses `$`, and a slash clause is not portable.
@@ -129,17 +139,17 @@ A third pass checked the new text against the 2.0 docs, the extension sources, a
 - The 2.0.0 `ui` extension was promoted to `core` after the release. The UI handoff documents the install lag and the missing `osx_amd64` build, and the probe starts the server.
 - The Claude Code plugin validator was not run because the CLI is not installed.
 - A Grok project-skill trust test was inconclusive.
-- `decimal_division` with mixed `DECIMAL` and `INTEGER` arguments was unstable on 2.0.0; the skill tells the reader to cast both.
-- The `COPY` CTE row-count contradiction is recorded in the SQL slice; the skill treats the write as a side effect.
+- `decimal_division` with an `INTEGER` argument is a real 2.0.0 bug: `decimal_division(10.00, 4)` raises `result out of range` and `decimal_division(127, 4.00)` returns `0`. Upstream PR duckdb/duckdb#28420 merged the fix with a 2.0 backport label; no released binary with the fix was tested. The skill keeps the cast-both rule and names the failure. Probe: `decimal_division mixed INTEGER bug`.
+- The `COPY` CTE row count is not an engine bug. Python returns `[(3,)]`; the 2.0.0 CLI does not render the count, while `.changes on` and `RETURN_STATS` show it. The skill now says the CTE returns the count and the CLI hides it. Probes: `COPY CTE count hidden by CLI`, `COPY CTE count in Python`.
 - A bbox-filtered Overture places scan followed by `ORDER BY confidence` or a computed distance hit an internal `Vector::Reference` error on 2.0.0. The workaround is a `MATERIALIZED` CTE; the root cause is open.
 - A Snowflake-written shredded `VARIANT` Parquet file was not available, so that read path is documented, not probed.
-- The `decimal_division` mixed-type instability and the `COPY` CTE result should be retested on 2.0.1.
+- Retest the `decimal_division` mixed-type probe and the CLI `COPY` CTE display on 2.0.1. When the decimal probe fails because the bug is fixed, relax the skill warning.
 - `profiling_output` is last-statement-wins in the repeated probe. The linter still avoids the file and uses `EXPLAIN ANALYZE (FORMAT JSON)`, because `EXPLAIN ANALYZE` never writes the file.
 - A metadata-only `count(*)` returned `{"result":"error"}`; a `tracked_metrics` variation may change whether an empty `operator` list appears. The linter treats both as no profile.
 - `ROW_GROUPS_PER_FILE` was exact in an unpartitioned write. Its interaction with `PARTITION_BY` was not tested.
 - A 1.5.x binary was not available, so the 1.4/1.5 reader pins come from the source and the existing 1.5 probes, not from a second binary.
 - The Unity storage secret is shown for S3. Azure and GCS paths need their own secret type and were not probed.
 - dbt, Metabase, Grafana, Superset, and Ibis were checked from official docs, releases, and package metadata, not executed.
-- HNSW `OFFSET` is a 2.0.0 behavior. Retest after 2.0.1 before keeping the stop rule.
+- HNSW `OFFSET` is a confirmed duckdb-vss bug on 2.0.0 (OFFSET past the end still returns the first page). It is reported upstream as duckdb/duckdb-vss#110. Retest after 2.0.1 before keeping the stop rule.
 - The views-only catalog used Python's `http.server`, which lacks range requests. A range-capable server is the production path.
 - The MotherDuck MCP server pins DuckDB 1.5.6. Recheck before repeating that pin.

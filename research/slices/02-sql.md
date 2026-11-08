@@ -24,7 +24,7 @@ Probe IDs refer to the probe log. `P*` = run on the local binary; `Documented` =
 | F12 | `ASOF` and `POSITIONAL` joins work. `POSITIONAL JOIN` matches by row number and fills short sides with `NULL`. | P1; `sql/query_syntax/from.md` §ASOF/§POSITIONAL | Probed |
 | F13 | `NEAREST k BY DISTANCE expr` / `BY SIMILARITY expr` works for `INNER` and `LEFT` joins; `APPROX` before `NEAREST` enables approximate search; `k` must be a positive integer literal. | P3; `sql/query_syntax/from.md` §NEAREST | Probed |
 | F14 | Data-modifying CTEs support `INSERT`, `UPDATE`, `DELETE`, and `COPY ... TO`; `WITH moved AS MATERIALIZED (DELETE ... RETURNING *) INSERT ...` works, and `WITH updated AS (UPDATE ... RETURNING *) SELECT count(*) ...` works. | P4; `sql/query_syntax/with.md` §Data-Modifying CTEs | Probed |
-| F15 | `COPY ... FROM` cannot be a CTE body (parser error). `COPY ... TO` in a CTE writes the file, but in 2.0.0 the outer query returns no rows, contradicting the manual's claim that the CTE returns the row count. | P4; `sql/statements/copy.md` §COPY TO | Probed, manual disagrees |
+| F15 | `COPY ... FROM` cannot be a CTE body (parser error). `COPY ... TO` in a CTE writes the file and returns the row count, as the manual says: Python `execute(...).fetchall()` returns `[(3,)]`. The 2.0.0 CLI does not render that count in JSON, CSV, or box output; `.changes on` prints `changes: 3`, and `RETURN_STATS`/`RETURN_FILES` render rows. The earlier zero-row reading was a CLI display artifact. | P4; P4b; `sql/statements/copy.md` §COPY TO; `tools/shell/shell.cpp` (v2.0.0) renders only query results | Probed (CLI and Python) |
 | F16 | Nested schemas: `CREATE SCHEMA a; CREATE SCHEMA a.b; CREATE TABLE a.b.t (...)` works and objects are addressed with the full dot path. The parent must exist; an unqualified `CREATE SCHEMA b` under `USE a` creates a top-level `b`, not `a.b`. | P5; `sql/statements/create_schema.md` §Nested Schemas | Probed |
 | F17 | `USE a.b` and `SET search_path = 'a.b'` fail with `Not implemented Error: ... is a nested schema - nested schemas cannot be used in the search path`. `USE a` works; `SET search_path = 'a'` works. | P5; `sql/statements/create_schema.md`; `sql/dialect/keywords_and_identifiers.md` §Identifier Resolution | Probed |
 | F18 | A two-part name such as `europe.orders` does not resolve relative to the current schema; it looks for a top-level schema `europe`. Fully qualify nested objects as `a.b.t`. | P5 | Probed |
@@ -221,7 +221,7 @@ Reference split: `SKILL.md` keeps decisions and traps (triggers, division, neste
 | `CREATE OR REPLACE TABLE` | Recreates the table; PK, constraints, and indexes disappear without a warning. | Use `CREATE TABLE IF NOT EXISTS` + `INSERT`/`MERGE`, or explicitly recreate constraints/indexes. | P2; P10 |
 | `PIVOT ... FILTER` | DuckDB accepts `FILTER` in `USING` but silently ignores it. | Compute the filtered aggregate in a subquery/CTE before `PIVOT`, or use `CASE` inside the aggregate. | P2; `sql/statements/pivot.md` |
 | Simplified `UNPIVOT` | Drops rows whose value is `NULL`; `INCLUDE NULLS` is only in the SQL-standard `FROM ... UNPIVOT (...)` form. | Use the standard form with `INCLUDE NULLS` when NULL rows matter. | P10; `sql/statements/unpivot.md` |
-| `COPY` in a CTE | The file is written, but the outer query returns zero rows; the manual says the CTE returns the number of rows written. | Treat the `COPY` CTE as a side effect only; do not `SELECT rows_written` in 2.0.0. | P4; `sql/statements/copy.md` §COPY TO |
+| `COPY` in a CTE | The engine returns the rows-written count, but the 2.0.0 CLI prints nothing for it in JSON, CSV, or box mode. | Do not read empty CLI output as zero rows. Use `.changes on`, `RETURN_STATS`/`RETURN_FILES`, or a client API, and count the output file. | P4; P4b; `sql/statements/copy.md` §COPY TO |
 | Trigger `RETURNING` | The restriction is per matching event: INSERT RETURNING fails with an INSERT row trigger, DELETE RETURNING fails with a DELETE row trigger, but UPDATE RETURNING works with an INSERT row trigger. | Check the trigger's event, not just “the table has a row trigger”. | P6 |
 | Legacy parser | `SET enable_legacy_parser=true` is a grammar fallback, not a semantic time machine: it rejects the simplified `FROM ... NEAREST` form, while an explicit `INNER JOIN ... NEAREST` parses; the manual's listed quirks did not reproduce. | Test the exact query. Use it only to unblock a 1.5 query that fails on PEG, file an issue, and remove it from saved scripts. | P12 |
 | Identifier-to-string | `glob(no_such_file.csv)` still works but logs a deprecation warning; `DISABLE_IMPLICIT_STRING` makes it a binder error. | Always quote file/table-function string arguments; the setting itself is deprecated. | P16; `sql/dialect/sql_quirks.md` §Implicit Conversion |
@@ -278,10 +278,18 @@ P4  $ duckdb -no-agent -csv :memory: < research/scratch/02-sql/dmcte.sql
       -> archive 1,a / 2,b; staging empty
     WITH updated AS (UPDATE orders ... RETURNING *) SELECT count(*) -> 2
     WITH ins AS (INSERT ... RETURNING id) SELECT * FROM ins -> 3
-    WITH copied(rows_written) AS (COPY ... TO ...) SELECT * FROM copied -> zero rows, file written
+    WITH copied(rows_written) AS (COPY ... TO ...) SELECT * FROM copied -> CLI prints nothing, file written (see P4b)
     COPY FROM as CTE body -> Parser Error: COPY FROM cannot be used as a CTE body
     DESCRIBE WITH c(n) AS (COPY ...) SELECT * FROM c
       -> Binder Error: WITH clause containing a COPY statement must be at the top level
+
+P4b $ python3 scripts/probe.py   (checks "COPY CTE count hidden by CLI", "COPY CTE count in Python")
+    SQL: WITH w AS (COPY (SELECT * FROM range(3)) TO 'x.parquet' (FORMAT parquet)) SELECT * FROM w
+    duckdb -no-agent -json -c '<SQL>'           -> exit 0, empty stdout and stderr (same in -csv and box)
+    printf '.changes on\n<SQL>;\n' | duckdb    -> changes:   3   total_changes: 3
+    same COPY with (FORMAT parquet, RETURN_STATS) -> one row, count 3
+    Python duckdb 2.0.0 execute(SQL).fetchall() -> [(3,)]
+    SELECT count(*) FROM 'x.parquet'            -> 3
 
 P5  $ duckdb -no-agent -csv :memory: < research/scratch/02-sql/schemas.sql
     CREATE SCHEMA sales; CREATE SCHEMA sales.europe; CREATE TABLE sales.europe.orders...
@@ -444,7 +452,7 @@ P17 $ duckdb -no-agent -csv :memory: -c "..."
 
 ## Open questions
 
-- Does the `COPY`-in-CTE zero-row result reproduce through the Python/ODBC/API path, or is it a CLI/result-collector bug? A Python `duckdb.connect().execute(...).fetchall()` on the same statement would settle it.
+- Resolved: the `COPY`-in-CTE zero-row result is CLI-only. Python `fetchall()` returns `[(3,)]` (P4b), so the engine follows the manual.
 - Is the `RETURNING`-with-row-trigger restriction intentionally per event, or a binder limitation that will broaden? The binary behavior is clear; the manual's blanket sentence is not.
 - The `legacy_parser` manual lists quirks (`~` full match, `B'0101'` as varchar, `ORDER BY true`) that did not reproduce in 2.0.0; the extension build/commit would settle whether the docs are ahead of or behind the binary.
 - `EXPLAIN (SQL)` supports `INSERT`/`UPDATE`/`DELETE`/`MERGE` in the binary while the manual says only `SELECT`/`VALUES`/`WITH`; confirm the intended contract before documenting it.

@@ -1,16 +1,20 @@
 # duckdb-2-skills
 
-Agent skills for DuckDB 2.0. Write SQL, ingest files, diagnose slow plans, search tables, run dbt, work with lakes, and ship Python code without re-learning the 2.0 traps each time.
+Agent skills for [DuckDB](https://duckdb.org/) 2.0. This pack helps coding agents in Claude Code, Cursor, Codex, Grok, and other Agent Skills clients write DuckDB SQL, ingest CSV and Parquet, query `VARIANT` data, diagnose slow plans, run BM25 full-text and HNSW vector search, read Iceberg, Delta Lake, and DuckLake tables, answer spatial questions, run dbt, and write Python client code.
 
-Fifteen skills, seventeen lookup references, one router, and a plan linter. Verified against DuckDB 2.0.0 LTS `d54cbbe3df` on Linux x86_64.
+It also covers extension install, Quack serving, and upgrades from DuckDB 1.4 or 1.5. The pack ships fifteen skills, seventeen lookup references, one router, and a plan linter. Verified against DuckDB 2.0.0 LTS (Cyanoptera) `d54cbbe3df` on Linux x86_64.
+
+This is an independent MIT project, not a DuckDB Foundation project.
 
 ## Why this pack
 
-- The router checks the binary, picks the output mode, and loads the skill that owns the job.
+- The router checks the DuckDB 2.0 binary, picks the output mode, and loads the skill that owns the job.
 - Every workflow carries a contract, a proof, and stop rules. The agent can tell a correct result from a plausible wrong one.
 - Deep facts have one owner. Other skills link to it instead of repeating it.
 
-## Install
+Some DuckDB 2.0 behaviors fail quietly. An HNSW index scan can drop `OFFSET`, including offsets past the end of the table ([duckdb-vss#110](https://github.com/duckdb/duckdb-vss/issues/110)). Mixed `DECIMAL` and `INTEGER` division under `decimal_division` can overflow or return `0` (fix tracked in [duckdb#28420](https://github.com/duckdb/duckdb/pull/28420)). A `COPY ... TO` inside a CTE does write the file even when the 2.0.0 CLI prints no row count. The skills that own those facts carry the stop rules.
+
+## Install DuckDB 2.0
 
 DuckDB 2.0 or newer is required.
 
@@ -20,6 +24,10 @@ duckdb -no-agent --version
 ```
 
 The version must print `v2.0`. Homebrew can lag the release.
+
+## Install the skills
+
+Plugin version 0.6.0. There is no build step: Claude Code installs from the marketplace, and other clients copy the skill folders.
 
 ### Claude Code
 
@@ -67,7 +75,7 @@ Use `~/.grok/skills/` for every project. A project may need to be trusted first.
 
 ### Other Agent Skills clients
 
-Copy `skills/<name>/` into the client's skills directory. The folder is the unit. There is no build step.
+Copy `skills/<name>/` into the client's skills directory. The folder is the unit.
 
 ## Quick start
 
@@ -84,7 +92,7 @@ Then ask in normal language:
 - "Search these support emails by keyword and rank the matches."
 - "The Metabase driver cannot open our 2.0 database file."
 
-## Skills
+## DuckDB 2.0 skills
 
 | Skill | Job | Load when |
 | --- | --- | --- |
@@ -127,7 +135,7 @@ bash evals/ingest/run_reference.sh
 python3 skills/duckdb-profile/scripts/plan_lint.py --self-test
 ```
 
-Current result: 15 skills with 0 errors, 82/83 probes passed with 1 skipped when the Python package is absent, 25/25 ingest checks, and 5/5 linter checks.
+Current result: 15 skills with 0 errors, 84/86 probes passed with the 2 network probes skipped in the default run (the 2 Python-package probes skip when that package is absent), 25/25 ingest checks, and 5/5 linter checks.
 
 The probe suite needs DuckDB 2.0. The network probes cover the docs index and the UI extension. dbt 2.0.9, the FTS and VSS extensions, and the DuckDB binary are probed. Metabase, Grafana, Superset, Ibis, live Iceberg, and Unity Catalog are documented, not executed. See [research/08-skill-audit.md](research/08-skill-audit.md) for the exact coverage.
 
