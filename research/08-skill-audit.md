@@ -89,7 +89,7 @@ A fourth pass re-ran the three 2.0.0 behaviors the pack flagged as fragile, in t
 | --- | --- | --- |
 | `COPY ... TO` in a CTE returns zero rows | Not an engine bug. Python returns `[(3,)]`; the CLI does not render the count, while `.changes on` and `RETURN_STATS` show it. | `duckdb-sql` now says the CTE returns the count and the CLI hides it. Probes 92 and 93. |
 | `decimal_division` with an `INTEGER` argument | Real bug, already fixed upstream in duckdb/duckdb#28420 with a 2.0 backport label. Released 2.0.0 still fails. | `duckdb-sql` keeps the cast-both rule and names the overflow and wrong-value cases. Probe 91. |
-| HNSW ignores `OFFSET` | Real duckdb-vss bug. `OFFSET` past the end of the table still returns the first page, which ANN approximation cannot explain. No matching public report was found. | Reported to duckdb/duckdb-vss. `duckdb-search` keeps its stop rule. Probe E34. |
+| HNSW ignores `OFFSET` | Real duckdb-vss bug. `OFFSET` past the end of the table still returns the first page, which ANN approximation cannot explain. No matching public report was found. | Reported as [duckdb/duckdb-vss#110](https://github.com/duckdb/duckdb-vss/issues/110). `duckdb-search` keeps its stop rule and links the issue. Probe E34. |
 
 ## Cross-cutting
 
@@ -150,6 +150,6 @@ A fourth pass re-ran the three 2.0.0 behaviors the pack flagged as fragile, in t
 - A 1.5.x binary was not available, so the 1.4/1.5 reader pins come from the source and the existing 1.5 probes, not from a second binary.
 - The Unity storage secret is shown for S3. Azure and GCS paths need their own secret type and were not probed.
 - dbt, Metabase, Grafana, Superset, and Ibis were checked from official docs, releases, and package metadata, not executed.
-- HNSW `OFFSET` is a confirmed duckdb-vss bug on 2.0.0 (OFFSET past the end still returns the first page). It is being reported upstream to duckdb/duckdb-vss. Retest after 2.0.1 before keeping the stop rule.
+- HNSW `OFFSET` is a confirmed duckdb-vss bug on 2.0.0 (OFFSET past the end still returns the first page). It is reported upstream as duckdb/duckdb-vss#110. Retest after 2.0.1 before keeping the stop rule.
 - The views-only catalog used Python's `http.server`, which lacks range requests. A range-capable server is the production path.
 - The MotherDuck MCP server pins DuckDB 1.5.6. Recheck before repeating that pin.

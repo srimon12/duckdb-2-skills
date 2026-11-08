@@ -101,7 +101,7 @@ Numbers below use the `E` prefix. The full probe log and decisions are in `slice
 | E31 | HNSW drops NULL vectors and accepts zero vectors as NaN | 3-row fixture, one NULL and one zero | indexed query returned 2 rows, brute force 3; cosine to zero is `nan` |
 | E32 | HNSW top-k needs a literal `FLOAT[N]` query vector | `::DOUBLE[N]`, scalar subquery, prepared `$1`, ordinal | cast and subquery fell back to a scan; prepared and ordinal used a full index scan without top-k pushdown |
 | E33 | `hnsw_prefilter=false` can return zero rows on a selective filter | 300k rows, 300 matches, `LIMIT 10` | prefilter on returned 10; off returned 0 |
-| E34 | HNSW `OFFSET` repeats the first page on 2.0.0 | indexed page 2 versus brute force | indexed `[1,2]`, brute `[3,4]` |
+| E34 | HNSW `OFFSET` repeats the first page on 2.0.0 | indexed page 2 versus brute force; `OFFSET 4` on 4 rows | indexed `[1,2]`, brute `[3,4]`; indexed `OFFSET 4` still `[1,2]`. Upstream: duckdb/duckdb-vss#110 |
 | E35 | HNSW is outside `memory_limit`; compaction did not reclaim capacity | 589 MB index under 100 MB limit; 90 percent delete then compact | no OOM; count and capacity unchanged |
 | E36 | RRF over FTS and HNSW works on 2.0.0 | 4-row and 20k-row fixtures | stable ranks; window outside `match_bm25`, literal limits |
 | E37 | dbt 2.0.9 bundles DuckDB 1.5.4; a `dbc` system driver won at 2.0.9 | clean cache, then `dbc install duckdb` | `v1.5.4` and the 999 header error; then `v2.0.0` and storage 69; driver order is not guaranteed |
