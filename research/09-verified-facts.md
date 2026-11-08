@@ -193,3 +193,13 @@ Rows 61-77 and E25-E32 are automated in `scripts/probe.py`. E34 and E36 are also
 | 80 | `EXPLAIN (FORMAT WEB)` works without the UI extension | `EXPLAIN (FORMAT WEB) SELECT 42` | writes a temporary HTML file and opens it |
 | 81 | `duckdb -ui -readonly` is unsupported | read the UI page | the UI writes notebook state; use a separate UI catalog |
 | 82 | `EXPLAIN ANALYZE (FORMAT JSON)` is an object, not an array | `EXPLAIN ANALYZE (FORMAT JSON) SELECT ...` | `io`, `operator` tree, `type=TABLE_SCAN`, `row_groups_scanned` |
+
+## Fragile-behavior review
+
+Rows 91-93 are automated in `scripts/probe.py`. Row 93 skips when the Python `duckdb` 2.x package is absent. Binary `v2.0.0 (Cyanoptera) d54cbbe3df` on Linux x86_64, Python package `duckdb` 2.0.0.
+
+| # | Fact | Command | Observed |
+| --- | --- | --- | --- |
+| 91 | `decimal_division` mis-binds an `INTEGER` argument on 2.0.0 | `decimal_division(10.00, 4)`, `decimal_division(127, 4.00)`, `decimal_division(10.00, 4::DECIMAL(10,0))` | `result out of range for result type` although `typeof` is `DECIMAL(15,13)`; `0.000000` (expected `31.75`); `2.5000000000000`. Upstream fix: duckdb/duckdb#28420, labeled for a 2.0 backport, not tested on a released binary |
+| 92 | The 2.0.0 CLI hides the `COPY ... TO` CTE count | `WITH w AS (COPY (SELECT * FROM range(3)) TO 'x.parquet' (FORMAT parquet)) SELECT * FROM w` in `-json`; same through stdin after `.changes on`; same with `RETURN_STATS` | empty stdout, exit 0; `changes:   3   total_changes: 3`; one row with `count` `3`; the file holds 3 rows |
+| 93 | The engine returns the `COPY ... TO` CTE count | Python `duckdb.connect().execute(<same SQL>).fetchall()` | `[(3,)]`; the file holds 3 rows. Matches `sql/statements/copy.md` |

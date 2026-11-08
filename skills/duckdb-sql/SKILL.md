@@ -52,7 +52,7 @@ To catch division by zero on integer division or modulo without failing, wrap ex
 Because `avg(DECIMAL)` and standard `/` operations cast operands to `DOUBLE`, run dedicated decimal functions for exact arithmetic:
 - To sum without precision loss, use `sum(x)`.
 - To compute an exact mean, use `decimal_average(x)`.
-- To divide exact values, use `decimal_division(x, y)`. Cast both operands explicitly to `DECIMAL`; mixing `DECIMAL` and `INTEGER` arguments yielded unstable types on 2.0.0.
+- To divide exact values, use `decimal_division(x, y)`. Cast both operands explicitly to `DECIMAL`. On 2.0.0 an `INTEGER` argument is mis-bound and can overflow or return a wrong value: `decimal_division(10.00, 4)` raises `result out of range` although `2.5` fits the inferred `DECIMAL(15,13)`, and `decimal_division(127, 4.00)` returns `0`. `decimal_division(10.00, 4::DECIMAL(10,0))` returns `2.5`. The upstream fix is [duckdb/duckdb#28420](https://github.com/duckdb/duckdb/pull/28420), labeled for a 2.0 backport; keep the casts until a released binary passes the probe.
 
 ## Variables
 
@@ -127,7 +127,7 @@ When executing `UPDATE`, `DELETE`, or `MERGE`, follow this verification sequence
 | `GROUPING_ID()` / `GROUPING()` | No arguments default to all `GROUP BY` columns |
 | `ALTER TABLE v RENAME TO v2` | Also renames a view |
 
-`COPY ... FROM` cannot serve as a CTE body. A `COPY ... TO` inside a CTE executes the write, but on 2.0.0 the outer query returns zero rows. Treat CTE `COPY ... TO` purely as a side effect and do not expect a row count.
+`COPY ... FROM` cannot serve as a CTE body. A `COPY ... TO` inside a CTE writes the file and returns the number of rows written; Python `execute(...).fetchall()` returns `[(n,)]`. On 2.0.0 the CLI does not render that count in JSON, CSV, or box output, so empty CLI output does not mean zero rows. In the CLI, run `.changes on` to print the count, or add `RETURN_STATS` or `RETURN_FILES` to the `COPY` options to get rendered rows. Prove the write by counting the output file.
 
 ## Result traps
 

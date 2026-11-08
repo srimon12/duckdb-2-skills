@@ -127,7 +127,7 @@ bash evals/ingest/run_reference.sh
 python3 skills/duckdb-profile/scripts/plan_lint.py --self-test
 ```
 
-Current result: 15 skills with 0 errors, 82/83 probes passed with 1 skipped when the Python package is absent, 25/25 ingest checks, and 5/5 linter checks.
+Current result: 15 skills with 0 errors, 84/86 probes passed with the 2 network probes skipped in the default run (the 2 Python-package probes skip when that package is absent), 25/25 ingest checks, and 5/5 linter checks.
 
 The probe suite needs DuckDB 2.0. The network probes cover the docs index and the UI extension. dbt 2.0.9, the FTS and VSS extensions, and the DuckDB binary are probed. Metabase, Grafana, Superset, Ibis, live Iceberg, and Unity Catalog are documented, not executed. See [research/08-skill-audit.md](research/08-skill-audit.md) for the exact coverage.
 
