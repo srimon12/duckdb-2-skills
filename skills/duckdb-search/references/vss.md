@@ -19,7 +19,13 @@ CREATE INDEX items_hnsw ON items USING HNSW (emb) WITH (metric = 'cosine');
 Catalog Error: Setting with name "hnsw_enable_experimental_persistence" is not in the catalog, but it exists in the vss extension.
 ```
 
-The flag gates creation only. Reopening a file and querying an existing index works without it. Without `LOAD vss` at all, the index is silently ignored and the query falls back to a scan.
+The flag gates creation only. Reopening a file and querying an existing index works without it. Without `LOAD vss`, reads scan, but writes fail because the index cannot be bound:
+
+```text
+Missing Extension Error: Cannot bind index "items", unknown index type 'HNSW'. You need to load the extension that provides this index type before table "items" can be modified.
+```
+
+Run `LOAD vss` in every session that writes, builds, or checkpoints the database. A reconnect that skips it cannot ingest into an indexed table.
 
 The key must be exactly one `FLOAT[N]` column or expression:
 
@@ -44,6 +50,8 @@ An empty table can be indexed before the first insert. Inserts, updates, and del
 | `ip` | `array_negative_inner_product` | Negative dot product. |
 
 A mismatch is silent. An `l2sq` index with `array_cosine_distance` produces a sequential scan, not an error. Sort by `1.0 - array_cosine_similarity` to get the rewrite to `array_cosine_distance`; a bare `array_cosine_similarity` sort is not accelerated. Check the plan, or `pragma_hnsw_index_info().metric`.
+
+The pgvector-style operators `<=>` and `<->` exist in 2.0.0 and return the same values as `array_cosine_distance` and `array_distance`. Neither is accelerated. `ORDER BY emb <=> literal LIMIT k` and `ORDER BY emb <-> literal LIMIT k` both plan as `Seq Scan` plus `Top N` because the operator casts the column to `FLOAT[]`. Use the `array_*` function names in every measured query.
 
 ## Query shape
 
@@ -123,7 +131,7 @@ Zero vectors are accepted. Cosine distance to a zero vector is `nan`, which sort
 
 At 50k vectors and 32 dimensions, recall@10 was 0.865 at `ef_search` 8, 0.915 at the default 64, and 0.988 at 128. Raising `ef_search` is the first lever. Change `M` or `ef_construction` only after that.
 
-`hnsw_ef_search` is session-scoped in the source. `BEGIN; SET hnsw_ef_search = 100; ROLLBACK` leaves the value changed; `SET LOCAL` is not implemented.
+`hnsw_ef_search` is session-scoped in the source. `BEGIN; SET hnsw_ef_search = 100; ROLLBACK` leaves the value changed; `SET LOCAL` is not implemented. `current_setting('hnsw_ef_search')` raises `Catalog Error: Setting with name "hnsw_ef_search" is not in the catalog` before the first `SET`, and returns `NULL` after `RESET`, not the stored `ef_search`. Track the effective value yourself.
 
 ## Memory and persistence
 
@@ -139,7 +147,7 @@ INTERNAL Error: Operation requires a flat or constant vector but a non-flat/non-
 
 `DROP INDEX` and `CREATE INDEX` repair it. Keep a backup before relying on a persistent HNSW index.
 
-Deletes are marked, not removed. `PRAGMA hnsw_compact_index('items_hnsw')` ran clean in 2.0.0 but left capacity, memory, and level statistics unchanged after deleting 90 percent of the rows. Rebuild the index after a large delete; do not rely on compaction.
+Deletes are marked, not removed. `PRAGMA hnsw_compact_index('items_hnsw')` ran clean in 2.0.0 but left `capacity`, `approx_memory_usage`, and level statistics unchanged after deleting 90 percent of the rows. It prunes deleted links, not allocated capacity. The extension README says compaction prunes deleted items, so the two claims measure different things. Rebuild the index after a large delete; do not rely on compaction to shrink it.
 
 `EXPORT DATABASE` writes the index with its options. `IMPORT DATABASE` into a file database needs the persistence flag first, or it fails with the create-index error. `COPY FROM DATABASE` copies the index.
 

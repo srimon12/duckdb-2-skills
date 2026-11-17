@@ -2,7 +2,7 @@
 
 Agent skills for [DuckDB](https://duckdb.org/) 2.0. This pack helps coding agents in Claude Code, Cursor, Codex, Grok, and other Agent Skills clients write DuckDB SQL, ingest CSV and Parquet, query `VARIANT` data, diagnose slow plans, run BM25 full-text and HNSW vector search, read Iceberg, Delta Lake, and DuckLake tables, answer spatial questions, run dbt, and write Python client code.
 
-It also covers extension install, Quack serving, and upgrades from DuckDB 1.4 or 1.5. The pack ships fifteen skills, seventeen lookup references, one router, and a plan linter. Verified against DuckDB 2.0.0 LTS (Cyanoptera) `d54cbbe3df` on Linux x86_64.
+It also covers extension install, Quack serving, and upgrades from DuckDB 1.4 or 1.5. The pack ships fifteen skills, eighteen lookup references, one router, and a plan linter. Verified against DuckDB 2.0.0 LTS (Cyanoptera) `d54cbbe3df` on Linux x86_64; the 2026-11-17 retrieval audit re-probed search, VARIANT, Python, and Quack on macOS arm64.
 
 This is an independent MIT project, not a DuckDB Foundation project.
 
@@ -12,7 +12,7 @@ This is an independent MIT project, not a DuckDB Foundation project.
 - Every workflow carries a contract, a proof, and stop rules. The agent can tell a correct result from a plausible wrong one.
 - Deep facts have one owner. Other skills link to it instead of repeating it.
 
-Some DuckDB 2.0 behaviors fail quietly. An HNSW index scan can drop `OFFSET`, including offsets past the end of the table ([duckdb-vss#110](https://github.com/duckdb/duckdb-vss/issues/110)). Mixed `DECIMAL` and `INTEGER` division under `decimal_division` can overflow or return `0` (fix tracked in [duckdb#28420](https://github.com/duckdb/duckdb/pull/28420)). A `COPY ... TO` inside a CTE does write the file even when the 2.0.0 CLI prints no row count. The skills that own those facts carry the stop rules.
+Some DuckDB 2.0 behaviors fail quietly. An HNSW index scan can drop `OFFSET`, including offsets past the end of the table ([duckdb-vss#110](https://github.com/duckdb/duckdb-vss/issues/110)). The `<=>` and `<->` operators return the right distance but plan as a sequential scan, even with an HNSW index. Mixed `DECIMAL` and `INTEGER` division under `decimal_division` can overflow or return `0` (fix tracked in [duckdb#28420](https://github.com/duckdb/duckdb/pull/28420)). A `COPY ... TO` inside a CTE does write the file even when the 2.0.0 CLI prints no row count. The skills that own those facts carry the stop rules.
 
 ## Install DuckDB 2.0
 
@@ -27,7 +27,7 @@ The version must print `v2.0`. Homebrew can lag the release.
 
 ## Install the skills
 
-Plugin version 0.6.0. There is no build step: Claude Code installs from the marketplace, and other clients copy the skill folders.
+Plugin version 0.6.1. There is no build step: Claude Code installs from the marketplace, and other clients copy the skill folders.
 
 ### Claude Code
 
@@ -135,7 +135,9 @@ bash evals/ingest/run_reference.sh
 python3 skills/duckdb-profile/scripts/plan_lint.py --self-test
 ```
 
-Current result: 15 skills with 0 errors, 84/86 probes passed with the 2 network probes skipped in the default run (the 2 Python-package probes skip when that package is absent), 25/25 ingest checks, and 5/5 linter checks.
+Current result: 15 skills with 0 errors. The network run passed 91 probes with 2 Python-package skips; the default run also skips the 2 network probes. Ingest 25/25 and linter 5/5.
+
+DuckDB 2.0.1 is planned for 2026-11-18. Re-run the probes after upgrading and retest the HNSW `OFFSET` stop rule; the fix is not in 2.0.0.
 
 The probe suite needs DuckDB 2.0. The network probes cover the docs index and the UI extension. dbt 2.0.9, the FTS and VSS extensions, and the DuckDB binary are probed. Metabase, Grafana, Superset, Ibis, live Iceberg, and Unity Catalog are documented, not executed. See [research/08-skill-audit.md](research/08-skill-audit.md) for the exact coverage.
 

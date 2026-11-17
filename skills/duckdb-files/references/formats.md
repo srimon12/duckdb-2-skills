@@ -241,7 +241,7 @@ FROM which_secret('s3://my-bucket/file.parquet', 's3');
 
 ## Async I/O
 
-Automatic for Parquet, uncompressed seekable UTF-8 CSV, and native DuckDB storage, including files read through DuckLake. JSON is synchronous.
+Automatic for Parquet, uncompressed seekable UTF-8 CSV, and native DuckDB storage, including files read through DuckLake. JSON and compressed CSV are synchronous. Async is on for local reads too, but the documented win is a high-latency remote link; local decode and the OS page cache can dominate.
 
 | Setting | Default | Use |
 | --- | --- | --- |
@@ -253,7 +253,7 @@ Automatic for Parquet, uncompressed seekable UTF-8 CSV, and native DuckDB storag
 | `http_client_pool_capacity` | auto | Tracks `async_threads`; the cap applies to the default. |
 | `fsync_mode` | `STANDARD` | Local write flush. `FULL` flushes harder; `NONE` skips the OS flush and can lose data or corrupt the database on a crash. |
 
-Do not tune these before measuring. A remote Parquet scan already reads asynchronously.
+Do not tune these before measuring. A remote Parquet scan already reads asynchronously. Quote the design-post speedups only when the benchmark reads object storage; they are not a 2.0.0 local-disk guarantee.
 
 ## Common errors
 

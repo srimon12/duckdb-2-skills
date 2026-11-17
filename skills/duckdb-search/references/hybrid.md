@@ -56,7 +56,7 @@ Do not fuse the full table. The point of both indexes is to avoid a full scan. A
 
 ## Evaluate
 
-Fuse ranks on a labeled fixture and compare recall@k with each leg alone. A small deterministic check:
+Fuse ranks on a labeled fixture and compare nDCG@k, recall@k, and MRR with each leg alone. The SQL for all three metrics, per-query averaging, and latency is in [evaluation.md](evaluation.md). A small deterministic recall check:
 
 ```sql
 -- relevant ids for the query, from a fixture or a human label
@@ -91,6 +91,7 @@ Below roughly 10k rows, a brute-force scan over both scores is simpler and often
 | `OFFSET` on the fused query | repeated rows | Fuse to `k + offset` and slice. |
 | No `id` tie-break | unstable ranks on ties | Add `, id` to both `ORDER BY` clauses. |
 | Fusing raw scores | BM25 and cosine are not comparable | Fuse ranks or normalize first. |
+| `search_layered_bm25` output joined as a row number | wrong ids or dropped rows | `docname` is the document id value; alias it to the id column. |
 
 ## References
 

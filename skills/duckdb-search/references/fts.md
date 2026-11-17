@@ -2,7 +2,7 @@
 
 Read this when the skill needs the exact FTS parameters, query semantics, layered search, freshness contract, or an update repair.
 
-Behavior below was probed on DuckDB 2.0.0 with fts `223b8cb9e6`. The official 2.0 page is older than the extension and omits `tokenizer`, `cluster_terms`, `layered_search`, `field_weights`, `field_b`, `scoring_model`, and `tie_breaker`.
+Behavior below was probed on DuckDB 2.0.0 with fts `2266e67d01`. The released 2.0.0 extension build predates the `v2.0-cyanoptera` branch HEAD (`623ee80e`); where behavior differs, both are noted. The official 2.0 page is older than the extension and omits `tokenizer`, `cluster_terms`, `layered_search`, `field_weights`, `field_b`, `scoring_model`, and `tie_breaker`.
 
 ## Create an index
 
@@ -91,7 +91,7 @@ A query with no score filter returns every row, with NULL for non-matches. `ORDE
 
 Scores are unbounded and corpus-dependent. A rare term can score 4.82 and a common term 0.0000065. Rank, never threshold.
 
-`fields := 'title,body'` is a comma-separated string, trimmed and matched case-sensitively. On 2.0.0 an unknown field returns zero rows without an error; current `v2.0-cyanoptera` HEAD raises `fields contains unknown field: <name>`. `fields := 'Title'` is not the same as `fields := 'title'`. `fields := ''` returns zero rows.
+`fields := 'title,body'` is a comma-separated string, trimmed and matched case-sensitively. On the released 2.0.0 extension (`2266e67d01`) an unknown field returns zero rows without an error. The `v2.0-cyanoptera` branch (`623ee80e`) and newer builds raise `fields contains unknown field: <name>`. `fields := 'Title'` is not the same as `fields := 'title'`. `fields := ''` returns zero rows.
 
 ## Scoring
 
@@ -100,7 +100,7 @@ BM25F is the default for single-field and multi-field indexes. It normalizes ter
 | Parameter | Effect |
 | --- | --- |
 | `k` | Saturation. `0` makes every hit score equally. |
-| `b` | Length normalization from `0` to `1`. Outside the range is an error. |
+| `b` | Length normalization from `0` to `1`. Outside the range raises `Invalid Input Error: b must be finite and between 0 and 1`. |
 | `field_weights` | `MAP(VARCHAR, DOUBLE)`. Omitted fields weigh `1.0`. Unknown fields error. |
 | `field_b` | Per-field `b`, from `0` to `1`. Omitted fields inherit `b`. |
 | `scoring_model` | `bm25f` or `best_fields`. |
@@ -164,7 +164,11 @@ Dropping the base table leaves the index schema orphaned. `PRAGMA drop_fts_index
 
 ## Tokenization
 
-The defaults are tuned for prose, not code.
+The defaults are tuned for prose, not code. The released `ignore` default treats digits and punctuation as delimiters:
+
+```text
+[0-9!@#$%^&*()_+={}\[\]:;<>,.?~\\/\|''"`-]+
+```
 
 | Shape | What happens | Correct move |
 | --- | --- | --- |
@@ -207,7 +211,7 @@ SELECT docname, score, rank
 FROM fts_main_docs.search_layered_bm25('quac', top_k := 10);
 ```
 
-`search_layered_bm25(query_string, fields := NULL, top_k := 50, ...)` returns `docname`, `score`, and `rank`. `match_layered_bm25(input_id, query_string, ...)` is the scalar form.
+`search_layered_bm25(query_string, fields := NULL, top_k := 50, ...)` returns `docname`, `score`, and `rank`. `docname` is the document id value, so alias it to the id column before a hybrid join. `match_layered_bm25(input_id, query_string, ...)` is the scalar form for a row-wise score.
 
 Expansion controls are `term_limit` (default 32), `max_df_ratio` (0.15), `max_df` (50000), `enable_prefix`, `enable_substring`, `enable_fuzzy`, `enable_short_fuzzy`, and `expand_exact_terms` (false). `query_mode := 'autocomplete'` keeps preceding tokens exact and matches the final token by raw prefix. The final token needs at least two characters.
 

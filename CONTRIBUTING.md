@@ -56,7 +56,7 @@ Add a reference file only when the content is long, tabular, and needed on a min
 - Open with one sentence that says when to read it.
 - Do not link a reference from another skill's reference. Link the owning skill.
 
-Current reference files: CLI flags, friendly SQL, trigger support, file formats, batch ingest, stable pagination, plan reading, diagnosis protocol, lakehouse catalogs, Overture, migration checklist, client compatibility, MCP, FTS, VSS, dbt project, and hybrid ranking.
+Current reference files: CLI flags, friendly SQL, trigger support, file formats, batch ingest, stable pagination, plan reading, diagnosis protocol, lakehouse catalogs, Overture, migration checklist, client compatibility, MCP, FTS, VSS, dbt project, hybrid ranking, and retrieval evaluation.
 
 ## Fact ownership
 

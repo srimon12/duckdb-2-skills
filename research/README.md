@@ -40,5 +40,6 @@ The snapshots are reference copies. The live pages remain the source of truth. E
 | `12-diagnostics-engine.md` | Plan JSON shapes, spill, profiling metrics, plan linter | Complete |
 | `13-search-sharing-integrations.md` | FTS, VSS, pagination, views-only sharing, dbt, BI, MCP | Complete |
 | `14-search-dbt-workflows.md` | Layered FTS, HNSW limits, hybrid RRF, dbt v2 driver and storage | Complete |
+| `15-retrieval-audit.md` | Vector operators, write gate, FTS build delta, VARIANT numeric types, serve lifetime, rank metrics | Complete |
 
 `METHOD.md` is the contract every slice follows. `08-skill-audit.md` is the merged verdict. `09-verified-facts.md` is the claim registry with probe commands.
