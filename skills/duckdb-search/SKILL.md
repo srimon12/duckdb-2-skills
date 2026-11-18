@@ -98,7 +98,7 @@ CREATE TABLE items (id INTEGER, emb FLOAT[3]);
 CREATE INDEX items_hnsw ON items USING HNSW (emb) WITH (metric = 'cosine');
 ```
 
-In file databases, run `LOAD vss;` before setting `SET hnsw_enable_experimental_persistence = true;` because settings belong to the extension. The persistence flag gates index creation, not reads. Without `LOAD vss`, reads scan and writes fail with `Cannot bind index ... unknown index type 'HNSW'`; load the extension in every write session.
+In file databases, run `LOAD vss;` before setting `SET hnsw_enable_experimental_persistence = true;` because settings belong to the extension. The persistence flag gates index creation, not reads. Without `LOAD vss`, reads scan sequentially and writes fail with `Cannot bind index ... unknown index type 'HNSW'`. Load the extension in every write session.
 
 When defining the index, restrict the key column to `FLOAT[N]`. Types like `DOUBLE[N]`, `INTEGER[N]`, or `FLOAT[]` fail:
 
@@ -120,7 +120,7 @@ To accelerate vector queries, match the query function to the index metric:
 SELECT id FROM items ORDER BY array_cosine_distance(emb, [1, 0, 0]::FLOAT[3]) LIMIT 3;
 ```
 
-When querying, pass the query vector as a literal `FLOAT[N]`. Any `::DOUBLE[N]` cast, scalar subquery, `DESC` sort, missing `LIMIT`, tie-breaker like `ORDER BY dist, id`, or dynamic `LIMIT (SELECT k)` silently triggers a full sequential scan. Prepared `$1` vectors and ordinal `ORDER BY 1` use HNSW but execute a full index scan without top-k pushdown. Sort by `array_cosine_distance` or `1.0 - array_cosine_similarity`; bare `array_cosine_similarity` is never accelerated. The `<=>` and `<->` operators return the right distance but plan as a sequential scan, even with an HNSW index; use the `array_*` functions.
+When querying, pass the query vector as a literal `FLOAT[N]`. Any `::DOUBLE[N]` cast, scalar subquery, `DESC` sort, missing `LIMIT`, tie-breaker like `ORDER BY dist, id`, or dynamic `LIMIT (SELECT k)` silently triggers a full sequential scan. Prepared `$1` vectors and ordinal `ORDER BY 1` use HNSW but execute a full index scan without top-k pushdown. Sort by `array_cosine_distance` or `1.0 - array_cosine_similarity`. Bare `array_cosine_similarity` never uses the index. The `<=>` and `<->` operators return correct distances, but they execute as sequential scans even with an HNSW index. Use the `array_*` functions in all queries.
 
 When filtering, retain the default `hnsw_prefilter = true`. Setting it to `false` on a selective filter can return zero rows. Prefiltering costs a full scan of the filter columns, so a very selective filter over a large table is not free. To improve recall, raise `hnsw_ef_search` (default 64). On DuckDB 2.0.0, never use `OFFSET`; the index scan repeats the first page, even past the end of the table ([duckdb/duckdb-vss#110](https://github.com/duckdb/duckdb-vss/issues/110)). Query `LIMIT (k + offset)` and slice results in the client.
 
@@ -146,7 +146,7 @@ FROM lex l FULL OUTER JOIN vec v USING (id)
 ORDER BY rrf DESC, id;
 ```
 
-In the lexical leg, place `row_number()` outside the `match_bm25` subquery to prevent volatile expression errors. In both legs, supply a literal `LIMIT`; dynamic limits force vector sequential scans. Missing legs contribute zero rather than `1/60`. To tune precision, raise candidate limits before adjusting leg weights, and measure recall against a brute-force baseline. See [references/hybrid.md](references/hybrid.md). For nDCG@k, recall@k, MRR, and latency from labeled runs, see [references/evaluation.md](references/evaluation.md).
+In the lexical leg, place `row_number()` outside the `match_bm25` subquery to prevent volatile expression errors. In both legs, supply a literal `LIMIT`. Dynamic limits force sequential vector scans. Missing legs contribute zero rather than `1/60`. To tune precision, raise candidate limits before adjusting leg weights, and measure recall against a brute-force baseline. See [references/hybrid.md](references/hybrid.md). For nDCG@k, recall@k, MRR, and latency from labeled runs, see [references/evaluation.md](references/evaluation.md).
 
 ## Stop rules
 

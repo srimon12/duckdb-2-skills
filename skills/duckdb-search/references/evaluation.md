@@ -10,10 +10,10 @@ The SQL below was run on DuckDB 2.0.0. It assumes two tables:
 ## Contract
 
 ```text
-Inputs:      qrels with at least one relevant doc per scored query; runs with one score per query/doc
-Outputs:     per-query nDCG@k, recall@k, MRR; average across queries
-Invariant:   rank with a deterministic tie-break; compute per query, then average
-Failure:     pooling rows before averaging weights queries by result count, not equally
+Inputs:      qrels with at least one relevant doc per scored query, and runs with one score per query and doc
+Outputs:     per-query nDCG@k, recall@k, and MRR, then average across queries
+Invariant:   rank with a deterministic tie-break, compute per query, then average
+Failure:     pooling rows before averaging weights queries by result count instead of equally
 Proof:       a hand-computed fixture matches the three metrics
 ```
 

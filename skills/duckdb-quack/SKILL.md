@@ -25,7 +25,7 @@ duckdb analytics.duckdb -serve
 
 When omitting the database path, `-serve` serves an in-memory database. Serving a Parquet or CSV file exposes a view named after the file stem: `duckdb runs.parquet -serve` exposes `runs`. When no default Quack secret exists, `-serve` generates a token and persists an unencrypted secret named `__default_quack` (scope `quack:`, mode 600) so `duckdb -connect` works immediately. Because possession of the token grants full read and write access to every session table, delete `__default_quack` when stopping the server, or load a named secret from a vault.
 
-In a non-interactive shell, `-serve` exits when stdin closes, after printing the token. Keep it attached to a terminal or hold stdin open: `tail -f /dev/null | duckdb analytics.duckdb -serve`. A background job with `< /dev/null` dies immediately, and `duckdb -c 'CALL quack_serve();'` exits after the statement.
+In a non-interactive shell, `-serve` exits after printing the token when stdin closes. Keep standard input open or run the command in a terminal: `tail -f /dev/null | duckdb analytics.duckdb -serve`. A background job with `< /dev/null` exits immediately. Running `duckdb -c 'CALL quack_serve();'` exits after the statement completes.
 
 To manage the server lifecycle in SQL, invoke `quack_serve` or `quack_stop`:
 

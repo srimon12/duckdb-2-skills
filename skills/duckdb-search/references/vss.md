@@ -131,7 +131,7 @@ Zero vectors are accepted. Cosine distance to a zero vector is `nan`, which sort
 
 At 50k vectors and 32 dimensions, recall@10 was 0.865 at `ef_search` 8, 0.915 at the default 64, and 0.988 at 128. Raising `ef_search` is the first lever. Change `M` or `ef_construction` only after that.
 
-`hnsw_ef_search` is session-scoped in the source. `BEGIN; SET hnsw_ef_search = 100; ROLLBACK` leaves the value changed; `SET LOCAL` is not implemented. `current_setting('hnsw_ef_search')` raises `Catalog Error: Setting with name "hnsw_ef_search" is not in the catalog` before the first `SET`, and returns `NULL` after `RESET`, not the stored `ef_search`. Track the effective value yourself.
+`hnsw_ef_search` is session-scoped. A `ROLLBACK` does not revert `SET hnsw_ef_search = 100`. DuckDB does not implement `SET LOCAL`. Calling `current_setting('hnsw_ef_search')` before the first `SET` raises a catalog error: `Setting with name "hnsw_ef_search" is not in the catalog`. After `RESET`, it returns `NULL` instead of the stored `ef_search`. Track the effective value yourself.
 
 ## Memory and persistence
 
@@ -147,7 +147,7 @@ INTERNAL Error: Operation requires a flat or constant vector but a non-flat/non-
 
 `DROP INDEX` and `CREATE INDEX` repair it. Keep a backup before relying on a persistent HNSW index.
 
-Deletes are marked, not removed. `PRAGMA hnsw_compact_index('items_hnsw')` ran clean in 2.0.0 but left `capacity`, `approx_memory_usage`, and level statistics unchanged after deleting 90 percent of the rows. It prunes deleted links, not allocated capacity. The extension README says compaction prunes deleted items, so the two claims measure different things. Rebuild the index after a large delete; do not rely on compaction to shrink it.
+Deletes are marked, not removed. `PRAGMA hnsw_compact_index('items_hnsw')` ran clean in 2.0.0 but left `capacity`, `approx_memory_usage`, and level statistics unchanged after deleting 90 percent of the rows. It prunes deleted links, not allocated capacity. The extension README says compaction prunes deleted items, so the two claims measure different things. Rebuild the index after a large delete. Do not rely on compaction to shrink allocated capacity.
 
 `EXPORT DATABASE` writes the index with its options. `IMPORT DATABASE` into a file database needs the persistence flag first, or it fails with the create-index error. `COPY FROM DATABASE` copies the index.
 

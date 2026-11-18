@@ -2,7 +2,7 @@
 
 Agent skills for [DuckDB](https://duckdb.org/) 2.0. This pack helps coding agents in Claude Code, Cursor, Codex, Grok, and other Agent Skills clients write DuckDB SQL, ingest CSV and Parquet, query `VARIANT` data, diagnose slow plans, run BM25 full-text and HNSW vector search, read Iceberg, Delta Lake, and DuckLake tables, answer spatial questions, run dbt, and write Python client code.
 
-It also covers extension install, Quack serving, and upgrades from DuckDB 1.4 or 1.5. The pack ships fifteen skills, eighteen lookup references, one router, and a plan linter. Verified against DuckDB 2.0.0 LTS (Cyanoptera) `d54cbbe3df` on Linux x86_64; the 2026-11-17 retrieval audit re-probed search, VARIANT, Python, and Quack on macOS arm64.
+It also covers extension install, Quack serving, and upgrades from DuckDB 1.4 or 1.5. The pack ships fifteen skills, eighteen lookup references, one router, and a plan linter. Tests run against DuckDB 2.0.0 LTS (Cyanoptera) `d54cbbe3df` on Linux x86_64. The 2026-11-17 retrieval audit re-probed search, VARIANT, Python, and Quack on macOS arm64.
 
 This is an independent MIT project, not a DuckDB Foundation project.
 
@@ -135,9 +135,9 @@ bash evals/ingest/run_reference.sh
 python3 skills/duckdb-profile/scripts/plan_lint.py --self-test
 ```
 
-Current result: 15 skills with 0 errors. The network run passed 91 probes with 2 Python-package skips; the default run also skips the 2 network probes. Ingest 25/25 and linter 5/5.
+Current result: 15 skills with 0 errors. The network run passed 91 probes with 2 Python-package skips. The default run also skips the 2 network probes. Ingest 25/25 and linter 5/5.
 
-DuckDB 2.0.1 is planned for 2026-11-18. Re-run the probes after upgrading and retest the HNSW `OFFSET` stop rule; the fix is not in 2.0.0.
+DuckDB 2.0.1 is planned for 2026-11-18. Re-run the probes after upgrading and retest the HNSW `OFFSET` stop rule. The fix is not in 2.0.0.
 
 The probe suite needs DuckDB 2.0. The network probes cover the docs index and the UI extension. dbt 2.0.9, the FTS and VSS extensions, and the DuckDB binary are probed. Metabase, Grafana, Superset, Ibis, live Iceberg, and Unity Catalog are documented, not executed. See [research/08-skill-audit.md](research/08-skill-audit.md) for the exact coverage.
 
