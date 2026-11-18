@@ -272,6 +272,8 @@ SELECT ...;
 
 `EXPLAIN ANALYZE (FORMAT JSON)` returns one object, not an array. The object has `io`, an `operator` tree, `query`, `system`, and planning sections. Operator nodes use `type`, not `name`, and carry the actual fields at the top level.
 
+In Python, `con.execute("EXPLAIN ANALYZE (FORMAT JSON) ...").fetchone()` returns one row with two columns: `analyzed_plan` and the JSON string. Parse `row[1]`. The CLI prints the JSON object directly.
+
 ```json
 {
   "io": {"total_bytes_read": 47700, "total_bytes_written": 0},

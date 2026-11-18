@@ -1,6 +1,6 @@
 # Verified facts
 
-Binary: DuckDB 2.0.0 (Cyanoptera) `d54cbbe3df`. The first pass ran on 2026-10-22 on macOS arm64. The diagnostics pass ran on 2026-10-26 on Linux x86_64.
+Binary: DuckDB 2.0.0 (Cyanoptera) `d54cbbe3df`. The first pass ran on 2026-10-22 on macOS arm64. The diagnostics pass ran on 2026-10-26 on Linux x86_64. The retrieval audit ran on 2026-11-17 on macOS arm64 with vss `3685131eac` and fts `2266e67d01`.
 
 `scripts/probe.py` re-runs the automated rows. The rest record a manual probe and the command that produced it. A fact used in a skill must appear here or cite a manual page.
 
@@ -110,6 +110,32 @@ Numbers below use the `E` prefix. The full probe log and decisions are in `slice
 | E40 | dbt v2 Python models and materialized views fail | build probe | `Python models are not supported`; `get_create_materialized_view_as_sql has not been implemented` |
 | E41 | Two dbt processes on one file fail on the lock; threads in one process work | parallel `dbt run` | `Could not set lock on file` |
 | E42 | Without `schema`, dbt 2.0.9 renders `this` as `public` during hook compilation while the model lands in `main` | hook log and executed SQL | log `"h"."public"."m"`; executed hook SQL and table in `main`; `schema: main` made both `main` |
+
+## Retrieval audit pass
+
+Numbers below use the `R` prefix. The slice is `slices/15-retrieval-audit.md`.
+
+| # | Fact | Probe | Observed |
+| --- | --- | --- | --- |
+| R1 | `<=>` and `<->` return the same values as the array functions but do not use HNSW | cosine index, `EXPLAIN` for both operators | values match; both plans are `Seq Scan` plus `Top N` |
+| R2 | Without `LOAD vss`, reads scan and writes fail | reopen an indexed file, then `INSERT` | read returned rows; write raised `Cannot bind index ... unknown index type 'HNSW'` |
+| R3 | `hnsw_ef_search` is unreadable before `SET` and NULL after `RESET` | `current_setting` before, after, rollback, reset | Catalog Error; 128; 100 after rollback; NULL after reset |
+| R4 | Compaction does not reclaim capacity on 2.0.0 | 100 rows, delete 90, compact | count 10, capacity 100, memory unchanged |
+| R5 | The OFFSET bug is still open upstream | `duckdb-vss#110`; scan optimizer source | open since 2026-11-08; no offset handling on main |
+| R6 | The vss README and the 2.0.0 compaction probe measure different things | README and local probe | README prunes links; capacity and memory stay |
+| R7 | Released FTS is older than the v2.0-cyanoptera branch | `duckdb_extensions()` and branch history | extension `2266e67d01` (2026-07-30); branch `623ee80e` (2026-10-05) |
+| R8 | The unknown-field error depends on the FTS build | `fields := 'nope'` | 0 rows on `2266e67d01`; branch raises `fields contains unknown field` |
+| R9 | `b` outside 0 to 1 has an exact error | `b := 2.0` | `b must be finite and between 0 and 1` |
+| R10 | `search_layered_bm25` returns `docname` | layered index | columns `docname`, `score`, `rank` |
+| R11 | JSON numbers keep a parsed numeric type in VARIANT | `variant_typeof` and Parquet round-trip | `DECIMAL(2, 1)` and `INT32` |
+| R12 | `read_json` cannot target VARIANT | `COPY t FROM 'v.json'` | `Cannot read a value of type VARIANT from a json file` |
+| R13 | Python returns two columns for `EXPLAIN ANALYZE (FORMAT JSON)` | duckdb 2.0.0 venv | `('analyzed_plan', '<json>')` |
+| R14 | `-serve` exits when stdin closes | CLI with `< /dev/null` | printed the token, exited 0 |
+| R15 | A served Parquet file is a stem-named view | `q.parquet -serve` | `SHOW TABLES` returned `file` and `q`; `SELECT * FROM q` worked |
+| R16 | Reader synonyms are overloads, not aliases | manual and probe | `read_csv_auto` and `read_csv` both read the file |
+| R17 | Async I/O is on locally too, but the payoff is remote | 2.0 I/O page | documented |
+| R18 | nDCG, recall, and MRR run in one SQL query | two-query fixture | nDCG 0.6590018, recall 1.0, MRR 0.5 |
+| R19 | 2.0.1 is planned, not released | Query.Farm report and GitHub tags | planned 2026-11-18; no tag on 2026-11-17 |
 
 ## Manual dbt probes
 

@@ -29,7 +29,7 @@ A reader can install the pack, pick the right skill from the router, and run the
 | --- | --- |
 | Snapshot the manual instead of fetching pages per claim | 461 pages over the network is slow and non-reproducible. A pinned commit makes every citation stable. |
 | Keep 13 skills in the diagnostics pass, then add `duckdb-search` and `duckdb-dbt` when the shipped extensions and adapter cleared the bar | A separate ingest skill would still collide with `duckdb-files`; that workflow stays a reference. Search and dbt have distinct triggers, contracts, and proofs. |
-| Add reference files only for CLI, friendly SQL, triggers, formats, ingest, pagination, plans, diagnosis, catalogs, Overture, migration, clients, MCP, FTS, VSS | These are long tables or workflows an agent loads rarely. Everything else stays in `SKILL.md`. |
+| Add reference files only for CLI, friendly SQL, triggers, formats, ingest, pagination, plans, diagnosis, catalogs, Overture, migration, clients, MCP, FTS, VSS, retrieval evaluation | These are long tables or workflows an agent loads rarely. Everything else stays in `SKILL.md`. |
 | Research stays in `research/`, not in the skill text | Skills carry decisions. Evidence belongs where a maintainer can audit it without spending agent context. |
 | One owner per deep fact, one-line cross-links elsewhere | An agent that loads one skill must still be able to act. Detail is deduplicated; the minimum needed to recognize the situation is not. |
 | Frontmatter stays `name` + `description` | The pack targets multiple clients. Client-specific fields would narrow it. |

@@ -33,7 +33,13 @@ VARIANT storage is supported in DuckDB native tables, Parquet files, and Delta t
 
 ## Load JSON
 
-Because `read_json` cannot read directly into a `VARIANT` target (binding succeeds but execution fails), ingest documents as `JSON` text first, then cast with `::VARIANT`. For a reliable ingest workflow:
+Because `read_json` cannot read directly into a `VARIANT` target, ingest documents as `JSON` text first, then cast with `::VARIANT`. On 2.0.0 the failure is:
+
+```text
+Not implemented Error: Cannot read a value of type VARIANT from a json file
+```
+
+For a reliable ingest workflow:
 
 1. Ingest as `JSON` and cast to `VARIANT`: `SELECT json_data::VARIANT FROM read_json('events.json', columns={'json_data': 'JSON'});`.
 2. Profile key structures and types on a sample: `SELECT variant_keys(data), variant_typeof(data) FROM events LIMIT 1000;`.
@@ -51,6 +57,8 @@ FROM events;
 ```
 
 `variant_typeof` returns the full logical type, such as `INT32`, `VARCHAR`, `ARRAY(3)`, or `OBJECT(age, name)`. `variant_type` returns the top-level physical storage category, such as `OBJECT`, `BOOL_TRUE`, `INT8` (for `TINYINT`), `INT32` (for `INTEGER`), `DECIMAL`, or `TIMESTAMP_MICROS`. It does not return SQL type names.
+
+JSON numeric literals keep the type chosen by the parser. `{'k': 1.2}::VARIANT` stores `DECIMAL(2, 1)`, and `{'n': 64}::VARIANT` stores `INT32`. Cast extracted numbers before metric math or aggregation: `cfg.k::DOUBLE`. In a run-config table, `variant_typeof(cfg.k)` reports `DECIMAL(2, 1)`, while `variant_type(cfg.k)` reports `DECIMAL`.
 
 | Function | Description |
 | --- | --- |
@@ -174,11 +182,12 @@ Execute an inline query to validate type reflection, 1-based extraction, and key
 
 ```sql
 SELECT variant_typeof({'a': 1}::VARIANT) AS type,
+       variant_typeof({'k': 1.2}::VARIANT.k) AS number_type,
        variant_extract([10, 20]::VARIANT, 2) AS second,
        variant_keys({'b': 2, 'a': 1}::VARIANT) AS keys;
 ```
 
-Confirm expected outputs: `type` returns `OBJECT(a)`, `second` returns `20`, and `keys` returns `[a, b]`.
+Confirm expected outputs: `type` returns `OBJECT(a)`, `number_type` returns `DECIMAL(2, 1)`, `second` returns `20`, and `keys` returns `[a, b]`.
 
 ## References
 

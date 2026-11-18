@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -185,7 +186,13 @@ def check_decimal_division(tmp: Path, network: bool) -> tuple[bool, str]:
 
 def check_decimal_division_mixed(tmp: Path, network: bool) -> tuple[bool, str]:
     # Released 2.0.0 mis-binds INTEGER arguments; duckdb/duckdb#28420 carries the upstream fix.
+    # Platforms differ between an out-of-range error and a silent 0.0, so accept either.
     ok_err, detail = expect_error("SELECT decimal_division(10.00, 4) AS v", tmp, "result out of range")
+    first = None
+    if not ok_err:
+        first = one("SELECT decimal_division(10.00, 4) AS v", tmp)
+        ok_err = str(first["v"]).startswith("0.0")
+        detail = f"silent {first['v']}"
     got = one(
         "SELECT decimal_division(127, 4.00) AS wrong,"
         " decimal_division(10.00, 4::DECIMAL(10,0)) AS cast_both",
@@ -850,6 +857,209 @@ def check_vss_offset(tmp: Path, network: bool) -> tuple[bool, str]:
     return ok, f"indexed={indexed_ids} brute={brute_ids}"
 
 
+def check_vss_operators(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = str(tmp / "vss-operators.duckdb")
+    rows(
+        "LOAD vss;"
+        " SET hnsw_enable_experimental_persistence = true;"
+        " CREATE TABLE items (id INTEGER, emb FLOAT[3]);"
+        " INSERT INTO items VALUES (1, [1, 0, 0]), (2, [0, 1, 0]);"
+        " CREATE INDEX items_hnsw ON items USING HNSW (emb) WITH (metric = 'cosine');",
+        tmp,
+        (db,),
+    )
+    cosine = duckdb(
+        "LOAD vss; EXPLAIN SELECT id FROM items"
+        " ORDER BY emb <=> [1, 0, 0]::FLOAT[3] LIMIT 1;",
+        tmp,
+        (db,),
+    )
+    l2 = duckdb(
+        "LOAD vss; EXPLAIN SELECT id FROM items"
+        " ORDER BY emb <-> [1, 0, 0]::FLOAT[3] LIMIT 1;",
+        tmp,
+        (db,),
+    )
+    values = one(
+        "SELECT [1, 0, 0]::FLOAT[3] <=> [0, 1, 0]::FLOAT[3] AS cosine,"
+        " [1, 0, 0]::FLOAT[3] <-> [0, 1, 0]::FLOAT[3] AS l2",
+        tmp,
+    )
+    ok = (
+        cosine.returncode == 0
+        and l2.returncode == 0
+        and "Hnsw Index Scan" not in cosine.stdout
+        and "Hnsw Index Scan" not in l2.stdout
+        and abs(values["cosine"] - 1.0) < 1e-6
+        and abs(values["l2"] - 2**0.5) < 1e-6
+    )
+    return ok, f"cosine={values['cosine']}, l2={values['l2']}, both unindexed"
+
+
+def check_vss_write_gate(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = str(tmp / "vss-write.duckdb")
+    rows(
+        "LOAD vss;"
+        " SET hnsw_enable_experimental_persistence = true;"
+        " CREATE TABLE items (id INTEGER, emb FLOAT[3]);"
+        " INSERT INTO items VALUES (1, [1, 0, 0]), (2, [0, 1, 0]);"
+        " CREATE INDEX items_hnsw ON items USING HNSW (emb) WITH (metric = 'cosine');",
+        tmp,
+        (db,),
+    )
+    read = rows(
+        "SELECT id FROM items"
+        " ORDER BY array_cosine_distance(emb, [1, 0, 0]::FLOAT[3]) LIMIT 1",
+        tmp,
+        (db,),
+    )
+    write = duckdb("INSERT INTO items VALUES (3, [0, 0, 1]);", tmp, (db,))
+    loaded = rows(
+        "LOAD vss; INSERT INTO items VALUES (3, [0, 0, 1]);"
+        " SELECT count(*) AS n FROM items;",
+        tmp,
+        (db,),
+    )
+    ok = (
+        len(read) == 1
+        and write.returncode != 0
+        and "Cannot bind index" in write.stderr
+        and loaded[0]["n"] == 3
+    )
+    return ok, "read scans; write rejected; LOAD vss repairs it"
+
+
+def check_vss_ef_search(tmp: Path, network: bool) -> tuple[bool, str]:
+    before = duckdb(
+        "LOAD vss; SELECT current_setting('hnsw_ef_search');",
+        tmp,
+    )
+    after = one(
+        "LOAD vss; SET hnsw_ef_search = 128;"
+        " SELECT current_setting('hnsw_ef_search') AS v;",
+        tmp,
+    )
+    rollback = one(
+        "LOAD vss; SET hnsw_ef_search = 128;"
+        " BEGIN; SET hnsw_ef_search = 100; ROLLBACK;"
+        " SELECT current_setting('hnsw_ef_search') AS v;",
+        tmp,
+    )
+    reset = one(
+        "LOAD vss; SET hnsw_ef_search = 128; RESET hnsw_ef_search;"
+        " SELECT current_setting('hnsw_ef_search') AS v;",
+        tmp,
+    )
+    ok = (
+        before.returncode != 0
+        and "not in the catalog" in before.stderr
+        and after["v"] == 128
+        and rollback["v"] == 100
+        and reset["v"] is None
+    )
+    return ok, f"before error, set={after['v']}, rollback={rollback['v']}, reset=NULL"
+
+
+def check_vss_compact(tmp: Path, network: bool) -> tuple[bool, str]:
+    db = str(tmp / "vss-compact.duckdb")
+    rows(
+        "LOAD vss;"
+        " SET hnsw_enable_experimental_persistence = true;"
+        " CREATE TABLE items (id INTEGER, emb FLOAT[3]);"
+        " INSERT INTO items SELECT i, [i::FLOAT, 0, 0] FROM range(1, 101) t(i);"
+        " CREATE INDEX items_hnsw ON items USING HNSW (emb) WITH (metric = 'cosine');",
+        tmp,
+        (db,),
+    )
+    before = one(
+        "LOAD vss; SELECT count, capacity, approx_memory_usage"
+        " FROM pragma_hnsw_index_info();",
+        tmp,
+        (db,),
+    )
+    rows(
+        "LOAD vss; DELETE FROM items WHERE id <= 90;"
+        " PRAGMA hnsw_compact_index('items_hnsw');",
+        tmp,
+        (db,),
+    )
+    after = one(
+        "LOAD vss; SELECT count, capacity, approx_memory_usage"
+        " FROM pragma_hnsw_index_info();",
+        tmp,
+        (db,),
+    )
+    ok = (
+        before["count"] == 100
+        and after["count"] == 10
+        and before["capacity"] == after["capacity"]
+        and before["approx_memory_usage"] == after["approx_memory_usage"]
+    )
+    return ok, f"count {before['count']}->{after['count']}, capacity stayed {after['capacity']}"
+
+
+def check_variant_json_number(tmp: Path, network: bool) -> tuple[bool, str]:
+    got = one(
+        "SELECT variant_typeof({'k': 1.2}::VARIANT.k) AS k,"
+        " variant_typeof({'n': 64}::VARIANT.n) AS n",
+        tmp,
+    )
+    ok = got["k"] == "DECIMAL(2, 1)" and got["n"] == "INT32"
+    return ok, f"k={got['k']}, n={got['n']}"
+
+
+def check_variant_read_json(tmp: Path, network: bool) -> tuple[bool, str]:
+    (tmp / "variant.json").write_text('{"a": 1}\n', encoding="utf-8")
+    return expect_error(
+        "CREATE TABLE t (v VARIANT); COPY t FROM 'variant.json';",
+        tmp,
+        "Cannot read a value of type VARIANT",
+    )
+
+
+def check_eval_metrics(tmp: Path, network: bool) -> tuple[bool, str]:
+    got = rows(
+        "CREATE TABLE qrels (qid INTEGER, doc_id INTEGER, rel INTEGER);"
+        " CREATE TABLE runs (qid INTEGER, doc_id INTEGER, score DOUBLE);"
+        " INSERT INTO qrels VALUES (1, 1, 2), (1, 2, 1), (2, 10, 1);"
+        " INSERT INTO runs VALUES"
+        " (1, 3, 9), (1, 1, 5), (1, 2, 1), (2, 11, 9), (2, 10, 1);"
+        " WITH params AS (SELECT 3 AS k),"
+        " ranked AS (SELECT qid, doc_id,"
+        "   row_number() OVER (PARTITION BY qid ORDER BY score DESC, doc_id) AS rn"
+        "   FROM runs),"
+        " judged AS (SELECT r.qid, r.doc_id, r.rn, coalesce(q.rel, 0) AS rel"
+        "   FROM ranked r CROSS JOIN params p"
+        "   LEFT JOIN qrels q USING (qid, doc_id) WHERE r.rn <= p.k),"
+        " dcg AS (SELECT qid, sum((POWER(2, rel) - 1) / LOG2(rn + 1)) AS dcg"
+        "   FROM judged GROUP BY qid),"
+        " ideal AS (SELECT qid, sum((POWER(2, rel) - 1) / LOG2(rn + 1)) AS idcg"
+        "   FROM (SELECT qid, rel, row_number() OVER"
+        "     (PARTITION BY qid ORDER BY rel DESC, doc_id) AS rn"
+        "     FROM qrels WHERE rel > 0) t"
+        "   CROSS JOIN params p WHERE rn <= p.k GROUP BY qid),"
+        " relcount AS (SELECT qid, count(*) AS n_rel FROM qrels"
+        "   WHERE rel > 0 GROUP BY qid),"
+        " retrieved AS (SELECT qid, count(*) FILTER (WHERE rel > 0) AS hits,"
+        "   min(CASE WHEN rel > 0 THEN rn END) AS first_rel_rank"
+        "   FROM judged GROUP BY qid)"
+        " SELECT d.qid, d.dcg / nullif(i.idcg, 0) AS ndcg_at_k,"
+        "   coalesce(r.hits, 0)::DOUBLE / rc.n_rel AS recall_at_k,"
+        "   coalesce(1.0 / r.first_rel_rank, 0) AS mrr"
+        " FROM dcg d JOIN ideal i USING (qid) JOIN relcount rc USING (qid)"
+        " LEFT JOIN retrieved r USING (qid) ORDER BY d.qid;",
+        tmp,
+    )
+    first = next((r for r in got if r["qid"] == 1), None)
+    ok = (
+        first is not None
+        and abs(first["ndcg_at_k"] - 0.6590018048024133) < 1e-9
+        and first["recall_at_k"] == 1.0
+        and first["mrr"] == 0.5
+    )
+    return ok, f"nDCG={first['ndcg_at_k'] if first else None}, recall=1.0, MRR=0.5"
+
+
 def check_hybrid_rrf(tmp: Path, network: bool) -> tuple[bool, str]:
     db = str(tmp / "hybrid.duckdb")
     rows(
@@ -1136,11 +1346,14 @@ def check_ui_extension(tmp: Path, network: bool) -> tuple[bool, str]:
             for _ in range(120):
                 if ui.poll() is not None:
                     break
+                text = log.read_text(encoding="utf-8") if log.exists() else ""
+                match = re.search(r"http://localhost:(\d+)/", text)
+                probe_port = int(match.group(1)) if match else port
                 try:
-                    with urllib.request.urlopen(f"http://localhost:{port}/", timeout=2) as resp:
+                    with urllib.request.urlopen(f"http://localhost:{probe_port}/", timeout=2) as resp:
                         body = resp.read(256)
-                        ok = resp.status == 200 and b"<!DOCTYPE html>" in body
-                        detail = "ui server started"
+                        ok = resp.status == 200 and b"<!doctype html>" in body.lower()
+                        detail = f"ui server started on {probe_port}"
                         break
                 except OSError:
                     time.sleep(1)
@@ -1402,7 +1615,14 @@ CHECKS = [
     Check("VSS FLOAT only", check_vss_float_only),
     Check("VSS drops NULL vectors", check_vss_null_vectors),
     Check("VSS query shapes", check_vss_query_shapes),
+    Check("VSS operators are not indexed", check_vss_operators),
+    Check("VSS write gate", check_vss_write_gate),
+    Check("VSS ef_search setting", check_vss_ef_search),
+    Check("VSS compaction capacity", check_vss_compact),
     Check("VSS OFFSET repeats page", check_vss_offset),
+    Check("VARIANT JSON number types", check_variant_json_number),
+    Check("VARIANT read_json rejected", check_variant_read_json),
+    Check("Retrieval metrics", check_eval_metrics),
     Check("Hybrid RRF fusion", check_hybrid_rrf),
     Check("Parquet stable pagination", check_parquet_pagination),
     Check("2.0 parser traps", check_2_0_parser_traps),

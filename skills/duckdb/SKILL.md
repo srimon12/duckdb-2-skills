@@ -103,7 +103,7 @@ When DuckDB 2.0 creates a new database file under default settings, it writes st
 | Attach a database and keep it across calls | `duckdb-session` |
 | Read, convert, or batch-ingest a file, or query object storage | `duckdb-files` |
 | `VARIANT` or semi-structured columns | `duckdb-variant` |
-| Full-text search, BM25, HNSW, or vector search | `duckdb-search` |
+| Full-text search, BM25, HNSW, vector search, or rank evaluation | `duckdb-search` |
 | dbt v2 project, profile, or dbt-duckdb migration | `duckdb-dbt` |
 | Serve a database, `CONNECT`, Postgres or MySQL pushdown | `duckdb-quack` |
 | DuckLake, Iceberg, Delta | `duckdb-lakehouse` |

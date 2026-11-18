@@ -12,7 +12,7 @@ description: >
 
 Execute DuckDB with `duckdb`. For Shapefile, GeoPackage, or FlatGeobuf, see `duckdb-spatial`. GeoJSON reads natively through `read_json`. For database catalogs and multi-database attachments, see `duckdb-session` or `duckdb-lakehouse`. For semi-structured `VARIANT` columns, see `duckdb-variant`.
 
-Never build a single unified macro for all readers. A missing extension fails the entire statement. Pick the reader from the file path. When resolving a bare filename, search under the working tree and skip `.git`. In new SQL, write canonical names `read_csv`, `read_json`, and `read_parquet`; `read_csv_auto`, `read_json_auto`, and `parquet_scan` are legacy aliases.
+Never build a single unified macro for all readers. A missing extension fails the entire statement. Pick the reader from the file path. When resolving a bare filename, search under the working tree and skip `.git`. In new SQL, write canonical names `read_csv`, `read_json`, and `read_parquet`. Names `read_csv_auto`, `read_json_auto`, and `parquet_scan` are separate registered overloads, not aliases.
 
 ## Reader dispatch
 
@@ -134,7 +134,7 @@ Configure credentials using secrets:
 
 Never place access keys in URLs. DuckDB 2.0 treats `?s3_access_key_id=...` as part of the object key path. To restore the legacy behavior during migrations, run `SET s3_enable_deprecated_url_parameters = true;`.
 
-Asynchronous I/O accelerates Parquet, seekable uncompressed UTF-8 CSV, and native DuckDB storage (including DuckLake scans). JSON reads remain synchronous. Default settings are `async_threads = 4 * threads` (capped at 256), `read_ahead_depth = -1`, `http_retries = 3`, and `http_retry_backoff = 4.0`. Retain defaults unless tuning for high-bandwidth networks (see [references/formats.md](references/formats.md)).
+Asynchronous I/O accelerates Parquet, seekable uncompressed UTF-8 CSV, and native DuckDB storage (including DuckLake scans). JSON and compressed CSV remain synchronous. The documented benefit applies to high-latency remote storage. On local disk, decoding or the OS page cache often dominates. Measure performance before you quote a ratio. Default settings are `async_threads = 4 * threads` (capped at 256), `read_ahead_depth = -1`, `http_retries = 3`, and `http_retry_backoff = 4.0`. Retain defaults unless tuning for high-bandwidth networks (see [references/formats.md](references/formats.md)).
 
 ## Sandbox local files
 

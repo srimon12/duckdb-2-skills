@@ -42,6 +42,10 @@ A description that needs this table explained is too weak. The prompt should be 
 | 32 | Combine keyword search and embeddings into one ranking. | `duckdb-search` | `duckdb-sql`, `duckdb-python` |
 | 33 | Our dbt merge silently duplicates rows on every run. | `duckdb-dbt` | `duckdb-sql`, `duckdb-files` |
 | 34 | dbt cannot open our 2.0 warehouse file. | `duckdb-dbt` | `duckdb-migrate`, `duckdb-extensions` |
+| 35 | Our HNSW index is ignored when the query uses `<=>` or `<->`. | `duckdb-search` | `duckdb-sql` |
+| 36 | Compute nDCG@10, recall@10, and MRR for these rankings. | `duckdb-search` | `duckdb-profile` |
+| 37 | A VARIANT field that looks like `1.2` comes back as DECIMAL. | `duckdb-variant` | `duckdb-sql` |
+| 38 | `duckdb -serve` exits immediately in my script. | `duckdb-quack` | `duckdb` |
 
 ## Skill-specific
 
@@ -79,6 +83,7 @@ A description that needs this table explained is too weak. The prompt should be 
 | My Parquet filter reads every row group. | check for a function or cast around the filter column; rewrite as a range |
 | The query runs out of memory. | check the blocking operator before `memory_limit`; then check `temp_directory` and `preserve_insertion_order` |
 | Explain this plan without running the query. | `EXPLAIN`, not `EXPLAIN ANALYZE` |
+| Python returns two columns from `EXPLAIN ANALYZE (FORMAT JSON)`. | the second is the JSON string; parse `fetchone()[1]` |
 | Give me a ranked diagnosis of this plan, with evidence. | capture `EXPLAIN ANALYZE (FORMAT JSON)` and run the plan linter; report findings, not an operator lecture |
 | Should I raise memory_limit? | only after the blocking operator's rows are reduced; show `system.peak_temp_dir_size` first |
 | Open this plan in a browser. | `EXPLAIN (FORMAT WEB)`; `duckdb -ui` for the notebook UI |
@@ -96,6 +101,8 @@ A description that needs this table explained is too weak. The prompt should be 
 | Paginate nearest-neighbor results. | do not use `OFFSET` on 2.0.0; fetch `k + offset` and slice |
 | Rank by cosine similarity. | use `array_cosine_distance` with a cosine index, not `array_cosine_similarity` |
 | Combine keyword and vector results. | RRF over both ranked legs; literal term, literal vector, literal limits |
+| Why does `<=>` ignore my HNSW index? | both `<=>` and `<->` plan as a sequential scan; use `array_cosine_distance` or `array_distance` |
+| Score these runs with nDCG, recall, and MRR. | join `qrels` to `runs`, rank per query with a tie-break, average per query, not pooled rows |
 
 ### `duckdb-dbt`
 
@@ -135,6 +142,7 @@ A description that needs this table explained is too weak. The prompt should be 
 | Is this field missing or JSON null? | `variant_typeof` returns `VARIANT_NULL`; `variant_exists` separates absent from present |
 | Speed up a variant column in Parquet. | `SHREDDING` on `COPY`, or `variant_minimum_shredding_size` for database storage |
 | A `SELECT *` view over variant Parquet is slower than the file. | extraction pushdown is blocked; define the view with the extracted field |
+| Why is `cfg.k` a DECIMAL when I inserted `1.2`? | JSON numbers keep the parsed type; cast `cfg.k::DOUBLE` before metric math |
 
 ### `duckdb-quack`
 
@@ -146,6 +154,7 @@ A description that needs this table explained is too weak. The prompt should be 
 | Return only tenant 7 rows from a shared Quack server. | `quack_authorization_function` returning VARCHAR SQL, not a regex on the query text |
 | Put the token in `state.sql`. | refuse; use a named secret |
 | Where did `duckdb -serve` store the token? | persistent unencrypted `__default_quack` secret, mode 600; delete it when done |
+| `duckdb -serve` exits immediately in a script. | stdin closed; hold it open or run it in a terminal; `-c 'CALL quack_serve();'` also exits |
 | Several threads query one Quack connection. | one attached connection per thread; `cursor()` shares the remote session |
 | Bind a parameter against a Quack table. | stage values in a DataFrame/temp table, or `CONNECT` and use SQL `PREPARE`/`EXECUTE` |
 
