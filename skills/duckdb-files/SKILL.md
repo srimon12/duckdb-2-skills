@@ -18,13 +18,13 @@ Never build a single unified macro for all readers. A missing extension fails th
 
 | Path | Statement |
 | --- | --- |
-| `.csv`, `.tsv` | `FROM read_csv('path')`; `.tsv` sniffs the tab delimiter |
-| `.tab`, `.txt` | `FROM read_csv('path')`; bare paths do not dispatch |
-| `.json` | `FROM read_json('path')`; auto-detects array or NDJSON |
+| `.csv`, `.tsv` | `FROM read_csv('path')`. `.tsv` sniffs the tab delimiter |
+| `.tab`, `.txt` | `FROM read_csv('path')`. Bare paths do not dispatch |
+| `.json` | `FROM read_json('path')`. Auto-detects array or NDJSON |
 | `.jsonl`, `.ndjson` | `FROM read_json('path', format = 'newline_delimited')` |
-| `.parquet`, `.pq`, or directory | `FROM read_parquet('path')`; `.parquet` bare-reads, `.pq` requires explicit function |
-| `.avro` | `FROM read_avro('path')`; autoloads `avro` |
-| `.xlsx` | `FROM read_xlsx('path')`; autoloads `excel` |
+| `.parquet`, `.pq`, or directory | `FROM read_parquet('path')`. `.parquet` bare-reads, `.pq` requires explicit function |
+| `.avro` | `FROM read_avro('path')`. Autoloads `avro` |
+| `.xlsx` | `FROM read_xlsx('path')`. Autoloads `excel` |
 | `.sqlite`, `.sqlite3` | `ATTACH 'path' AS s (TYPE sqlite);` then `SHOW TABLES` |
 | `.db`, `.duckdb` | `FROM read_duckdb('path', table_name = '...')` or bare `FROM 'path'`. Bare reads require a single-table file. Use `schema_name` for multi-schema files. `.db` is DuckDB, not SQLite |
 | `.geojson`, `.geojsonl` | `FROM read_json('path', geojson := true)` or bare `FROM 'path'` |
@@ -102,7 +102,7 @@ When running a repeatable production load instead of a one-off conversion, follo
 
 Follow the six-step ingest contract:
 1. **Read raw**: Read text inputs with `all_varchar = true` and `store_rejects = true` to preserve original strings and capture syntax errors.
-2. **Cast explicitly**: Define schema types in SQL; avoid automatic type sniffing in production pipelines.
+2. **Cast explicitly**: Define schema types in SQL. Avoid automatic type sniffing in production pipelines.
 3. **Split rows**: Route valid records to `good` and failed casts or business-rule violations to `bad` alongside failure reasons.
 4. **Persist valid data**: Write `good` rows to hive-partitioned Parquet files.
 5. **Persist quarantined data**: Store `bad` rows and parser rejects in separate quarantine tables or files.
@@ -130,7 +130,7 @@ Configure credentials using secrets:
 | Azure Blob / Data Lake | `CREATE OR REPLACE SECRET (TYPE azure, PROVIDER config, ACCOUNT_NAME '...');` prefix `azure://` or `az://` |
 | HTTPS / HTTP | `LOAD httpfs;` without a secret unless basic or bearer authentication is required |
 
-`PROVIDER credential_chain` autoloads the `aws` extension and fails closed if no AWS profile is found. Public buckets require no credential secret; a region pin is configuration, not a credential. For Azure service principals, use `PROVIDER service_principal` with `TENANT_ID`, `CLIENT_ID`, and `CLIENT_SECRET`.
+`PROVIDER credential_chain` autoloads the `aws` extension and fails closed if no AWS profile is found. Public buckets require no credential secret. A region pin is configuration, not a credential. For Azure service principals, use `PROVIDER service_principal` with `TENANT_ID`, `CLIENT_ID`, and `CLIENT_SECRET`.
 
 Never place access keys in URLs. DuckDB 2.0 treats `?s3_access_key_id=...` as part of the object key path. To restore the legacy behavior during migrations, run `SET s3_enable_deprecated_url_parameters = true;`.
 
@@ -154,7 +154,7 @@ SET lock_configuration = true;
 Execution order is critical:
 - Always set `allowed_directories` or `allowed_paths` before setting `enable_external_access = false`. Once `enable_external_access` is false, DuckDB rejects any changes to allow-lists.
 - `allowed_directories` permits an entire directory tree. `allowed_paths` permits exact files.
-- To block local disk while permitting remote network reads, set `disabled_filesystems = 'LocalFileSystem'`. Preload `httpfs` before disabling local access; HTTPS operations require local disk access to read the system CA certificate bundle.
+- To block local disk while permitting remote network reads, set `disabled_filesystems = 'LocalFileSystem'`. Preload `httpfs` before disabling local access. HTTPS operations require local disk access to read the system CA certificate bundle.
 - Setting `enable_external_access = false` blocks all network operations and all local filesystem paths outside `allowed_directories` or `allowed_paths`. Remote URL schemes (`s3://`, `gs://`, `r2://`, `azure://`, `https://`) bypass the local allow-list but fail once external access is disabled.
 - Never rely on the CLI `-safe` flag for fine-grained sandboxing. The `-safe` flag disables all external file access unconditionally (blocking even user-provided input files), permitting reads only from the database file opened at launch. For full security matrices, see `duckdb`.
 

@@ -21,7 +21,7 @@ Read this when the user asks for a trigger, an audit trail, a transition table, 
 | `WHEN (...)` | Parser error |
 | `INSTEAD OF`, triggers on views | Not supported |
 | `CREATE TEMP TRIGGER` | Not supported |
-| Trigger on a temporary table | Works when the body target is also temporary; `temporary = true` |
+| Trigger on a temporary table | Works when the body target is also temporary. `temporary = true` |
 
 A table cannot mix statement-level and row-level triggers:
 

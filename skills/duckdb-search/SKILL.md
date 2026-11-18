@@ -49,7 +49,7 @@ Proof:       EXPLAIN shows HNSW_INDEX_SCAN; result matches brute-force scan
 PRAGMA create_fts_index('docs', 'id', 'body', stemmer = 'porter', stopwords = 'english', overwrite = 1, incremental = 1);
 ```
 
-Before building an index, declare the id column `NOT NULL UNIQUE`. A static index accepts nullable ids and silently drops NULL rows, or accepts duplicate ids and fails at query time with `More than one row returned`. An incremental index rejects both at creation. Name indexed columns explicitly; `'*'` indexes every `VARCHAR` column, including a `VARCHAR` id, making it searchable.
+Before building an index, declare the id column `NOT NULL UNIQUE`. A static index accepts nullable ids and silently drops NULL rows, or accepts duplicate ids and fails at query time with `More than one row returned`. An incremental index rejects both at creation. Name indexed columns explicitly. An asterisk `'*'` indexes every `VARCHAR` column, including a `VARCHAR` id, making it searchable.
 
 To filter by score, wrap `match_bm25` in a subquery. Because the alias expression has side effects, a same-select `WHERE score IS NOT NULL` fails:
 
@@ -60,11 +60,11 @@ WHERE bm25 IS NOT NULL
 ORDER BY bm25 DESC;
 ```
 
-When querying, treat the string as a bag of terms combined with `OR`. To require all surviving terms, pass `conjunctive := 1`. Because quotes, `-`, and `*` act as delimiters rather than phrase, negation, or wildcard operators, use a layered index for those patterns. To restrict matching, pass `fields := 'title,body'`; DuckDB 2.0.0 returns zero rows on unknown fields, whereas development builds raise `fields contains unknown field`.
+When querying, treat the string as a bag of terms combined with `OR`. To require all surviving terms, pass `conjunctive := 1`. Because quotes, `-`, and `*` act as delimiters rather than phrase, negation, or wildcard operators, use a layered index for those patterns. To restrict matching, pass `fields := 'title,body'`. DuckDB 2.0.0 returns zero rows on unknown fields, whereas development builds raise `fields contains unknown field`.
 
-Because BM25 scores are unbounded and corpus-dependent, rank results rather than comparing scores to a fixed threshold. Multi-field indexes use BM25F to weight fields via `field_weights` and `field_b` before saturating once; see [references/fts.md](references/fts.md).
+Because BM25 scores are unbounded and corpus-dependent, rank results rather than comparing scores to a fixed threshold. Multi-field indexes use BM25F to weight fields via `field_weights` and `field_b` before saturating once. See [references/fts.md](references/fts.md).
 
-On persistent databases, `incremental = 1` requires storage version `v2.0.0` or newer; older versions fail:
+On persistent databases, `incremental = 1` requires storage version `v2.0.0` or newer. Older versions fail:
 
 ```text
 Invalid Input Error: incremental FTS indexes require trigger support. Persistent DuckDB databases must use storage version v2.0.0 or higher.
@@ -74,7 +74,7 @@ Because incremental triggers cover only `INSERT` and `DELETE`, an `UPDATE` leave
 
 For code, logs, and identifiers, override the default tokenizer. The default `ignore` pattern treats digits and `.` as delimiters, so `2.0` tokenizes to empty and `s3` indexes only as `s`, making exact matches impossible. The default English stopword list also strips valid identifiers like `name`, `value`, `where`, and `only`. Set `stemmer = 'none'`, `stopwords = 'none'`, and specify a custom `ignore` pattern that preserves required characters. Because stemming is not prefix matching, `duckling` and `duck` remain separate terms unless stemmed to `none` or queried with a layered index.
 
-The index resides in tables under schema `fts_<schema>_<table>`. Because FTS uses table lookups rather than a physical plan operator, `EXPLAIN` does not show index usage; verify index health with a term count query.
+The index resides in tables under schema `fts_<schema>_<table>`. Because FTS uses table lookups rather than a physical plan operator, `EXPLAIN` does not show index usage. Verify index health with a term count query.
 
 ## Layered search
 
@@ -120,9 +120,9 @@ To accelerate vector queries, match the query function to the index metric:
 SELECT id FROM items ORDER BY array_cosine_distance(emb, [1, 0, 0]::FLOAT[3]) LIMIT 3;
 ```
 
-When querying, pass the query vector as a literal `FLOAT[N]`. Any `::DOUBLE[N]` cast, scalar subquery, `DESC` sort, missing `LIMIT`, tie-breaker like `ORDER BY dist, id`, or dynamic `LIMIT (SELECT k)` silently triggers a full sequential scan. Prepared `$1` vectors and ordinal `ORDER BY 1` use HNSW but execute a full index scan without top-k pushdown. Sort by `array_cosine_distance` or `1.0 - array_cosine_similarity`. Bare `array_cosine_similarity` never uses the index. The `<=>` and `<->` operators return correct distances, but they execute as sequential scans even with an HNSW index. Use the `array_*` functions in all queries.
+When querying, pass the query vector as a literal `FLOAT[N]`. Do not use `::DOUBLE[N]` casts, scalar subqueries, `DESC` sorts, or dynamic `LIMIT (SELECT k)`. A tie-breaker like `ORDER BY dist, id` or an omitted `LIMIT` also triggers a full scan. Prepared `$1` vectors and ordinal `ORDER BY 1` use HNSW but execute a full index scan without top-k pushdown. Sort by `array_cosine_distance` or `1.0 - array_cosine_similarity`. Bare `array_cosine_similarity` never uses the index. The `<=>` and `<->` operators return correct distances, but they execute as sequential scans even with an HNSW index. Use the `array_*` functions in all queries.
 
-When filtering, retain the default `hnsw_prefilter = true`. Setting it to `false` on a selective filter can return zero rows. Prefiltering costs a full scan of the filter columns, so a very selective filter over a large table is not free. To improve recall, raise `hnsw_ef_search` (default 64). On DuckDB 2.0.0, never use `OFFSET`; the index scan repeats the first page, even past the end of the table ([duckdb/duckdb-vss#110](https://github.com/duckdb/duckdb-vss/issues/110)). Query `LIMIT (k + offset)` and slice results in the client.
+When filtering, retain the default `hnsw_prefilter = true`. Setting it to `false` on a selective filter can return zero rows. Prefiltering costs a full scan of the filter columns, so a very selective filter over a large table is not free. To improve recall, raise `hnsw_ef_search` (default 64). On DuckDB 2.0.0, never use `OFFSET`. The index scan repeats the first page, even past the end of the table ([duckdb/duckdb-vss#110](https://github.com/duckdb/duckdb-vss/issues/110)). Query `LIMIT (k + offset)` and slice results in the client.
 
 Because HNSW allocations occur outside the buffer manager, index memory does not count toward `memory_limit`. Budget 0.6 to 3 KB per vector. Checkpoints serialize the entire index, and the first table access deserializes it. Because deletes only mark entries and `hnsw_compact_index` does not reclaim capacity in 2.0.0, rebuild the index after large deletes. See [references/vss.md](references/vss.md).
 
@@ -150,11 +150,11 @@ In the lexical leg, place `row_number()` outside the `match_bm25` subquery to pr
 
 ## Stop rules
 
-- On update-heavy tables or persistent databases with storage version below `v2.0.0`, do not set `incremental = 1`; rebuild with `overwrite = 1`.
-- When indexing code, logs, or identifiers, do not use default stopwords or ignore patterns; set `stemmer = 'none'`, `stopwords = 'none'`, and preserve digits.
-- When querying HNSW, do not mix metrics with mismatched distance functions, and do not sort by bare `array_cosine_similarity`; use `array_cosine_distance` or `1.0 - array_cosine_similarity`.
-- When accelerating vector searches, do not use `<=>` or `<->`, non-literal vectors, `DESC`, tie-breaker sorts, or dynamic `LIMIT (SELECT ...)`; on 2.0.0, do not paginate with `OFFSET`.
-- In every session that writes to an HNSW-indexed table, do not skip `LOAD vss`; reads scan, writes fail.
+- On update-heavy tables or persistent databases with storage version below `v2.0.0`, do not set `incremental = 1`. Rebuild with `overwrite = 1`.
+- When indexing code, logs, or identifiers, do not use default stopwords or ignore patterns. Set `stemmer = 'none'`, `stopwords = 'none'`, and preserve digits.
+- When querying HNSW, do not mix metrics with mismatched distance functions, and do not sort by bare `array_cosine_similarity`. Use `array_cosine_distance` or `1.0 - array_cosine_similarity`.
+- When accelerating vector searches, do not use `<=>` or `<->`, non-literal vectors, `DESC`, tie-breaker sorts, or dynamic `LIMIT (SELECT ...)`. On 2.0.0, do not paginate with `OFFSET`.
+- In every session that writes to an HNSW-indexed table, do not skip `LOAD vss`. Otherwise reads scan and writes fail.
 - In persistent file databases, do not create HNSW indexes without setting `hnsw_enable_experimental_persistence = true` after loading `vss`.
 - When filtering indexed vectors with selective predicates, do not set `hnsw_prefilter = false`.
 
@@ -179,7 +179,7 @@ SELECT * FROM pragma_hnsw_index_info();
 rm -rf "$tmp"
 ```
 
-To verify correctness, confirm the FTS query returns count `1`, the `EXPLAIN` plan includes `Hnsw Index Scan` (or `HNSW_INDEX_SCAN`), and `pragma_hnsw_index_info()` reports the `cosine` metric with 3 dimensions. Validate vector recall by comparing top-k outputs against an unindexed table scan.
+To verify correctness, confirm the FTS query returns count `1`. Check that the `EXPLAIN` plan includes `Hnsw Index Scan` (or `HNSW_INDEX_SCAN`), and `pragma_hnsw_index_info()` reports the `cosine` metric with 3 dimensions. Validate vector recall by comparing top-k outputs against an unindexed table scan.
 
 ## References
 

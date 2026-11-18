@@ -11,7 +11,7 @@ SET VARIABLE latest = (
 SELECT getvariable('latest');
 ```
 
-Overture publishes monthly and keeps roughly two months of releases in the public bucket. Do not hardcode a release id in saved SQL; read the current release from the STAC catalog.
+Overture publishes monthly and keeps roughly two months of releases in the public bucket. Do not hardcode a release id in saved SQL. Read the current release from the STAC catalog.
 
 Path layout:
 
@@ -37,13 +37,13 @@ CREATE SECRET (TYPE s3, PROVIDER config, REGION 'us-west-2');
 | `base` | `land`, `water`, `infrastructure` | Polygon, Point, LineString |
 | `addresses` | `address` | Point |
 
-Every feature carries `id`, `geometry`, `bbox`, `version`, and `sources`. `bbox` is a `STRUCT(xmin, xmax, ymin, ymax)`. Overture geometry is typed `GEOMETRY('OGC:CRS84')`; direct casts to `POINT_2D` fail. For points, `xmin = xmax` and `ymin = ymax`. Point themes can use the min corner. Line and polygon themes need full bbox overlap on both axes.
+Every feature carries `id`, `geometry`, `bbox`, `version`, and `sources`. `bbox` is a `STRUCT(xmin, xmax, ymin, ymax)`. Overture geometry is typed `GEOMETRY('OGC:CRS84')`. Direct casts to `POINT_2D` fail. For points, `xmin = xmax` and `ymin = ymax`. Point themes can use the min corner. Line and polygon themes need full bbox overlap on both axes.
 
 ## Places
 
 Core columns: `id`, `geometry`, `bbox`, `version`, `sources`, `names`, `taxonomy`, `basic_category`, `confidence`, `operating_status`, `websites`, `socials`, `emails`, `phones`, `brand`, `addresses`.
 
-`taxonomy` is `STRUCT(primary VARCHAR, hierarchy VARCHAR[], alternates VARCHAR[])`. `basic_category` is a separate flattened `VARCHAR`. There is no `categories` column. Use `taxonomy.primary` or `basic_category`. `confidence` is a 0-1 existence score; 0 pairs with `operating_status = 'permanently_closed'`.
+`taxonomy` is `STRUCT(primary VARCHAR, hierarchy VARCHAR[], alternates VARCHAR[])`. `basic_category` is a separate flattened `VARCHAR`. There is no `categories` column. Use `taxonomy.primary` or `basic_category`. `confidence` is a 0-1 existence score. A score of 0 pairs with `operating_status = 'permanently_closed'`.
 
 Coffee shops near Times Square:
 
@@ -120,7 +120,7 @@ LIMIT 5;
 
 For a polygon such as a US state, query `division_area` and filter `country`, `subtype`, and `is_land`. The `division_area` table has no `population` column.
 
-For a point-in-polygon lookup, filter the division bbox with full overlap first, then use `ST_Intersects`. `ST_Contains` is false for a point on the boundary; `ST_Covers` includes it.
+For a point-in-polygon lookup, filter the division bbox with full overlap first, then use `ST_Intersects`. `ST_Contains` is false for a point on the boundary. `ST_Covers` includes it.
 
 ## Transportation
 
@@ -142,8 +142,8 @@ LIMIT 20;
 ## Performance
 
 - Filter `bbox` before any `ST_*` call. For lines and polygons, use full overlap on both axes, then follow with `ST_Intersects`.
-- Use `LIMIT` and `DESCRIBE SELECT ... LIMIT 0` before selecting many columns. `ST_Read` does not expose the manual's `spatial_filter` parameters in this build; use a `WHERE bbox` filter.
-- Parquet predicate pushdown skips row groups, but only when the predicate uses a column with stats. In 2.0, a `GEOMETRY` column has no min/max stats; a separate `bbox` struct does. A `bbox` filter on a 10-row-group file scanned 2 groups and 1.1 MB instead of 10 groups and 11.5 MB.
+- Use `LIMIT` and `DESCRIBE SELECT ... LIMIT 0` before selecting many columns. `ST_Read` does not expose the manual's `spatial_filter` parameters in this build. Use a `WHERE bbox` filter.
+- Parquet predicate pushdown skips row groups, but only when the predicate uses a column with stats. In 2.0, a `GEOMETRY` column has no min/max stats. A separate `bbox` struct does. A `bbox` filter on a 10-row-group file scanned 2 groups and 1.1 MB instead of 10 groups and 11.5 MB.
 - Current file counts are places 16, buildings 512, transportation/segment 128, division_area 8, division 1, address 64. A 0.002-degree building bbox took 2:36 only to read footers. For repeated work, make a regional extract.
 - Do not download the theme and filter locally. The bucket is large.
 - Do not glob `<release>/**` across themes. Pick the theme and type.

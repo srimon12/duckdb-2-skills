@@ -98,7 +98,7 @@ Key management and storage:
 
 Community extensions are third-party contributions not maintained by DuckDB Labs. DuckDB 2.0 does not build community extensions for `osx_amd64`. Core extensions still build for `osx_amd64` in 2.0, while 2.1 drops `osx_amd64` entirely.
 
-Security settings default to `allow_community_extensions = true` and `allow_unsigned_extensions = false`. Never use `-unsigned` or `SET allow_unsigned_extensions = true` in production; use signed repositories with pinned RSA keys.
+Security settings default to `allow_community_extensions = true` and `allow_unsigned_extensions = false`. Never use `-unsigned` or `SET allow_unsigned_extensions = true` in production. Use signed repositories with pinned RSA keys.
 
 Binary directories:
 - Extensions reside under `~/.duckdb/extensions/<duckdb-version>/<platform>/`.
@@ -136,7 +136,7 @@ FROM duckdb_extensions()
 WHERE extension_name = 'httpfs';
 ```
 
-Confirm `loaded` returns `true`. If `INSTALL AND LOAD` fails, inspect the error output: DuckDB returns the repository URL and target platform string, differentiating unknown extension names from network or SSL transport failures.
+Confirm `loaded` returns `true`. If `INSTALL AND LOAD` fails, inspect the error output. DuckDB returns the repository URL and target platform string, differentiating unknown extension names from network or SSL transport failures.
 
 ## References
 

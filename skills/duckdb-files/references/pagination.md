@@ -17,7 +17,7 @@ A row count is not a pagination proof. A broken page sequence can return the rig
 
 `LIMIT` and `OFFSET` preserve order by default, but `preserve_insertion_order = false` lets DuckDB reorder rows before the sink. With more than one thread, pages from `LIMIT/OFFSET` can overlap and skip.
 
-A 30,000-row Parquet file with six 5,000-row groups, page size 10, `threads = 4`, and `preserve_insertion_order = false` produced 3,000 pages with a total of 30,000 rows but only 20,870 distinct ids. 9,130 ids were duplicated and 9,130 were missing.
+Consider a 30,000-row Parquet file with six 5,000-row groups and page size 10. With `threads = 4` and `preserve_insertion_order = false`, it produced 3,000 pages. Output held 30,000 total rows but only 20,870 distinct ids. 9,130 ids were duplicated and 9,130 were missing.
 
 ## Stable page by file row number
 

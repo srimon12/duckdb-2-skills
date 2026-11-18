@@ -23,7 +23,7 @@ To serve a database over HTTP from the CLI, run:
 duckdb analytics.duckdb -serve
 ```
 
-When omitting the database path, `-serve` serves an in-memory database. Serving a Parquet or CSV file exposes a view named after the file stem: `duckdb runs.parquet -serve` exposes `runs`. When no default Quack secret exists, `-serve` generates a token and persists an unencrypted secret named `__default_quack` (scope `quack:`, mode 600) so `duckdb -connect` works immediately. Because possession of the token grants full read and write access to every session table, delete `__default_quack` when stopping the server, or load a named secret from a vault.
+When omitting the database path, `-serve` serves an in-memory database. Serving a Parquet or CSV file exposes a view named after the file stem: `duckdb runs.parquet -serve` exposes `runs`. When no default Quack secret exists, `-serve` generates a token. It persists an unencrypted secret named `__default_quack` (scope `quack:`, mode 600) so `duckdb -connect` works immediately. Possession of the token grants full read and write access to every session table. Delete `__default_quack` when stopping the server, or load a named secret from a vault.
 
 In a non-interactive shell, `-serve` exits after printing the token when stdin closes. Keep standard input open or run the command in a terminal: `tail -f /dev/null | duckdb analytics.duckdb -serve`. A background job with `< /dev/null` exits immediately. Running `duckdb -c 'CALL quack_serve();'` exits after the statement completes.
 
@@ -34,7 +34,7 @@ CALL quack_serve('quack:localhost', token = 'my_token');
 CALL quack_stop('quack:localhost');
 ```
 
-Tokens require at least 4 characters. When a default `quack` secret exists, `quack_serve` reuses its token; otherwise it generates a token and returns it in `auth_token`. A bare `CALL quack_serve()` does not persist the token unless `create_secret_if_not_exists => true`.
+Tokens require at least 4 characters. When a default `quack` secret exists, `quack_serve` reuses its token. Otherwise it generates a token and returns it in `auth_token`. A bare `CALL quack_serve()` does not persist the token unless `create_secret_if_not_exists => true`.
 
 To halt the server, run `quack_stop()` within the originating process. When invoked from a different process, `quack_stop` fails with `No server found listening on ...` while the server keeps running. Always pass the exact listen URI, including any custom port.
 
@@ -93,7 +93,7 @@ To execute a single ad-hoc query without attaching a catalog, use `quack_query`:
 FROM quack_query('quack:localhost', 'SELECT 42', token = 'my_token');
 ```
 
-When querying Quack concurrently, enforce one Quack connection per thread. Calling `con.cursor()` in Python shares the underlying remote session; concurrent queries across shared cursors fail with `superseded by a new query`.
+When querying Quack concurrently, enforce one Quack connection per thread. Calling `con.cursor()` in Python shares the underlying remote session. Concurrent queries across shared cursors fail with `superseded by a new query`.
 
 When binding parameters against Quack tables, client-side parameter binding fails with `Values were not provided`. To supply parameterized values, stage them in a DataFrame or local temporary table, or route the session with `CONNECT` and run SQL `PREPARE` and `EXECUTE`. Python DB-API binding continues to fail even after `CONNECT`.
 
@@ -125,9 +125,9 @@ For attached catalog administration, use `quack_query_by_name(catalog, query)`, 
 
 By default, Quack binds to `localhost` over plain HTTP without TLS. On a single machine, this is correct.
 
-When exposing DuckDB across machines, keep `quack_serve` on `localhost` and terminate TLS with a reverse proxy in front. Configure the proxy with a 256 MB request body limit, 600-second read and send timeouts, HTTP/1.1 keep-alive enabled, response buffering disabled, and listen on port 443. Because Quack defaults to port 9494, connecting clients must explicitly specify port 443. Non-local client URIs assume HTTPS.
+When exposing DuckDB across machines, keep `quack_serve` on `localhost` and terminate TLS with a reverse proxy in front. Configure the proxy with a 256 MB request body limit, 600-second read and send timeouts, and HTTP/1.1 keep-alive. Disable response buffering and listen on port 443. Because Quack defaults to port 9494, connecting clients must explicitly specify port 443. Non-local client URIs assume HTTPS.
 
-Refuse `allow_other_hostname = true` on shared networks (`0.0.0.0` is not local). Reject direct external exposure unless the user explicitly mandates it behind a verified TLS proxy. Never record tokens in shell history, version control, or `state.sql`; use named secrets.
+Refuse `allow_other_hostname = true` on shared networks (`0.0.0.0` is not local). Reject direct external exposure unless the user explicitly mandates it behind a verified TLS proxy. Never record tokens in shell history, version control, or `state.sql`. Use named secrets.
 
 A Quack token provides host OS-user access, not tenant isolation. Authenticated clients can read or write host files and install extensions permitted to the server user. To restrict capabilities, start the server first, then lock configuration:
 
@@ -139,7 +139,7 @@ SET lock_configuration = true;
 
 Locking configuration before `quack_serve` fails because the server reads `~/.duckdb/stored_secrets` at startup.
 
-The server validates the token on connection and triggers an authorization callback before each query. Default callbacks permit all authenticated queries; override them when sharing an instance. `quack_authentication_function` accepts `(sid, client_token, server_token)` and returns `BOOLEAN`. `quack_authorization_function` accepts `(sid, query)` and returns `BOOLEAN` to allow or deny, or `VARCHAR` SQL to replace the incoming query.
+The server validates the token on connection and triggers an authorization callback before each query. Default callbacks permit all authenticated queries. Override them when sharing an instance. `quack_authentication_function` accepts `(sid, client_token, server_token)` and returns `BOOLEAN`. `quack_authorization_function` accepts `(sid, query)` and returns `BOOLEAN` to allow or deny, or `VARCHAR` SQL to replace the incoming query.
 
 To enforce row filters or tenant boundaries, return rewritten SQL via the `VARCHAR` signature. Never inspect or authorize queries with regular expressions on query text. SQL comments can disguise leading keywords, and data-modifying CTEs begin with `WITH`, allowing write queries to bypass `SELECT`-prefix filters. Before configuring `quack_authorization_function`, consult the security documentation.
 

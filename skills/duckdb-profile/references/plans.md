@@ -6,7 +6,7 @@ Read this when `EXPLAIN` or `EXPLAIN ANALYZE` is already in hand, or when the sk
 
 | Statement | Runs the query | Output | Use |
 | --- | --- | --- | --- |
-| `EXPLAIN` | No | Physical plan with `~N` estimates | First look. Supported on queries and supported DDL/DML; `EXPLAIN ATTACH` is a parser error. |
+| `EXPLAIN` | No | Physical plan with `~N` estimates | First look. Supported on queries and supported DDL/DML. `EXPLAIN ATTACH` is a parser error. |
 | `EXPLAIN ANALYZE` | Yes | Plan with actual rows and timings | Measure the operators after the plan looks plausible. |
 | `EXPLAIN (FORMAT JSON)` | No | Array of plan trees with `name`, `children`, `extra_info` | Scripts and diffs. |
 | `EXPLAIN ANALYZE (FORMAT JSON)` | Yes | Object with `io`, `operator`, `query`, `system`, `optimizer` | Scripted profiles with actuals. |
@@ -14,13 +14,13 @@ Read this when `EXPLAIN` or `EXPLAIN ANALYZE` is already in hand, or when the sk
 | `EXPLAIN (FORMAT HTML)` | No | HTML tree | A browser without the UI extension. |
 | `EXPLAIN (FORMAT MERMAID)` | No | Mermaid flowchart | Docs and reviews. |
 | `EXPLAIN (FORMAT WEB)` | No | Opens an HTML plan in the browser | A local visual plan when `-ui` is unavailable. |
-| `EXPLAIN (SQL)` | No | Optimized SQL | See `duckdb-sql`; not a plan. |
+| `EXPLAIN (SQL)` | No | Optimized SQL | See `duckdb-sql`. Not a plan. |
 
 `EXPLAIN ANALYZE` executes the statement. That includes `INSERT`, `UPDATE`, `DELETE`, and `COPY`. Use plain `EXPLAIN` for write statements unless the write is intended.
 
 `EXPLAIN ANALYZE` ignores `-json` and prints text. `EXPLAIN (FORMAT JSON)` is the JSON path. `EXPLAIN ANALYZE (FORMAT JSON)` is the JSON path with actuals. The JSON tree is not the same as the CLI output format.
 
-The plan-only and analyzed JSON shapes are different. `EXPLAIN (FORMAT JSON)` returns an array of nodes with `name`. `EXPLAIN ANALYZE (FORMAT JSON)` returns one object with an `operator` array whose nodes use `type`. Write one parser per shape or normalize both before analysis. The `legacy_metrics_format` setting returns a third, flat shape; leave it off (the default) for new tooling.
+The plan-only and analyzed JSON shapes are different. `EXPLAIN (FORMAT JSON)` returns an array of nodes with `name`. `EXPLAIN ANALYZE (FORMAT JSON)` returns one object with an `operator` array whose nodes use `type`. Write one parser per shape or normalize both before analysis. The `legacy_metrics_format` setting returns a third, flat shape. Leave it off (the default) for new tooling.
 
 ## Estimate and actual
 
@@ -59,7 +59,7 @@ The analyzed object has four sections that matter for a diagnosis.
 
 The analyzed tree is wrapped in `RESULT_COLLECTOR` and `EXPLAIN_ANALYZE` nodes. Their rows and times are near zero. Skip them when ranking operators.
 
-A plan-only tree has `name`, `children`, and `extra_info`. It has no `intermediate_rows`, `timing`, `row_groups_scanned`, `io`, or `system`. A cross product may have no estimated cardinality at all; use the child estimates and the actuals when available.
+A plan-only tree has `name`, `children`, and `extra_info`. It has no `intermediate_rows`, `timing`, `row_groups_scanned`, `io`, or `system`. A cross product may have no estimated cardinality at all. Use the child estimates and the actuals when available.
 
 ### No profile is not a failure
 
@@ -77,12 +77,12 @@ A metadata-only query can return the right answer with no operator tree. `count(
 | `Filename(s)` | Up to five names plus `...` | Not the full file list |
 | `Scanning Files` | Files selected by file-list pruning | The real partition-pruning signal |
 | `Row Groups Scanned` | Groups read / groups available after file-list pruning | `1 / 1` can mean one selected file |
-| `rows_scanned` | Rows the scan reports. A base-table scan can report rows examined; a Parquet scan with pushed filters can report rows emitted. | Not a portable emitted-row count. Use `intermediate_rows` for emitted rows. |
+| `rows_scanned` | Rows the scan reports. A base-table scan can report rows examined. A Parquet scan with pushed filters can report rows emitted. | Not a portable emitted-row count. Use `intermediate_rows` for emitted rows. |
 | `Data Read` | Query-wide FileSystem bytes | Includes footers and spill reads |
 
-Plan-only JSON names a scan differently from profiled JSON. Direct `'file.parquet'` is `PARQUET_SCAN`; `read_parquet()` is `READ_PARQUET`; `read_csv()` is `READ_CSV`; direct `'file.csv'` is `READ_CSV_AUTO`. Profiled JSON always says `TABLE_SCAN` and puts the reader in `extra_info.Function`. Normalize scan names before matching.
+Plan-only JSON names a scan differently from profiled JSON. Direct `'file.parquet'` is `PARQUET_SCAN`. `read_parquet()` is `READ_PARQUET`. `read_csv()` is `READ_CSV`. Direct `'file.csv'` is `READ_CSV_AUTO`. Profiled JSON always says `TABLE_SCAN` and puts the reader in `extra_info.Function`. Normalize scan names before matching.
 
-Text timings are low-precision; a multi-millisecond operator can print `0µs`. Text also condenses operators and omits estimates in `EXPLAIN ANALYZE`. Use `(FORMAT JSON)` for any comparison or ranking.
+Text timings are low-precision. A multi-millisecond operator can print `0µs`. Text also condenses operators and omits estimates in `EXPLAIN ANALYZE`. Use `(FORMAT JSON)` for any comparison or ranking.
 
 ## Operator map
 
@@ -176,9 +176,9 @@ SET profiling_output = '/tmp/query.txt';
 SET profiling_coverage = 'SELECT';
 ```
 
-`enable_profiling` is a format name, not a boolean. `SET enable_profiling = true` fails; use `'query_tree'`, `'json'`, `'query_tree_optimizer'`, or `'no_output'`. The file extension must match the format, or be `.txt`. Set the format before the output path; the extension check uses the current format.
+`enable_profiling` is a format name, not a boolean. `SET enable_profiling = true` fails. Use `'query_tree'`, `'json'`, `'query_tree_optimizer'`, or `'no_output'`. The file extension must match the format, or be `.txt`. Set the format before the output path. The extension check uses the current format.
 
-`profiling_output` is overwritten by each profiled statement. The file holds the last statement, not the first or all of them. With `profiling_coverage = 'ALL'`, the final `SET` can be the statement that remains. `EXPLAIN ANALYZE` never writes `profiling_output`; it prints to stdout. Use one statement per process or file, or capture `EXPLAIN ANALYZE` directly.
+`profiling_output` is overwritten by each profiled statement. The file holds the last statement, not the first or all of them. With `profiling_coverage = 'ALL'`, the final `SET` can be the statement that remains. `EXPLAIN ANALYZE` never writes `profiling_output`. It prints to stdout. Use one statement per process or file, or capture `EXPLAIN ANALYZE` directly.
 
 Session `enable_profiling` also changes the output of a bare `EXPLAIN ANALYZE`: with `'json'` it prints JSON instead of text. Use an explicit `(FORMAT TEXT)` or `(FORMAT JSON)` in any script or comparison.
 
@@ -190,9 +190,9 @@ SET profiling_output = '/tmp/query.json';
 SET tracked_metrics = ['query.*', 'operator.*', 'io.*', 'system.*'];
 ```
 
-`tracked_metrics` accepts glob patterns. It affects `json` and `no_output`. `query_tree` and `query_tree_optimizer` use a fixed metric set. The documented `['query.*', 'operator.*']` example omits `io.*` and `system.*`, so bytes and spill disappear. Tracking only `operator.timing` drops `operator.type` and produces anonymous operator nodes. `profiling_mode` is deprecated and has no effect in 2.0. `operator.cpu_time` is advertised by `duckdb_available_metrics()` but is not emitted; use `operator.timing`.
+`tracked_metrics` accepts glob patterns. It affects `json` and `no_output`. `query_tree` and `query_tree_optimizer` use a fixed metric set. The documented `['query.*', 'operator.*']` example omits `io.*` and `system.*`, so bytes and spill disappear. Tracking only `operator.timing` drops `operator.type` and produces anonymous operator nodes. `profiling_mode` is deprecated and has no effect in 2.0. The function `duckdb_available_metrics()` advertises `operator.cpu_time`, but the engine does not emit it. Use `operator.timing` instead.
 
-`legacy_metrics_format` is deprecated and off by default. When it is on, the JSON is a flat object with `latency`, `cpu_time`, `children`, and `operator_type` instead of the grouped `query`, `io`, `system`, and `operator` sections. Do not mix the two shapes in one parser.
+`legacy_metrics_format` is deprecated and off by default. When active, the JSON is a flat object with `latency`, `cpu_time`, `children`, and `operator_type`. It lacks the grouped `query`, `io`, `system`, and `operator` sections. Do not mix the two shapes in one parser.
 
 The table-function form is easier to keep in one statement.
 
@@ -220,7 +220,7 @@ Useful metrics:
 | --- | --- | --- |
 | `query.total_time` | seconds | End-to-end query time, including planning and waits. |
 | `query.cpu_time` | seconds | CPU time across operators. On a parallel query it can exceed wall time. |
-| `query.total_rows_scanned` | rows | Sum of scan-reported rows. A base-table scan can report rows examined; not emitted rows. |
+| `query.total_rows_scanned` | rows | Sum of scan-reported rows. A base-table scan can report rows examined, not emitted rows. |
 | `query.total_row_groups_scanned` | row groups | Row groups read. Compare with `..._to_scan`. |
 | `query.total_intermediate_rows` | rows | Cumulative rows produced between operators. |
 | `query.total_intermediate_size_bytes` | bytes | Cumulative bytes produced between operators. |
@@ -231,13 +231,13 @@ Useful metrics:
 | `system.blocked_thread_time` | seconds | Time workers waited for a thread. |
 | `operator.timing` | seconds | Exclusive time in one operator. |
 | `operator.intermediate_rows` | rows | Rows emitted by the operator. |
-| `operator.intermediate_size_bytes` | bytes | Output chunk footprint. Not hash-table or sort memory; use `system` metrics for pressure. |
-| `operator.rows_scanned` | rows | Rows the scan reports. For a base table this can be rows examined; for Parquet with pushed filters it can be rows emitted. Use `intermediate_rows` for emitted rows. |
+| `operator.intermediate_size_bytes` | bytes | Output chunk footprint. Not hash-table or sort memory. Use `system` metrics for pressure. |
+| `operator.rows_scanned` | rows | Rows the scan reports. For a base table this can be rows examined. For Parquet with pushed filters it can be rows emitted. Use `intermediate_rows` for emitted rows. |
 | `operator.row_groups_scanned` | row groups | Row groups read by a scan. |
 | `operator.total_row_groups_to_scan` | row groups | Row groups available after file-list pruning. |
 | `operator.extra_info` | map | Operator-specific details. |
 
-Operator timings are exclusive. Their sum is close to `query.cpu_time`, not `query.total_time`. On a parallel query the sum can exceed wall time because threads overlap. Do not add operator times to estimate wall time; compare shares instead.
+Operator timings are exclusive. Their sum is close to `query.cpu_time`, not `query.total_time`. On a parallel query the sum can exceed wall time because threads overlap. Do not add operator times to estimate wall time. Compare shares instead.
 
 ## JSON plan
 
@@ -310,4 +310,4 @@ Ask which operator is expensive and why. A setting can hide a bad plan. A rewrit
 | Join output is much larger than both inputs | Many-to-many join | Pre-aggregate or deduplicate |
 | Huge intermediate rows before `ORDER BY` | Sorting too much | Filter or aggregate first |
 | Spill with a small result | Blocking operator on a large input | Rewrite the shape before raising `memory_limit` |
-| Estimate is far below actual | Stale table statistics, or weak Parquet footer stats | `ANALYZE` for a base table; inspect `parquet_metadata` for a file |
+| Estimate is far below actual | Stale table statistics, or weak Parquet footer stats | `ANALYZE` for a base table. Inspect `parquet_metadata` for a file |

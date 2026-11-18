@@ -18,7 +18,7 @@ Before guessing a signature, setting, or syntax rule, query the hosted documenta
 | DuckDB | `https://duckdb.org/data/docs-search.duckdb` | `2.0`, `blog` |
 | DuckLake | `https://ducklake.select/data/docs-search.duckdb` | `stable` |
 
-The DuckDB index provides only `2.0` and `blog` slices; it contains no `lts`, `current`, or `stable` slice. Filter by `version = '2.0'` by default. Include `blog` only when searching for release notes or design motivation. For DuckLake queries, filter by `version = 'stable'` (covers the 1.1 manual).
+The DuckDB index provides only `2.0` and `blog` slices. It contains no `lts`, `current`, or `stable` slice. Filter by `version = '2.0'` by default. Include `blog` only when searching for release notes or design motivation. For DuckLake queries, filter by `version = 'stable'` (covers the 1.1 manual).
 
 The `docs_chunks` table has seven columns: `chunk_id`, `page_title`, `section`, `breadcrumb`, `url`, `version`, and `text`. The `url` column stores a relative path (e.g. `/docs/2.0/...`), not an absolute URL.
 
@@ -62,9 +62,9 @@ ORDER BY score DESC
 LIMIT 8;
 ```
 
-The 2.0 macro accepts ten parameters: `match_bm25(docname, query_string, fields := NULL, k := 1.2, b := 0.75, conjunctive := false, field_weights := NULL, field_b := NULL, scoring_model := 'bm25f', tie_breaker := 0.0)`. The manual page lists only six; the binary and `duckdb_functions()` are authoritative. The indexed fields are `page_title`, `section`, and `text`.
+The 2.0 macro accepts ten parameters: `match_bm25(docname, query_string, fields := NULL, k := 1.2, b := 0.75, conjunctive := false, field_weights := NULL, field_b := NULL, scoring_model := 'bm25f', tie_breaker := 0.0)`. The manual page lists only six. The binary and `duckdb_functions()` are authoritative. The indexed fields are `page_title`, `section`, and `text`.
 
-When every term must appear, set `conjunctive := 1`. To boost specific fields, pass `field_weights := {'text': 2.0}`. Options `stemmer`, `stopwords`, and `ignore` belong to `PRAGMA create_fts_index`, not `match_bm25`. Parameter names `bm25_k1` and `bm25_b` do not exist; use `k` and `b`.
+When every term must appear, set `conjunctive := 1`. To boost specific fields, pass `field_weights := {'text': 2.0}`. Options `stemmer`, `stopwords`, and `ignore` belong to `PRAGMA create_fts_index`, not `match_bm25`. Parameter names `bm25_k1` and `bm25_b` do not exist. Use `k` and `b`.
 
 ### Search term optimization
 
@@ -95,7 +95,7 @@ duckdb -readonly "$HOME/.duckdb/docs/duckdb-docs.duckdb" -c \
   "LOAD fts; SELECT version, count(*) FROM docs_chunks GROUP BY version;"
 ```
 
-Expect `2.0` and `blog` rows, with no `lts` or `current` rows. Expect roughly 2,700 `2.0` chunks, 1,000 `blog` chunks, and about 198 DuckLake `stable` chunks. A missing `2.0` or `stable` row is a failure; a count drift indicates an upstream documentation release.
+Expect `2.0` and `blog` rows, with no `lts` or `current` rows. Expect roughly 2,700 `2.0` chunks, 1,000 `blog` chunks, and about 198 DuckLake `stable` chunks. A missing `2.0` or `stable` row is a failure. A count drift indicates an upstream documentation release.
 
 ## References
 
