@@ -41,7 +41,7 @@ When passing any output flag (`-json`, `-csv`, `-box`), DuckDB disables automati
 
 When combining `-agent` with `-json` or `-csv`, DuckDB preserves JSON errors and banners on stderr, but omits the 1,000-row, 10,000-byte, and 500-character cell caps. When results can be large, add `LIMIT` for an intentional sample or use an aggregate for a complete count.
 
-Always read stderr. Agent mode directs its startup banner, JSON errors, cost estimates, and execution progress there. When the footer reads `first X and last Y of N rows`, the terminal display is truncated; the underlying query returned N rows and the result hash covers all N rows.
+Always read stderr. Agent mode directs its startup banner, JSON errors, cost estimates, and execution progress there. When the footer reads `first X and last Y of N rows`, the terminal display is truncated. The underlying query returned N rows, and the result hash covers all N rows.
 
 ## Result trust
 
@@ -51,14 +51,14 @@ Before trusting output, check the exit code first, stderr second, and the result
 | --- | --- | --- |
 | Exit 0, empty stderr, `N rows, hash ...` | Complete query result | Accept output. If the query specifies `LIMIT`, do not treat as dataset total. |
 | Exit 0, empty stderr, no footer, 1 to 9 rows | Complete query result (hash omitted) | Accept output. |
-| `first X and last Y of N rows` | Display truncated; query returned N rows | Pass `.maxrows -1` to inspect all rows, or use an aggregate for dataset total. |
+| `first X and last Y of N rows` | Display truncated. Query returned N rows | Pass `.maxrows -1` to inspect all rows, or use an aggregate for dataset total. |
 | `first X of at least N rows` or `query stopped early` | Incomplete lower bound | Stop and bound the query with selective filters. |
 | Exit 1 with stderr JSON error | Query execution failed | Read the stderr JSON error. Do not parse stdout. |
 | Exit 1 with header-only stdout, no JSON error | Process interrupted (SIGINT or timeout) | Rerun with bounded work or a higher timeout. |
 
-When verifying result determinism, rerun with a different `ORDER BY`; the result hash is order-independent. Never treat a `LIMIT` query result as complete for the underlying dataset.
+When verifying result determinism, rerun with a different `ORDER BY`. The result hash is order-independent. Never treat a `LIMIT` query result as complete for the underlying dataset.
 
-Before parsing `-json` output, check the exit code and stderr; on failure, `-json` can emit an unclosed `[` on stdout. When executing multiple statements under `-json`, DuckDB emits one JSON array per statement rather than a single document. Note that `NaN` and `Infinity` emit as bare tokens, violating strict JSON. When running `EXPLAIN ANALYZE`, DuckDB prints a formatted profile text block, ignoring `-json`.
+Before parsing `-json` output, check the exit code and stderr. On failure, `-json` can emit an unclosed `[` on stdout. When executing multiple statements under `-json`, DuckDB emits one JSON array per statement rather than a single document. Note that `NaN` and `Infinity` emit as bare tokens, violating strict JSON. When running `EXPLAIN ANALYZE`, DuckDB prints a formatted profile text block, ignoring `-json`.
 
 When launching `duckdb -ui`, DuckDB auto-installs the `ui` extension on initial run. If installation fails, note that extension builds can lag releases and lack 2.0.0 binaries for `osx_amd64` or `windows_arm64` (see [references/cli.md](references/cli.md)).
 
@@ -78,9 +78,9 @@ duckdb -init .duckdb/state.sql -agent -c "SHOW TABLES;"
 
 When passing `-init FILE`, DuckDB replaces `~/.duckdbrc`. When passing `-no-init`, DuckDB skips all initialization files.
 
-When combining a dot command with SQL statements, use `-cmd` or a heredoc; a single `-c` string cannot mix both. When passing `-cmd COMMAND`, DuckDB executes it at its positional argument index, even following the last `-c` or a completed `-f`.
+When combining a dot command with SQL statements, use `-cmd` or a heredoc. A single `-c` string cannot mix both. When passing `-cmd COMMAND`, DuckDB executes it at its positional argument index, even following the last `-c` or a completed `-f`.
 
-When running `-f FILE`, execution halts at the first error by default; stdin input continues past errors. When passing `-readonly`, DuckDB denies write access to the opened database, unless overridden by an explicit `ATTACH ... (READ_WRITE)`. When passing `-safe`, DuckDB disables external file access and locks configuration before `-init` runs, while still opening any database file specified on the command line.
+When running `-f FILE`, execution halts at the first error by default. Stdin input continues past errors. When passing `-readonly`, DuckDB denies write access to the opened database, unless overridden by an explicit `ATTACH ... (READ_WRITE)`. When passing `-safe`, DuckDB disables external file access and locks configuration before `-init` runs, while still opening any database file specified on the command line.
 
 To bound query duration, configure `max_execution_time` in milliseconds (`0` disables timeout):
 
@@ -113,7 +113,7 @@ When DuckDB 2.0 creates a new database file under default settings, it writes st
 | Python client code | `duckdb-python` |
 | Geodata, distances, Overture | `duckdb-spatial` |
 
-When configuring a Model Context Protocol client or server, consult [references/mcp.md](references/mcp.md). The `duckdb_mcp` community extension targets 2.0; the MotherDuck local server pins 1.5.6.
+When configuring a Model Context Protocol client or server, consult [references/mcp.md](references/mcp.md). The `duckdb_mcp` community extension targets 2.0. The MotherDuck local server pins 1.5.6.
 
 When an error names a specific feature or symptom, route to the owning skill:
 
@@ -124,7 +124,7 @@ When an error names a specific feature or symptom, route to the owning skill:
 | `Trying to read a database file with version number 69` | `duckdb-migrate` |
 | `Extension ... not found`, `no update available` | `duckdb-extensions` |
 | `Out of Memory Error`, actual rows dwarfing estimate, `Row Groups Scanned` near the total | `duckdb-profile` |
-| Output is box drawing under an agent | Check `~/.duckdbrc`; rerun with `-no-init` |
+| Output is box drawing under an agent | Check `~/.duckdbrc` and rerun with `-no-init` |
 
 ## Verify
 

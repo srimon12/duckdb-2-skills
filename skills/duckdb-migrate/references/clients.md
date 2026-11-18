@@ -42,7 +42,7 @@ dbt v2 (`dbt` package) has a built-in DuckDB adapter. Its bundled driver at 2.0.
 
 `dbt-duckdb` is the v1 adapter. It does not become dbt v2.
 
-Installing `duckdb==2.0.0` with `pip` does not change the driver dbt uses. Check `dbt show --inline "select version()"` and `tags['storage_version']`. A profile cannot set `STORAGE_VERSION`; convert the file with the DuckDB CLI before dbt opens it.
+Installing `duckdb==2.0.0` with `pip` does not change the driver dbt uses. Check `dbt show --inline "select version()"` and `tags['storage_version']`. A profile cannot set `STORAGE_VERSION`. Convert the file with the DuckDB CLI before dbt opens it.
 
 Read `duckdb-dbt` for the profile, driver proof, hooks, catalogs, and migration steps.
 
@@ -71,7 +71,7 @@ SELECT version();
 SELECT database_name, tags['storage_version'] FROM duckdb_databases();
 ```
 
-A client that cannot run the first query is not a DuckDB 2.0 client. A client that reports `v2.0.0+` can open the file; a client that reports `v1.5.0+` cannot.
+A client that cannot run the first query is not a DuckDB 2.0 client. A client that reports `v2.0.0+` can open the file. A client that reports `v1.5.0+` cannot.
 
 ## References
 

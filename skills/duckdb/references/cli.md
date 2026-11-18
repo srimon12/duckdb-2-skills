@@ -29,7 +29,7 @@ Each process starts empty unless a database path or an init file is given. `ATTA
 | `-csv` | Render results as CSV. Also disables automatic agent mode. |
 | `-markdown` | Render a Markdown table. Also disables automatic agent mode. |
 | `-box`, `-table`, `-line`, `-list`, `-column`, `-ascii`, `-html`, `-quote` | Pick another renderer. Each disables automatic agent mode. |
-| `-c COMMAND` | Run one command. Later `-c` arguments still run; the first error stops the rest. |
+| `-c COMMAND` | Run one command. Later `-c` arguments still run. The first error stops the rest. |
 | `-s COMMAND` | Same behavior as `-c`. |
 | `-f FILE` | Run a SQL file. `~/.duckdbrc` still runs first. Stops at the first error unless `.bail off` is the first line. |
 | `-cmd COMMAND` | Run a command at its argument position, after init. |
@@ -47,17 +47,17 @@ Each process starts empty unless a database path or an init file is given. `ATTA
 | `-unredacted` | Allow printing secret values. Sets `allow_unredacted_secrets`. |
 | `-unsigned` | Allow unsigned extensions. Development only. |
 | `-ui` | Load and start the DuckDB UI on port 4213, installing it if absent. Not supported with `-readonly`. |
-| `-format`, `-format-file FILE` | Format SQL instead of running it. It does not validate; invalid SQL passes through with exit 0. |
+| `-format`, `-format-file FILE` | Format SQL instead of running it. It does not validate. Invalid SQL passes through with exit 0. |
 | `-manual FUNCTION` | Print the manual page for a SQL function and exit. |
 | `-serve [quack[:SECRET]]` | Serve the opened database with Quack. |
 | `-connect [quack[:SECRET]]` | Connect to a remote Quack server. Cannot be combined with a local database path. |
 | `-version`, `-h`, `-help` | Version or help. |
 
-`-agent` and an output flag can be combined. The flag picks the renderer; `-agent` still forces the agent contract, so errors stay JSON and the banner still prints. It does not apply the row, byte, or cell caps. `-agent -json` returns the whole JSON array. Without an explicit `-agent`, any output flag turns automatic agent mode off. `-cmd` runs in argv order after the init file, including after the last `-c` or a successful `-f`. A `-f` error exits before later calls.
+`-agent` and an output flag can be combined. The flag picks the renderer. `-agent` still forces the agent contract, so errors stay JSON and the banner still prints. It does not apply the row, byte, or cell caps. `-agent -json` returns the whole JSON array. Without an explicit `-agent`, any output flag turns automatic agent mode off. `-cmd` runs in argv order after the init file, including after the last `-c` or a successful `-f`. A `-f` error exits before later calls.
 
 `-ui` installs the `ui` extension from `core` on first run. The extension ships separately and can lag a release, so a fresh release may return HTTP 404 until it is promoted from `core_nightly`. Retry later. The 2.0.0 `ui` build has no binary for `osx_amd64` or `windows_arm64`. The page assets load from `https://ui.duckdb.org`, while the queries run in the local process. Use `-box` or `EXPLAIN (FORMAT WEB)` when the UI is unavailable.
 
-Automatic activation requires three conditions. A known agent variable is present (even `AI_AGENT=0`), stdout is not a terminal, and no output flag was passed. Known variables include `AI_AGENT`, `AGENT`, `CLAUDECODE`, `CODEX_CI`, `CODEX_SANDBOX`, `CODEX_THREAD_ID`, `COPILOT_AGENT`, `COPILOT_AGENT_SESSION_ID`, `COPILOT_CLI`, `CURSOR_AGENT`, and `GEMINI_CLI`. `DUCKDB_AGENT_MODE=0` or `-no-agent` forces it off; the CLI flags win.
+Automatic activation requires three conditions. A known agent variable is present (even `AI_AGENT=0`), stdout is not a terminal, and no output flag was passed. Known variables include `AI_AGENT`, `AGENT`, `CLAUDECODE`, `CODEX_CI`, `CODEX_SANDBOX`, `CODEX_THREAD_ID`, `COPILOT_AGENT`, `COPILOT_AGENT_SESSION_ID`, `COPILOT_CLI`, `CURSOR_AGENT`, and `GEMINI_CLI`. `DUCKDB_AGENT_MODE=0` or `-no-agent` forces it off. The CLI flags win.
 
 ## Output modes
 
@@ -87,7 +87,7 @@ Automatic activation requires three conditions. A known agent variable is presen
 - A larger result renders the first 20 and last 20 rows, a `… N rows omitted …` line, and a footer with the total and an order-independent hash.
 - A cell truncates at 500 characters and prints `…(+N chars)`.
 - Results of 1 to 9 rows have no footer. 0 rows and 10 or more do.
-- `.maxrows -1` alone does not render everything; the byte cap still applies. Add `.maxbytes 0`.
+- `.maxrows -1` alone does not render everything. The byte cap still applies. Add `.maxbytes 0`.
 - `.maxrows N` shows at most 20 head and 20 tail rows, even when `N` is larger.
 - The banner, JSON errors, cost estimate, and progress go to stderr. `.timer` and `.changes` still write stdout.
 - `SET max_execution_time = <milliseconds>` bounds the query. On expiry the exit code is 1 and stderr carries an `INTERRUPT` JSON object.
@@ -138,10 +138,10 @@ Dot commands start at column 1, take one line, and need no semicolon.
 | --- | --- |
 | `max_execution_time` | Wall-clock cap in milliseconds. `0` is no limit. |
 | `threads` | Worker threads. Default is the system thread count. |
-| `max_memory` | Memory limit. Accepts a size or a percentage of system memory; the default is 80%. |
+| `max_memory` | Memory limit. Accepts a size or a percentage of system memory. The default is 80%. |
 | `temp_directory` | Spill directory. Default `.tmp` for in-memory, `<db>.tmp` for a file. |
-| `max_temp_directory_size` | Cap on spill. Default 90% of available disk; it does not accept a percentage string. |
-| `preserve_insertion_order` | `false` can speed bulk loads and lower memory; it gives up row order. |
+| `max_temp_directory_size` | Cap on spill. Default 90% of available disk. It does not accept a percentage string. |
+| `preserve_insertion_order` | `false` can speed bulk loads and lower memory. It gives up row order. |
 | `enable_progress_bar` | Turn off for clean stderr in automation. |
 | `checkpoint_on_detach` | Enum (`ENABLED`, `DISABLED`, `DEFAULT`), not a boolean. Default `DEFAULT`. |
 | `storage_compatibility_version` | `latest` or a version such as `v1.5.6`. |
@@ -171,9 +171,9 @@ SELECT name, value, description FROM duckdb_settings() ORDER BY name;
 | `SET allowed_paths = [...]` | Everything outside the listed paths. Set it before locking. |
 | `SET allow_persistent_secrets = false` | New persistent secrets. |
 | `SET lock_configuration = true` | Further `SET` and `RESET`. |
-| `-unsigned` | Nothing; it allows unsigned extensions. Do not use outside development. |
+| `-unsigned` | Nothing. It allows unsigned extensions. Do not use outside development. |
 
-Set the sandbox in this order. `allowed_paths` must come before `enable_external_access = false`; afterward the setting is rejected.
+Set the sandbox in this order. `allowed_paths` must come before `enable_external_access = false`. Afterward the setting is rejected.
 
 ```sql
 SET allowed_paths = ['/absolute/file.csv'];
@@ -182,7 +182,7 @@ SET allow_persistent_secrets = false;
 SET lock_configuration = true;
 ```
 
-External access cannot be turned back on in the same process. `-safe -init allow.sql` fails because `-safe` locks configuration before init runs; when paths must be configured first, use `.safe_mode` at the end of an init script.
+External access cannot be turned back on in the same process. `-safe -init allow.sql` fails because `-safe` locks configuration before init runs. When paths must be configured first, use `.safe_mode` at the end of an init script.
 
 ## Install
 
@@ -193,7 +193,7 @@ External access cannot be turned back on in the same process. `-safe -init allow
 | Windows | `winget install DuckDB.cli` |
 | Docker | `docker run --rm -it duckdb/duckdb` |
 
-The install script puts the binary under `~/.duckdb/cli/<version>/`, points `latest` at it, and links `~/.local/bin/duckdb` only when that directory exists and has no `duckdb` file. Pin a version with `DUCKDB_VERSION=2.0.0` on the install command. Homebrew may lag the release. `osx_amd64` has partial support and is dropped in 2.1; Linux requires glibc >= 2.28. Version check:
+The install script puts the binary under `~/.duckdb/cli/<version>/`, points `latest` at it, and links `~/.local/bin/duckdb` only when that directory exists and has no `duckdb` file. Pin a version with `DUCKDB_VERSION=2.0.0` on the install command. Homebrew may lag the release. `osx_amd64` has partial support and is dropped in 2.1. Linux requires glibc >= 2.28. Version check:
 
 ```bash
 duckdb -no-agent --version
@@ -213,7 +213,7 @@ Since 1.5 the CLI defaults to `shell_log_storage`, which `duckdb_logs` cannot qu
 
 - `-json` with multiple statements emits one JSON array per statement. That is not one valid JSON document.
 - `HUGEINT` and `DECIMAL` values are strings. `NaN` and `Infinity` are bare tokens, not strict JSON.
-- Duplicate column names produce duplicate keys; a parser usually keeps the last one.
+- Duplicate column names produce duplicate keys. A parser usually keeps the last one.
 - `errors_as_json = true` covers post-parse errors only. Parser errors stay text unless agent framing is on.
 - `EXPLAIN ANALYZE` ignores `-json` and prints a profile.
 - Interruption via SIGINT exits 1 with a table header on stdout and no JSON error on stderr. Always check the exit code.

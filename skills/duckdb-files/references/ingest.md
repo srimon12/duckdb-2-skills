@@ -13,7 +13,7 @@ Agree on six things before writing output.
 | Partition keys | `year`, `month` | Low-cardinality filter columns. |
 | Key types | `order_id BIGINT`, `ordered_at DATE`, `amount DECIMAL(18,2)` | Type drift changes results. |
 | Nullable columns | `customer` | An empty optional value is `NULL`, not a bad row. |
-| Bad-row policy | Quarantine to `quarantine.parquet`; parser rejects to `rejects.parquet` | Never drop or null a bad value silently. |
+| Bad-row policy | Quarantine to `quarantine.parquet`, parser rejects to `rejects.parquet` | Never drop or null a bad value silently. |
 
 If the user only wants a preview, use the `Preview` or `Convert` section in `duckdb-files/SKILL.md`. Do not build a pipeline for a one-off `LIMIT 20`.
 
@@ -63,7 +63,7 @@ FROM read_csv(
 
 Do not use `ignore_errors = true` as a repair. On JSONL it turns a malformed line into a row of `NULL`s. On CSV it skips the row. Both hide the failure.
 
-Choose the reject path before step 3. If the parser structure is clean, read as text with `all_varchar` and cast. If the reader must parse typed columns, use `store_rejects`; parser rejects never enter `typed`. Do not switch paths after `bad` and `good` are built.
+Choose the reject path before step 3. If the parser structure is clean, read as text with `all_varchar` and cast. If the reader must parse typed columns, use `store_rejects`. Parser rejects never enter `typed`. Do not switch paths after `bad` and `good` are built.
 
 ## 3. Type explicitly
 
@@ -131,11 +131,11 @@ FROM flagged
 WHERE reason IS NULL;
 ```
 
-A row with two bad columns gets one quarantine row with both reasons. That is the contract. Do not count it twice. A blank optional column is not a bad row; it is `NULL` in the typed row.
+A row with two bad columns gets one quarantine row with both reasons. That is the contract. Do not count it twice. A blank optional column is not a bad row. It is `NULL` in the typed row.
 
 ### Parser rejects
 
-Parser rejects never enter `typed`. If the reader uses `store_rejects`, they are not in `bad`. Decide the path before step 3. Do not replace `typed` after `bad` and `good` exist; rebuild `flagged`, `bad`, and `good` after the final typed read.
+Parser rejects never enter `typed`. If the reader uses `store_rejects`, they are not in `bad`. Decide the path before step 3. Do not replace `typed` after `bad` and `good` exist. Rebuild `flagged`, `bad`, and `good` after the final typed read.
 
 ```sql
 CREATE OR REPLACE TEMP TABLE typed AS
@@ -238,7 +238,7 @@ WHERE ordered_at IS NULL;
 
 `ordered_at IS NULL` can be legitimate only when the source allows a missing date. If the source has a non-null contract, the count must be zero. Do the same for every required key.
 
-For a remote dataset, `parquet_file_metadata` reads footers and avoids a full scan. It is the cheap row-count proof. Use it for the total; `duckdb-files` owns the `parquet_metadata` row-count trap.
+For a remote dataset, `parquet_file_metadata` reads footers and avoids a full scan. It is the cheap row-count proof. Use it for the total. `duckdb-files` owns the `parquet_metadata` row-count trap.
 
 ## 8. Schema drift
 
@@ -254,7 +254,7 @@ Options:
 | --- | --- | --- |
 | `union_by_name = true` | Fills missing columns with `NULL`. | Read a dataset with additive schema changes. |
 | `schema = MAP {'col': {name: 'col', type: 'VARCHAR', default_value: NULL}}` | Renames, casts, and supplies defaults. The value type must be a STRUCT with `name`, `type`, and `default_value`. | A known contract with a small drift. |
-| `bound_schema = {'col': 'VARCHAR'}` with `hive_partitioning = false` | Exact ordered output schema for `read_parquet` only; source columns not listed are dropped. Cannot combine with `schema` or `union_by_name`. | A known contract with no defaults. |
+| `bound_schema = {'col': 'VARCHAR'}` with `hive_partitioning = false` | Exact ordered output schema for `read_parquet` only. Source columns not listed are dropped. Cannot combine with `schema` or `union_by_name`. | A known contract with no defaults. |
 | Separate reads and `UNION ALL BY NAME` | Keeps each producer visible. | A quarantine or a per-source audit. |
 
 Do not use `union_by_name` to hide a missing required column. Count the `NULL`s first. A simple `MAP {'col': 'VARCHAR'}` is not a valid `schema` value because the map value must be a STRUCT.

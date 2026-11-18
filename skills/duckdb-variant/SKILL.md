@@ -29,7 +29,7 @@ INSERT INTO events VALUES
 
 When displaying VARIANT objects, DuckDB formats keys in sorted alphabetical order: `{'name': 'Alice', 'age': 30}::VARIANT` prints as `{'age': 30, 'name': Alice}`.
 
-VARIANT storage is supported in DuckDB native tables, Parquet files, and Delta tables. In Delta tables, write VARIANT at the top level only; nested VARIANT columns can be defined in schemas but cannot be written.
+VARIANT storage is supported in DuckDB native tables, Parquet files, and Delta tables. In Delta tables, write VARIANT at the top level only. Nested VARIANT columns can be defined in schemas but cannot be written.
 
 ## Load JSON
 
@@ -43,7 +43,7 @@ For a reliable ingest workflow:
 
 1. Ingest as `JSON` and cast to `VARIANT`: `SELECT json_data::VARIANT FROM read_json('events.json', columns={'json_data': 'JSON'});`.
 2. Profile key structures and types on a sample: `SELECT variant_keys(data), variant_typeof(data) FROM events LIMIT 1000;`.
-3. Select stable scalar fields accessed in query filters for shredding; keep heterogeneous, deeply nested, or high-cardinality fields unshredded.
+3. Select stable scalar fields accessed in query filters for shredding. Keep heterogeneous, deeply nested, or high-cardinality fields unshredded.
 4. Apply explicit schema hints during Parquet writes (see `## Shredding`), or rely on DuckDB's automatic database file shredding for mixed workloads.
 5. Verify load fidelity: compare row counts and check sample keys before and after ingest. Rows diverging from shredding schemas automatically fall back to the unshredded `value` column without data loss.
 
@@ -63,19 +63,19 @@ JSON numeric literals keep the type chosen by the parser. `{'k': 1.2}::VARIANT` 
 | Function | Description |
 | --- | --- |
 | `variant_typeof(v)` | Full logical type including nested fields (e.g. `INT32`, `VARCHAR`, `ARRAY`, `OBJECT`) |
-| `variant_type(v [, path])` | Physical storage category (e.g. `OBJECT`, `BOOL_TRUE`, `INT8`, `INT32`); optional path |
-| `variant_keys(v [, path])` | Object keys as `VARCHAR[]`; returns `[]` for arrays or scalars; optional path |
+| `variant_type(v [, path])` | Physical storage category (e.g. `OBJECT`, `BOOL_TRUE`, `INT8`, `INT32`). Optional path |
+| `variant_keys(v [, path])` | Object keys as `VARCHAR[]`. Returns `[]` for arrays or scalars. Optional path |
 | `variant_extract(v, field)` | Field or list element as `VARIANT` |
-| `variant_extract_string(v, path)` | Field as `VARCHAR` (string paths only; non-scalars render as JSON text) |
-| `variant_array_length(v [, path])` | Array length as `UBIGINT`; returns `0` for non-arrays; optional path |
-| `variant_exists(v, path)` | Key presence check in an object; returns `false` for array indexes |
+| `variant_extract_string(v, path)` | Field as `VARCHAR` (string paths only. Non-scalars render as JSON text) |
+| `variant_array_length(v [, path])` | Array length as `UBIGINT`. Returns `0` for non-arrays. Optional path |
+| `variant_exists(v, path)` | Key presence check in an object. Returns `false` for array indexes |
 | `variant_contains(haystack, needle)` | Structural variant containment (not substring matching) |
 | `variant_normalize(v)` | Canonical representation sharing identical binary encoding for equal values |
 | `variant_comparator(v)` | Binary sort key reflecting logical VARIANT order |
 | `variant_group_object(key, value)` | Aggregate key-value pairs into a single VARIANT object |
 | `variant_group_array(x)` | Aggregate expressions into an ordered VARIANT array |
 
-When casting SQL `NULL` to `VARIANT` or parsing JSON `null`, DuckDB yields `VARIANT_NULL`. Both evaluate `IS NULL` to `true` and return SQL `NULL` from `variant_type`; no column-level predicate separates them. To distinguish an absent key from an explicit null inside an object, call `variant_exists(v, path)`.
+When casting SQL `NULL` to `VARIANT` or parsing JSON `null`, DuckDB yields `VARIANT_NULL`. Both evaluate `IS NULL` to `true` and return SQL `NULL` from `variant_type`. No column-level predicate separates them. To distinguish an absent key from an explicit null inside an object, call `variant_exists(v, path)`.
 
 ## Extract
 
@@ -91,7 +91,7 @@ When indexing lists within VARIANT, use 1-based indexing. Querying index `0` rai
 
 When extracting text, call `variant_extract_string(v, path)` or cast `variant_extract(...)` with `::VARCHAR`. Note that `variant_extract_string` accepts string paths only, rejecting numeric array indexes.
 
-When serializing to string, distinguish DuckDB literal formatting from JSON text: `v::VARCHAR` produces DuckDB's internal literal syntax (such as `{'a': 1}`), whereas `v::JSON::VARCHAR` produces valid JSON text.
+When serializing to string, distinguish DuckDB literal formatting from JSON text. The cast `v::VARCHAR` produces DuckDB's internal literal syntax (such as `{'a': 1}`). In contrast, `v::JSON::VARCHAR` produces valid JSON text.
 
 Because DuckDB provides no `variant_concat` function (`||` casts operands to `VARCHAR`), merge objects via JSON: `json_merge_patch(a::JSON, b::JSON)::VARIANT`.
 
@@ -134,7 +134,7 @@ In native DuckDB database files, 2.0 shreds a `VARIANT` column into typed storag
 SET variant_minimum_shredding_size = -1;  -- off
 ```
 
-When writing to Parquet, DuckDB shreds variant columns independently of `variant_minimum_shredding_size`; even a single-row file writes typed sub-columns. Automatic shredding derives types from the first row group. To enforce an explicit schema, specify the `SHREDDING` copy option:
+When writing to Parquet, DuckDB shreds variant columns independently of `variant_minimum_shredding_size`. Even a single-row file writes typed sub-columns. Automatic shredding derives types from the first row group. To enforce an explicit schema, specify the `SHREDDING` copy option:
 
 ```sql
 COPY events TO 'events.parquet' (
@@ -143,7 +143,7 @@ COPY events TO 'events.parquet' (
 );
 ```
 
-DuckDB reads shredded `VARIANT` Parquet files, including those written by Snowflake. Note that `SHREDDING` serves as a storage layout hint rather than a validation contract: unmatched rows fall back to the unshredded `value` column and round-trip successfully, extra fields survive without truncation, and invalid type names fail at bind time.
+DuckDB reads shredded `VARIANT` Parquet files, including those written by Snowflake. Note that `SHREDDING` serves as a storage layout hint rather than a validation contract. Unmatched rows fall back to the unshredded `value` column and round-trip successfully. Extra fields survive without truncation, and invalid type names fail at bind time.
 
 For Delta table variant shredding configurations, consult `duckdb-lakehouse`.
 

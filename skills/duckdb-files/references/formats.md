@@ -6,7 +6,7 @@ Read this when the skill needs a reader option, a COPY clause, a secret field, o
 
 | Function | Format | Extension | Notes |
 | --- | --- | --- | --- |
-| `read_csv` | CSV, TSV, delimited text | built in | `.csv`/`.tsv` bare-read; `.tab`/`.txt` need the explicit function. |
+| `read_csv` | CSV, TSV, delimited text | built in | `.csv`/`.tsv` bare-read. `.tab`/`.txt` need the explicit function. |
 | `read_json` | JSON array, NDJSON, unstructured, GeoJSON | `json`, statically linked | Effective `format` default is `auto`. |
 | `read_ndjson` | NDJSON | `json`, statically linked | Shorthand for `read_json(..., format = 'newline_delimited')`. |
 | `read_parquet` | Parquet | `parquet`, statically linked | Directory and glob aware. |
@@ -14,7 +14,7 @@ Read this when the skill needs a reader option, a COPY clause, a secret field, o
 | `read_xlsx` | Excel | `excel` | Autoloads. `COPY ... (FORMAT xlsx)` needs `LOAD excel`. |
 | `read_blob` | Any file as `BLOB` | built in | Columns: `filename`, `content`, `size`, `last_modified`. |
 | `read_text` | Any UTF-8 file as `VARCHAR` | built in | 3.9 GiB limit. |
-| `read_duckdb` | A DuckDB database file | built in | Reads tables without attaching; views are not supported. A multi-table file needs `table_name = '...'`; a multi-schema file may need `schema_name`. |
+| `read_duckdb` | A DuckDB database file | built in | Reads tables without attaching. Views are not supported. A multi-table file needs `table_name = '...'`. A multi-schema file may need `schema_name`. |
 | `ST_Read` | GeoJSON, Shapefile, GeoPackage, FlatGeobuf, GPX | `spatial` | See `duckdb-spatial`. |
 | `sqlite_scan` | SQLite table | `sqlite_scanner` | Prefer `ATTACH ... (TYPE sqlite)`. A bare `.sqlite` path does not dispatch. |
 
@@ -48,7 +48,7 @@ Path dispatch: `.db` and `.duckdb` are DuckDB files. `.sqlite` and `.sqlite3` ne
 | `rejects_line_size_limit` | 10000 | Truncate the stored bad line. 0 means full line. |
 | `union_by_name` | `false` | Align columns by name across files. |
 | `hive_partitioning` | auto | Read `key=value` directories as columns. |
-| `filename` | false | Virtual column; kept for compatibility. |
+| `filename` | false | Virtual column. Kept for compatibility. |
 | `compression` | auto | `none`, `gzip`, `zstd`. |
 | `encoding` | `utf-8` | `utf-8`, `utf-16`, `latin-1`. |
 | `strict_mode` | `true` | Error on structural problems. |
@@ -67,18 +67,18 @@ The rejects table has one row per error, not one row per bad line. A line with t
 
 | Parameter | Default | Use |
 | --- | --- | --- |
-| `format` | `auto` in practice | `auto`, `unstructured`, `newline_delimited`, `array`. The manual says `array`; a JSONL file reads without it. |
+| `format` | `auto` in practice | `auto`, `unstructured`, `newline_delimited`, `array`. The manual says `array`. A JSONL file reads without it. |
 | `records` | `auto` | `false` returns raw JSON objects as a single `JSON` column instead of expanding keys. |
-| `columns` | empty | Explicit `{'id': 'INTEGER'}` schema; unlisted keys are excluded. |
-| `maximum_object_size` | 16 MiB | Reject larger array or unstructured objects; not enforced for NDJSON lines. |
-| `ignore_errors` | `false` | Only for `newline_delimited`; a bad line becomes a row of `NULL`s, not a skipped row. |
+| `columns` | empty | Explicit `{'id': 'INTEGER'}` schema. Unlisted keys are excluded. |
+| `maximum_object_size` | 16 MiB | Reject larger array or unstructured objects. Not enforced for NDJSON lines. |
+| `ignore_errors` | `false` | Only for `newline_delimited`. A bad line becomes a row of `NULL`s, not a skipped row. |
 | `union_by_name` | `false` | Align columns across files. |
 | `hive_partitioning` | auto | Partition columns from the path. |
 | `filename` | false | Virtual column. |
 | `compression` | auto | `none`, `gzip`, `zstd`. |
 | `maximum_sample_files` | 32 | Files sampled for detection. |
 | `allow_empty` | `false` | Empty result for a no-match glob. New in 2.0. |
-| `geojson` | `false` | Read GeoJSON as `GEOMETRY`; the JSON reader does this without loading `spatial`. |
+| `geojson` | `false` | Read GeoJSON as `GEOMETRY`. The JSON reader does this without loading `spatial`. |
 
 Reading shapes:
 
@@ -100,8 +100,8 @@ COPY (FROM 'in.csv') TO 'out.jsonl' (FORMAT json, ARRAY false);
 
 | Parameter | Default | Use |
 | --- | --- | --- |
-| `schema` | NULL | Read as a supplied schema; map by field id or name. The value is a `MAP` of column names to `{name, type, default_value}` structs. |
-| `bound_schema` | NULL | Exact ordered output schema for `read_parquet` only. Requires explicit `hive_partitioning=true` or `false`; cannot combine with `schema`, `union_by_name`, or `allow_empty`. |
+| `schema` | NULL | Read as a supplied schema. Map by field id or name. The value is a `MAP` of column names to `{name, type, default_value}` structs. |
+| `bound_schema` | NULL | Exact ordered output schema for `read_parquet` only. Requires explicit `hive_partitioning=true` or `false`. Cannot combine with `schema`, `union_by_name`, or `allow_empty`. |
 | `union_by_name` | `false` | Align columns across files. |
 | `binary_as_string` | `false` | Treat legacy binary columns as strings. |
 | `filename` | false | Virtual column. |
@@ -146,7 +146,7 @@ These apply to every format unless noted.
 | --- | --- | --- |
 | `FORMAT` | from extension | `csv`, `parquet`, `json`, `blob`, or an extension format such as `xlsx` or `gdal`. |
 | `USE_TMP_FILE` | auto | Write to `.tmp` first, then rename. |
-| `OVERWRITE_OR_IGNORE` | `false` | Overwrite matching paths in a multi-file write; stale partitions remain. |
+| `OVERWRITE_OR_IGNORE` | `false` | Overwrite matching paths in a multi-file write. Stale partitions remain. |
 | `OVERWRITE` | `false` | Remove the target directory tree on a local filesystem. |
 | `APPEND` | `false` | Generate a new name when the target exists. |
 | `FILENAME_PATTERN` | auto | `{uuid}`, `{uuidv4}`, `{uuidv7}`, `{i}`. |
@@ -159,11 +159,11 @@ These apply to every format unless noted.
 | `PRESERVE_ORDER` | setting | Keep input order. |
 | `RETURN_FILES` | `false` | Return the written paths. |
 | `RETURN_STATS` | `false` | Return column statistics. |
-| `WRITE_PARTITION_COLUMNS` | `false` | Keep partition columns in the files. Write it bare; `= true` is a parser error. |
+| `WRITE_PARTITION_COLUMNS` | `false` | Keep partition columns in the files. Write it bare. `= true` is a parser error. |
 
 CSV: `HEADER` (default true), `DELIM`/`SEP`, `QUOTE`, `ESCAPE`, `NULLSTR`, `DATEFORMAT`, `TIMESTAMPFORMAT`, `FORCE_QUOTE`, `PREFIX`, `SUFFIX`, `NEW_LINE`, `COMPRESSION`. A `.tsv` target still infers CSV, so pass `DELIMITER '\t'`. `CODEC` is Parquet-only.
 
-Parquet: `COMPRESSION` (default `snappy`), `COMPRESSION_LEVEL` (zstd 1-22), `ROW_GROUP_SIZE` (default 122880, minimum target 2048; the final group can be smaller), `ROW_GROUP_SIZE_BYTES`, `ROW_GROUPS_PER_FILE`, `PARQUET_VERSION` (`V1`, `V2`), `KV_METADATA`, `FIELD_IDS`, `SHREDDING`, `WRITE_BLOOM_FILTER`, `BLOOM_FILTER_FALSE_POSITIVE_RATIO`, `GEOPARQUET_VERSION`, `TIMESTAMP_IS_ADJUSTED_TO_UTC`, `WRITE_TIMESTAMP_AS_INT96`, `DATA_PAGE_SIZE_LIMIT`, `DICTIONARY_SIZE_LIMIT`.
+Parquet options include `COMPRESSION` (default `snappy`), `COMPRESSION_LEVEL` (zstd 1-22), and `ROW_GROUP_SIZE` (default 122880, minimum target 2048, final group can be smaller). Additional options comprise `ROW_GROUP_SIZE_BYTES`, `ROW_GROUPS_PER_FILE`, `PARQUET_VERSION` (`V1`, `V2`), `KV_METADATA`, `FIELD_IDS`, `SHREDDING`, `WRITE_BLOOM_FILTER`, `BLOOM_FILTER_FALSE_POSITIVE_RATIO`, `GEOPARQUET_VERSION`, `TIMESTAMP_IS_ADJUSTED_TO_UTC`, `WRITE_TIMESTAMP_AS_INT96`, `DATA_PAGE_SIZE_LIMIT`, and `DICTIONARY_SIZE_LIMIT`.
 
 JSON: `ARRAY` (default false, so `.json` writes NDJSON), `COMPRESSION`, `DATEFORMAT`, `TIMESTAMPFORMAT`. `FORMAT jsonl` is an alias.
 
@@ -190,7 +190,7 @@ COPY (FROM 'sales.csv') TO 'out' (
 );
 ```
 
-`ORDER_BY (ts)` sorts within each partition. `WRITE_PARTITION_COLUMNS` keeps the partition columns in the files; write it bare, because `= true` is a parser error. Hive partitioning reads the directory names back as columns.
+`ORDER_BY (ts)` sorts within each partition. `WRITE_PARTITION_COLUMNS` keeps the partition columns in the files. Write it bare, because `= true` is a parser error. Hive partitioning reads the directory names back as columns.
 
 ## Secrets
 
@@ -223,7 +223,7 @@ CREATE SECRET r2_creds (
 | --- | --- |
 | `s3` | `KEY_ID`, `SECRET`, `SESSION_TOKEN`, `REGION`, `ENDPOINT`, `URL_STYLE`, `PROVIDER` |
 | `r2` | `ACCOUNT_ID`, `KEY_ID`, `SECRET`, `SESSION_TOKEN` |
-| `gcs` | `KEY_ID`, `SECRET`, `PROVIDER`; HMAC keys |
+| `gcs` | `KEY_ID`, `SECRET`, `PROVIDER`. HMAC keys |
 | `azure` | `ACCOUNT_NAME`, `CONNECTION_STRING`, `TENANT_ID`, `CLIENT_ID`, `CLIENT_SECRET`, `PROVIDER` |
 | `http` | `BEARER_TOKEN`, `EXTRA_HTTP_HEADERS` |
 | `huggingface` | `TOKEN` |
@@ -237,7 +237,7 @@ FROM duckdb_secret_type_parameters();
 FROM which_secret('s3://my-bucket/file.parquet', 's3');
 ```
 
-`CREATE SECRET` is stored in the CLI history as plain text. `duckdb_secrets()` redacts `secret=` but still shows `key_id=`. `duckdb_secrets(redact := false)` errors unless the process started with `-unredacted`; `SET allow_unredacted_secrets` at runtime fails. `SET allow_persistent_secrets = false` blocks new persistent secrets.
+`CREATE SECRET` is stored in the CLI history as plain text. `duckdb_secrets()` redacts `secret=` but still shows `key_id=`. `duckdb_secrets(redact := false)` errors unless the process started with `-unredacted`. `SET allow_unredacted_secrets` at runtime fails. `SET allow_persistent_secrets = false` blocks new persistent secrets.
 
 ## Async I/O
 
@@ -250,8 +250,8 @@ Automatic for Parquet, uncompressed seekable UTF-8 CSV, and native DuckDB storag
 | `http_retries` | 3 | Retry count. |
 | `http_retry_wait_ms` | 100 | Initial wait. |
 | `http_retry_backoff` | 4.0 | Backoff multiplier. |
-| `http_client_pool_capacity` | auto | Tracks `async_threads`; the cap applies to the default. |
-| `fsync_mode` | `STANDARD` | Local write flush. `FULL` flushes harder; `NONE` skips the OS flush and can lose data or corrupt the database on a crash. |
+| `http_client_pool_capacity` | auto | Tracks `async_threads`. The cap applies to the default. |
+| `fsync_mode` | `STANDARD` | Local write flush. `FULL` flushes harder. `NONE` skips the OS flush and can lose data or corrupt the database on a crash. |
 
 Do not tune these settings before you measure. A remote Parquet scan already reads asynchronously. Quote published speedups only when the benchmark reads object storage. They do not guarantee local-disk performance.
 
@@ -259,12 +259,12 @@ Do not tune these settings before you measure. A remote Parquet scan already rea
 
 | Error | Cause | Fix |
 | --- | --- | --- |
-| `No files found that match the pattern` | Wrong path, or a glob with no match. | Check the path; use `allow_empty = true` only when an empty result is valid. |
+| `No files found that match the pattern` | Wrong path, or a glob with no match. | Check the path. Use `allow_empty = true` only when an empty result is valid. |
 | `Could not convert string` | Wrong type inference. | Pass `columns` or `types`. |
 | `Secret Validation Failure: no profile 'default' found` | `credential_chain` with no AWS profile. | Use a config secret, or skip the secret for a public bucket. |
 | `Permission Error: Cannot access file` | `enable_external_access = false` or `-safe`. | Add the path to `allowed_paths` before locking, or drop safe mode. |
 | `Binder Error: ... sqlite_master` | SQLite metadata function from 1.x. | `ATTACH ... (TYPE sqlite)` and `SHOW TABLES`. |
-| `HTTP 403` on S3 | Wrong region, missing credentials, or a key in the URL. | Pin `REGION`; use a secret; remove URL parameters. |
+| `HTTP 403` on S3 | Wrong region, missing credentials, or a key in the URL. | Pin `REGION`, use a secret, and remove URL parameters. |
 | `Conversion Error: Could not convert string to ...` in CSV | A bad row. | `store_rejects = true` and inspect `reject_errors`. |
 
 ## References

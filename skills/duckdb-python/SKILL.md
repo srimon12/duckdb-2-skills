@@ -38,9 +38,9 @@ When executing Python user-defined functions inside SQL queries, assign a separa
 
 When connecting to remote Quack sessions, note the cursor exception: cursors share the remote Quack session handle, causing concurrent queries to fail with `superseded by a new query`. For threaded Quack queries, open an independent attached connection per thread (see `duckdb-quack`).
 
-When opening databases read-only, pass `read_only=True` to reject writes; read-only mode never creates a missing file. Within a single process, opening multiple read-write connections to the same file is permitted under MVCC. However, opening a read-only connection alongside existing read-write connections to the same file in one process fails with a configuration error. For cross-process file locking (single writer or multiple readers), see `duckdb-session`.
+When opening databases read-only, pass `read_only=True` to reject writes. Read-only mode never creates a missing file. Within a single process, opening multiple read-write connections to the same file is permitted under MVCC. However, opening a read-only connection alongside existing read-write connections to the same file in one process fails with a configuration error. For cross-process file locking (single writer or multiple readers), see `duckdb-session`.
 
-When configuring extension search paths, pass the plural list `config={"extension_directories": ["/path"]}`; the singular `extension_directory` is deprecated. Because DuckDB ignores `max_temp_directory_size` inside `config` dictionaries, set disk spill limits in SQL after connecting: `SET max_temp_directory_size = '10GB';`.
+When configuring extension search paths, pass the plural list `config={"extension_directories": ["/path"]}`. The singular `extension_directory` is deprecated. Because DuckDB ignores `max_temp_directory_size` inside `config` dictionaries, set disk spill limits in SQL after connecting: `SET max_temp_directory_size = '10GB';`.
 
 When creating database files intended for DuckDB 1.5 readers, pin the storage format at connect time:
 
@@ -50,7 +50,7 @@ con = duckdb.connect("app.duckdb", config={"storage_compatibility_version": "v1.
 
 ## Lazy relations vs execution
 
-`con.sql()` and `duckdb.sql()` return lazy relation objects (`DuckDBPyRelation`). Read relations defer execution until an action consumes them; inspecting, printing, or iterating a read relation (including in a notebook) re-executes the query from scratch. Do not print a read relation you only intend to define.
+`con.sql()` and `duckdb.sql()` return lazy relation objects (`DuckDBPyRelation`). Read relations defer execution until an action consumes them. Inspecting, printing, or iterating a read relation (including in a notebook) re-executes the query from scratch. Do not print a read relation you only intend to define.
 
 ```python
 rel = con.sql("SELECT * FROM events")
@@ -61,7 +61,7 @@ rows = con.execute("SELECT * FROM events").fetchall()   # Computes once and buff
 rel.materialize()   # Computes query once and caches rows on the relation
 ```
 
-When executing DDL or DML statements (`CREATE`, `INSERT`, `UPDATE`, `DELETE`), use `con.execute()`. While `con.sql()` executes DDL/DML immediately upon invocation, it wraps the statement result in a relation; subsequent prints or fetches on that returned relation do not rerun the mutation. Only read relations re-execute.
+When executing DDL or DML statements (`CREATE`, `INSERT`, `UPDATE`, `DELETE`), use `con.execute()`. While `con.sql()` executes DDL/DML immediately upon invocation, it wraps the statement result in a relation. Subsequent prints or fetches on that returned relation do not rerun the mutation. Only read relations re-execute.
 
 ## Streaming results and transactions
 
@@ -70,9 +70,9 @@ When consuming `con.execute()` results incrementally via `fetchone()` or `fetchm
 - While an unconsumed streaming result remains open, calling `con.sql()`, `con.query()`, or `appender.flush()` raises `ResourceInUseException`.
 - Issuing a new `con.execute()` on the same connection silently cancels and replaces the previous open result.
 - Because DuckDB may buffer small result sets entirely in memory, never rely on `ResourceInUseException` as an execution guard.
-- To clear an open result before running other queries, consume all remaining rows, call `con.complete()`, call `con.abort()`, or execute concurrent queries in an independent `con.cursor()`.
+- To clear an open result before running other queries, consume all remaining rows. You can also call `con.complete()`, call `con.abort()`, or run concurrent queries in an independent `con.cursor()`.
 
-When any statement fails inside a transaction block (`con.begin()`), DuckDB marks the transaction aborted. Calling `con.commit()` performs an implicit rollback and terminates the block; invoking `con.rollback()` after that aborted `commit()` raises an error. Always initiate a fresh transaction before retrying queries.
+When any statement fails inside a transaction block (`con.begin()`), DuckDB marks the transaction aborted. Calling `con.commit()` performs an implicit rollback and terminates the block. Invoking `con.rollback()` after that aborted `commit()` raises an error. Always initiate a fresh transaction before retrying queries.
 
 ## 2.0 API migration reference
 
@@ -130,8 +130,8 @@ with con.appender("people") as appender:
 
 The appender supports operations via `action="insert"`, `"upsert"`, `"update"`, and `"delete"`:
 - When specifying `action="update"` or `"delete"`, pass `key=["col1", ...]`, a list of key column names identifying target rows.
-- When specifying `action="upsert"`, DuckDB matches against the target table's primary key or unique constraint. The table must define exactly one conflict target; passing `key` with upsert is rejected.
-- To load transformed stream batches, use `con.query_appender(statement, columns, source=...)`. Here `columns` is a list and `source` takes the dict of column names to data types; `statement` reads from the virtual table `appender_data`, and optional `source` queries read from `appender_buffer`.
+- When specifying `action="upsert"`, DuckDB matches against the target table's primary key or unique constraint. The table must define exactly one conflict target. Passing `key` with upsert is rejected.
+- To load transformed stream batches, use `con.query_appender(statement, columns, source=...)`. Here `columns` is a list and `source` maps column names to data types. The `statement` reads from the virtual table `appender_data`. Optional `source` queries read from `appender_buffer`.
 - Manage appender lifecycles with context managers (`with con.appender(...)`). A `with` block automatically calls `flush()` upon clean exit and calls `clear()` to discard uncommitted rows if an exception occurs. Outside a context manager, explicitly call `appender.flush()` to commit rows, or `appender.clear()` to discard buffered rows. The appender has no `close()` method.
 - Never share an appender instance across threads. Ensure open streaming `con.execute()` results are finished before calling `flush()`.
 

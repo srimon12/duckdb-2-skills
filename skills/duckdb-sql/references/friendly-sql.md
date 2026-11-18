@@ -75,7 +75,7 @@ PIVOT sales ON quarter USING sum(amount) GROUP BY year;
 UNPIVOT sales ON q1, q2 INTO NAME quarter VALUE amount;
 ```
 
-`PIVOT ... FILTER` is accepted and silently ignored. Compute the filtered aggregate in a CTE first. The simplified `UNPIVOT` drops rows whose value is `NULL`; only the SQL-standard `FROM ... UNPIVOT (... INCLUDE NULLS)` form keeps them.
+`PIVOT ... FILTER` is accepted and silently ignored. Compute the filtered aggregate in a CTE first. The simplified `UNPIVOT` drops rows whose value is `NULL`. Only the SQL-standard `FROM ... UNPIVOT (... INCLUDE NULLS)` form keeps them.
 
 ## DESCRIBE and SUMMARIZE
 
@@ -172,7 +172,7 @@ SELECT * FROM range(10) OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY;
 SELECT * FROM range(1000) LIMIT 10%;
 ```
 
-`FETCH FIRST ... PERCENT` and `FETCH FIRST ... WITH TIES` are parser errors. `LIMIT 10%` floors; 9 rows give 0, 10 give 1, and 1000 give 100.
+`FETCH FIRST ... PERCENT` and `FETCH FIRST ... WITH TIES` are parser errors. `LIMIT 10%` floors: 9 rows give 0, 10 give 1, and 1000 give 100.
 
 ## query and query_table
 
@@ -218,15 +218,15 @@ Without an `ORDER BY` that starts with the `DISTINCT ON` keys, the chosen row is
 
 | Type | Fact |
 | --- | --- |
-| `VARIANT` | Typed binary, keys sorted; see `duckdb-variant` |
-| `UNION` | Tagged union; `union_value(tag := expr)`, `union_tag` |
-| `MAP` | `m['missing']` returns `NULL`; `map_extract(m, 'missing')` returns `[]` |
+| `VARIANT` | Typed binary, keys sorted. See `duckdb-variant` |
+| `UNION` | Tagged union. Functions: `union_value(tag := expr)`, `union_tag` |
+| `MAP` | `m['missing']` returns `NULL`. `map_extract(m, 'missing')` returns `[]` |
 | `ARRAY` | Fixed length, 1-based |
 | `LIST` | Variable length, 1-based |
 | `ENUM` | Compares in declaration order |
-| `DECIMAL` | Unparameterized type `DECIMAL` defaults to `DECIMAL(18,3)`; division returns `DOUBLE` |
+| `DECIMAL` | Unparameterized type `DECIMAL` defaults to `DECIMAL(18,3)`. Division returns `DOUBLE` |
 | `TUPLE` | `(1, 'a')` is a tuple, not a named struct |
-| `STRUCT` | Bare `STRUCT` is an empty struct; `STRUCT()` is an error |
+| `STRUCT` | Bare `STRUCT` is an empty struct. `STRUCT()` is an error |
 
 ## References
 
