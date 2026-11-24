@@ -1,6 +1,6 @@
 # Diagnosis guide
 
-Read this when the skill's symptom table is not enough: a query is slow, spills, or reads too much, and you need a repeatable way to localize the cause instead of guessing at settings.
+Read this when the skill symptom table is not enough. Use this guide when a query is slow, spills, or reads too much. It localizes the cause directly without guessing settings.
 
 ## The case file
 
@@ -13,7 +13,7 @@ A diagnosis is six fields. Do not skip a field because the first plan looks fami
 | Budget | What is acceptable? | "Under 2 seconds and under 500 MB read." |
 | Measurement | What did the plan or profile actually show? | `EXPLAIN ANALYZE` operator rows, timings, row groups, bytes. |
 | Finding | Which single cause explains most of the gap? | "The join output is 4M rows from 1k-row inputs." |
-| Proof | What changed, and what did the same baseline show after it? | "Added the missing key; join output fell to 1k; wall time 40s to 0.8s." |
+| Proof | What changed, and what did the same baseline show after it? | "Added the missing key. Join output fell to 1k. Wall time fell from 40s to 0.8s." |
 
 Without a baseline, "faster" is not measurable. Without a budget, the work has no stop condition. Without a proof, the change is a hypothesis.
 
@@ -47,11 +47,11 @@ These are not the optimizer's cost units. They are sanity checks. When an operat
 `EXPLAIN` gives estimates. `EXPLAIN ANALYZE` executes the statement and adds actual rows and timings.
 
 - Operator timings are exclusive. Their sum is close to `query.cpu_time`.
-- `query.total_time` includes planning, waiting, and serialization. On a serial query it is larger than the operator sum; on a parallel query the sum and `cpu_time` can exceed it.
+- `query.total_time` includes planning, waiting, and serialization. On a serial query it is larger than the operator sum. On a parallel query the sum and `cpu_time` can exceed it.
 - On a parallel query, `query.cpu_time` can exceed wall time because threads overlap. Do not add operator times to predict wall time.
 - `system.peak_temp_dir_size > 0` proves a spill. `system.peak_buffer_memory` shows how close the query came to `memory_limit`.
 - `io.total_bytes_read` is query-wide FileSystem bytes, including footers and spill reads. It is not the file size and not scan-only bytes. If the query spilled, treat it as an upper bound.
-- `operator.rows_scanned` is scan-reported. A base-table scan can report rows examined; a Parquet scan with pushed filters can report rows emitted. Use `intermediate_rows` for emitted rows, and row groups, `Scanning Files`, and `Data Read` for scan work.
+- `operator.rows_scanned` is scan-reported. A base-table scan can report rows examined. A Parquet scan with pushed filters can report rows emitted. Use `intermediate_rows` for emitted rows, and row groups, `Scanning Files`, and `Data Read` for scan work.
 - A plan-only `EXPLAIN` has no row-group scan counts, actual rows, timings, spill, or bytes. Do not diagnose pruning from a plan-only tree.
 - A metadata-only `count(*)`, `min`, or `max` can produce no operator tree and `{"result":"error"}`. That is not a query failure.
 
@@ -89,7 +89,7 @@ SELECT ...;
 
 `EXPLAIN ANALYZE` executes `INSERT`, `UPDATE`, `DELETE`, and `COPY` too. Use a read-only copy, a transaction you can roll back, or plain `EXPLAIN` for writes.
 
-For a script, `EXPLAIN ANALYZE (FORMAT JSON)` is the stable path. It returns one object with `io`, `operator`, `query`, and `system` sections. `EXPLAIN (FORMAT JSON)` returns an array of nodes and has no actuals. The two shapes are different; do not feed one parser to both.
+For a script, `EXPLAIN ANALYZE (FORMAT JSON)` is the stable path. It returns one object with `io`, `operator`, `query`, and `system` sections. `EXPLAIN (FORMAT JSON)` returns an array of nodes and has no actuals. The two shapes are different. Do not feed one parser to both.
 
 ### 3. Localize
 
@@ -112,7 +112,7 @@ Match the evidence to one failure class. If two classes fit, pick the one that e
 
 | Class | Fingerprint | First move | Proof |
 | --- | --- | --- | --- |
-| Non-sargable filter | Scan reads every row group; filter wraps the column in a cast or function | Rewrite as a range on the bare column | Row groups scanned falls |
+| Non-sargable filter | Scan reads every row group. Filter wraps the column in a cast or function | Rewrite as a range on the bare column | Row groups scanned falls |
 | Unsorted or unpartitioned data | A selective filter still reads all groups | Sort or partition by the filter column before writing | Same query reads fewer groups |
 | Tiny files or tiny row groups | Many files, small `num_rows / num_row_groups`, high metadata overhead | Rewrite with larger files and groups | File count and scan time fall |
 | Cardinality explosion | Join output far above both inputs | Add the missing key, deduplicate, or pre-aggregate | Join output falls to the expected cardinality |
@@ -128,7 +128,7 @@ Change one thing. Prefer the change with the largest expected effect and the sma
 
 | Change | Use when | Avoid when |
 | --- | --- | --- |
-| Rewrite the predicate | Filter is not sargable | The rewrite changes NULL or type semantics; check `duckdb-sql` |
+| Rewrite the predicate | Filter is not sargable | The rewrite changes NULL or type semantics. Check `duckdb-sql` |
 | Pre-aggregate or deduplicate | Join is many-to-many | The output must keep every input row |
 | Move the filter earlier | A blocking operator sees too many rows | The filter depends on the join result |
 | Sort or partition the files | The same selective filter runs repeatedly | It is a one-off query |
@@ -191,10 +191,10 @@ SET preserve_insertion_order = false;
 
 1. Read metadata before `count(*)`: `parquet_file_metadata` gives `num_rows`, `num_row_groups`, and `file_size_bytes`.
 2. Check `Scanning Files`, `Total Files Read`, `Row Groups Scanned`, and `Data Read` in the profile. `Total Files Read` is files opened, not glob matches. `Data Read` includes footers and spill.
-3. Confirm the partition filter targets the partition column. `year = 2024` prunes; `year(ordered_at) = 2024` does not. A foldable expression on the partition value, such as `year % 2 = 0`, can still prune files.
+3. Confirm the partition filter targets the partition column. `year = 2024` prunes. `year(ordered_at) = 2024` does not. A foldable expression on the partition value, such as `year % 2 = 0`, can still prune files.
 4. Project only the columns the result needs.
 5. Check that the path glob did not open more files than intended.
-6. A tight filter over many files can spend its time on tiny footer range requests. `parquet_metadata_cache` and `enable_http_metadata_cache` default false; they help repeated scans in one process, not a cold query. Compact or partition before tuning `threads`.
+6. A tight filter over many files can spend its time on tiny footer range requests. `parquet_metadata_cache` and `enable_http_metadata_cache` default false. They help repeated scans in one process, not a cold query. Compact or partition before tuning `threads`.
 7. Tune `async_threads`, `read_ahead_depth`, and `http_retries` only after bytes and file count are under control.
 
 ### Parquet health check
@@ -207,7 +207,7 @@ FROM parquet_file_metadata('s3://bucket/prefix/**/*.parquet')
 ORDER BY rows_per_group;
 ```
 
-Aim for groups large enough that metadata and scheduling are small, and numerous enough for parallel scans. The default `ROW_GROUP_SIZE` is 122,880 rows, rounded up to a multiple of 2,048. For narrow rows, 100,000 to 1,000,000 rows per group is a useful range. For wide rows, 10 to 50 MB per group is a better target. Files from roughly 100 MB to 10 GB are a useful range, not a rule. `FILE_SIZE_BYTES` can overshoot; read the footer after the write.
+Aim for groups large enough that metadata and scheduling are small, and numerous enough for parallel scans. The default `ROW_GROUP_SIZE` is 122,880 rows, rounded up to a multiple of 2,048. For narrow rows, 100,000 to 1,000,000 rows per group is a useful range. For wide rows, 10 to 50 MB per group is a better target. Files from roughly 100 MB to 10 GB are a useful range, not a rule. `FILE_SIZE_BYTES` can overshoot. Read the footer after the write.
 
 Check schema drift separately:
 
@@ -236,7 +236,7 @@ The JSON node names are stable enough for a diagnostic, not a public API. `extra
 - Set `max_execution_time` before an unbounded query.
 - Do not run `EXPLAIN ANALYZE` on a write unless the write is intended and authorized.
 - Do not paste secrets or tokens into a query file or a saved profile.
-- Keep the profile file local; it can contain the query text and table names.
+- Keep the profile file local. It can contain the query text and table names.
 
 ```bash
 duckdb -readonly app.duckdb -c "SET max_execution_time = 30000; EXPLAIN ANALYZE SELECT ...;"
@@ -254,7 +254,7 @@ A useful diff compares the same operator path across two profiles.
 | `intermediate_size_bytes` | Shows whether memory pressure changed. |
 | `time` | Shows whether the change moved the cost. |
 
-Ignore absolute timings below about 10 ms on a warm local database; they are noise. Prefer a ratio or a repeated run.
+Ignore absolute timings below about 10 ms on a warm local database. They are noise. Prefer a ratio or a repeated run.
 
 ## Stop rules
 

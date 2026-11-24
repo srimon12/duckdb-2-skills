@@ -17,7 +17,7 @@ SET geometry_always_xy = true;
 ```
 
 DuckDB does not autoload `spatial`. The session setting `geometry_always_xy` starts unset. While unset, CRS-sensitive functions (`ST_Transform`, `ST_Distance_Sphere`, `ST_Distance_Spheroid`, `ST_Area_Spheroid`, `ST_Length_Spheroid`) throw an `Invalid Configuration Error`. Always set `geometry_always_xy = true` to enforce `(longitude, latitude)` coordinate order. If set to `false`, CRS-sensitive operations interpret EPSG:4326 as `(latitude, longitude)`, causing silent calculation errors.
-To inspect this setting, query `duckdb_settings()`; calling `current_setting('geometry_always_xy')` throws an error even after `LOAD spatial`.
+To inspect this setting, query `duckdb_settings()`. Calling `current_setting('geometry_always_xy')` throws an error even after `LOAD spatial`.
 
 ## Measure
 
@@ -25,13 +25,13 @@ Construct points as `ST_Point(longitude, latitude)`. Longitude always precedes l
 
 | Goal | Function | Units and cost |
 | --- | --- | --- |
-| Same-CRS comparison | `ST_Distance` | CRS units (degrees on EPSG:4326); lowest cost |
-| Fast meters on lon/lat | `ST_Distance_Sphere` | Meters (spherical approximation); low cost |
-| Exact meters on lon/lat | `ST_Distance_Spheroid` | Meters (ellipsoidal calculation); highest cost |
-| Radial containment | `ST_DWithin` plus bbox | Boolean; leverages R-tree index |
+| Same-CRS comparison | `ST_Distance` | CRS units (degrees on EPSG:4326). Lowest cost |
+| Fast meters on lon/lat | `ST_Distance_Sphere` | Meters (spherical approximation). Low cost |
+| Exact meters on lon/lat | `ST_Distance_Spheroid` | Meters (ellipsoidal calculation). Highest cost |
+| Radial containment | `ST_DWithin` plus bbox | Boolean. Leverages R-tree index |
 
-All spherical and spheroidal calculations rely on session `geometry_always_xy`; only `ST_Transform` accepts a per-call `always_xy` parameter.
-For radius searches, write `ST_DWithin(geom, point, d)`. When `point` and `d` are constant at planning time, `ST_DWithin` invokes the R-tree index; `ST_Distance(geom, point) < d` forces a full sequential scan.
+All spherical and spheroidal calculations rely on session `geometry_always_xy`. Only `ST_Transform` accepts a per-call `always_xy` parameter.
+For radius searches, write `ST_DWithin(geom, point, d)`. When `point` and `d` are constant at planning time, `ST_DWithin` invokes the R-tree index. An expression like `ST_Distance(geom, point) < d` forces a full sequential scan.
 
 When computing ellipsoidal distance between coordinates, cast points to `POINT_2D`:
 
@@ -42,8 +42,8 @@ SELECT ST_Distance_Spheroid(
 ) AS meters;
 ```
 
-For geodesic area and length, pass polygons or linestrings: `ST_Area_Spheroid` accepts `GEOMETRY` or `POLYGON_2D` (square meters); `ST_Length_Spheroid` accepts `GEOMETRY` or `LINESTRING_2D` (meters). Both accept `POINT_2D` casts but return `0.0`.
-To project coordinates between CRS systems, run `ST_Transform(geom, 'EPSG:4326', 'EPSG:3857')`. Direct casts from CRS-typed geometry to `POINT_2D` fail; strip the CRS via `::GEOMETRY::POINT_2D` or rebuild with `ST_Point(ST_X(geom), ST_Y(geom))`.
+For geodesic area and length, pass polygons or linestrings. `ST_Area_Spheroid` accepts `GEOMETRY` or `POLYGON_2D` (square meters). `ST_Length_Spheroid` accepts `GEOMETRY` or `LINESTRING_2D` (meters). Both accept `POINT_2D` casts but return `0.0`.
+To project coordinates between CRS systems, run `ST_Transform(geom, 'EPSG:4326', 'EPSG:3857')`. Direct casts from CRS-typed geometry to `POINT_2D` fail. Strip the CRS via `::GEOMETRY::POINT_2D` or rebuild with `ST_Point(ST_X(geom), ST_Y(geom))`.
 
 ## Filter before geometry
 
@@ -58,7 +58,7 @@ WHERE bbox.xmax >= -74.01 AND bbox.xmin <= -73.96
   AND bbox.ymax >= 40.72  AND bbox.ymin <= 40.77
 ```
 
-For lines and polygons, min-corner filters drop features originating outside the query box that cross into it. Never filter on `xmax` or `ymax` alone; a max predicate drops features extending beyond the query window.
+For lines and polygons, min-corner filters drop features originating outside the query box that cross into it. Never filter on `xmax` or `ymax` alone. A max predicate drops features extending beyond the query window.
 
 To accelerate topological queries on local `GEOMETRY` tables, create an R-tree index:
 
@@ -68,7 +68,7 @@ EXPLAIN SELECT count(*) FROM places
 WHERE ST_Within(geom, ST_MakeEnvelope(-74.01, 40.72, -73.96, 40.77));
 ```
 
-The output plan confirms execution via `Rtree Index Scan`. R-tree indexes support `ST_Equals`, `ST_Intersects`, `ST_Touches`, `ST_Crosses`, `ST_Within`, `ST_Contains`, `ST_Overlaps`, `ST_Covers`, `ST_CoveredBy`, `ST_ContainsProperly`, and `ST_DWithin` whenever one argument is constant at planning time. Always populate tables before creating indexes; bulk loading into unindexed tables is significantly faster.
+The output plan confirms execution via `Rtree Index Scan`. R-tree indexes support `ST_Equals`, `ST_Intersects`, `ST_Touches`, `ST_Crosses`, `ST_Within`, `ST_Contains`, `ST_Overlaps`, `ST_Covers`, `ST_CoveredBy`, `ST_ContainsProperly`, and `ST_DWithin` whenever one argument is constant at planning time. Always populate tables before creating indexes. Bulk loading into unindexed tables is significantly faster.
 
 ## Spatial joins
 
@@ -96,11 +96,11 @@ COPY (SELECT * FROM result) TO 'out.geojsonl' (FORMAT GEOJSONL);
 COPY (SELECT * FROM result) TO 'out.gpkg' WITH (FORMAT GDAL, DRIVER 'GPKG', SRS 'EPSG:4326');
 ```
 
-DuckDB 2.0 provides no `ST_Write` function. Use `COPY ... FORMAT GDAL` for tables and native `FORMAT GEOJSON` for FeatureCollections. The spatial extension supports vector drivers only; raster formats are unsupported.
+DuckDB 2.0 provides no `ST_Write` function. Use `COPY ... FORMAT GDAL` for tables and native `FORMAT GEOJSON` for FeatureCollections. The spatial extension supports vector drivers only. Raster formats are unsupported.
 
 ## Overture, when the user has no file
 
-Overture publishes GeoParquet on a public S3 bucket and prunes older releases. Always resolve the active release dynamically from the STAC catalog; never hardcode a release identifier:
+Overture publishes GeoParquet on a public S3 bucket and prunes older releases. Always resolve the active release dynamically from the STAC catalog. Never hardcode a release identifier:
 
 ```sql
 LOAD httpfs; LOAD spatial;
@@ -136,7 +136,7 @@ Access other themes with path pattern `theme=<name>/type=<type>/*`:
 | `base` | `land`, `water`, `infrastructure` |
 | `addresses` | `address` |
 
-Before filtering unverified columns, run `DESCRIBE SELECT ... LIMIT 0`. Schema structures and worked queries are documented in [references/overture.md](references/overture.md). The keyless S3 secret sets the region only; do not pass AWS credentials. Verify per-theme data licenses before publishing derived datasets.
+Before filtering unverified columns, run `DESCRIBE SELECT ... LIMIT 0`. Schema structures and worked queries are documented in [references/overture.md](references/overture.md). The keyless S3 secret sets the region only. Do not pass AWS credentials. Verify per-theme data licenses before publishing derived datasets.
 
 ## H3
 
@@ -150,7 +150,7 @@ SELECT h3_latlng_to_cell(40.748, -73.985, 9) AS cell,
        h3_cell_area(h3_latlng_to_cell(40.748, -73.985, 9), 'km^2') AS area;
 ```
 
-Unlike `ST_Point`, `h3_latlng_to_cell(latitude, longitude, resolution)` requires latitude first. Index resolutions span 0 to 15; resolution 9 covers neighborhood scales, and resolution 16 returns `NULL`. For `h3_cell_area`, supply `'m^2'` or `'km^2'`; `'m2'` and `'km2'` are rejected. Core functions include `h3_cell_to_latlng` (returns `[lat, lng]`), `h3_cell_to_boundary_wkt`, `h3_get_resolution`, `h3_cell_to_parent`, `h3_cell_to_children`, and `h3_grid_disk` (`h3_grid_disk(cell, 1)` returns 7 cells including the center).
+Unlike `ST_Point`, `h3_latlng_to_cell(latitude, longitude, resolution)` requires latitude first. Index resolutions span 0 to 15. Resolution 9 covers neighborhood scales, and resolution 16 returns `NULL`. For `h3_cell_area`, supply `'m^2'` or `'km^2'`. Values `'m2'` and `'km2'` are rejected. Core functions include `h3_cell_to_latlng` (returns `[lat, lng]`), `h3_cell_to_boundary_wkt`, `h3_get_resolution`, `h3_cell_to_parent`, `h3_cell_to_children`, and `h3_grid_disk` (`h3_grid_disk(cell, 1)` returns 7 cells including the center).
 
 ## Verify
 

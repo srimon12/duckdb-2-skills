@@ -39,17 +39,17 @@ Binder Error: HNSW index key type must be one of: 'FLOAT[N]'
 CREATE INDEX items_hnsw ON items USING HNSW ((emb::FLOAT[3])) WITH (metric = 'cosine');
 ```
 
-An empty table can be indexed before the first insert. Inserts, updates, and deletes update the index. Multiple HNSW indexes can exist on one table; the planner picks the index whose metric matches the query function.
+An empty table can be indexed before the first insert. Inserts, updates, and deletes update the index. Multiple HNSW indexes can exist on one table. The planner picks the index whose metric matches the query function.
 
 ## Metric
 
 | Index metric | Query function | Notes |
 | --- | --- | --- |
-| `l2sq` | `array_distance` | Default. Ordering is L2 squared; the returned value is the square root. |
+| `l2sq` | `array_distance` | Default. Ordering is L2 squared. The returned value is the square root. |
 | `cosine` | `array_cosine_distance` | Normalizes internally. Range `0` to `2`. |
 | `ip` | `array_negative_inner_product` | Negative dot product. |
 
-A mismatch is silent. An `l2sq` index with `array_cosine_distance` produces a sequential scan, not an error. Sort by `1.0 - array_cosine_similarity` to get the rewrite to `array_cosine_distance`; a bare `array_cosine_similarity` sort is not accelerated. Check the plan, or `pragma_hnsw_index_info().metric`.
+A mismatch is silent. An `l2sq` index with `array_cosine_distance` produces a sequential scan, not an error. Sort by `1.0 - array_cosine_similarity` to get the rewrite to `array_cosine_distance`. A bare `array_cosine_similarity` sort is not accelerated. Check the plan, or `pragma_hnsw_index_info().metric`.
 
 The pgvector-style operators `<=>` and `<->` exist in 2.0.0 and return the same values as `array_cosine_distance` and `array_distance`. Neither is accelerated. `ORDER BY emb <=> literal LIMIT k` and `ORDER BY emb <-> literal LIMIT k` both plan as `Seq Scan` plus `Top N` because the operator casts the column to `FLOAT[]`. Use the `array_*` function names in every measured query.
 
@@ -87,7 +87,7 @@ The query vector must be a literal `FLOAT[N]`. A `::DOUBLE[N]` cast or a scalar 
 
 ## Filtered search
 
-`hnsw_prefilter` defaults to `true`. A static filter that DuckDB can push into the scan is applied before the graph search, so the index returns up to `k` qualifying rows instead of post-filtering the global top `k`.
+`hnsw_prefilter` defaults to `true`. Pushed static filters apply before the graph search. This lets the index return up to `k` qualifying rows instead of post-filtering the global top `k`.
 
 ```sql
 SELECT id

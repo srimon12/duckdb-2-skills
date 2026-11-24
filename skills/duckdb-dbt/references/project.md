@@ -21,7 +21,7 @@ Read this when the skill needs an exact profile key, materialization behavior, e
 
 `external_location`, `file_size`, and `overwrite` are v1 model config keys. dbt v2 fails with `UnusedConfigKey (dbt1060)`.
 
-A profile `settings: storage_compatibility_version: v1.5.4` is accepted after attach and does not create an old file. The accepted strings come from the active driver: the bundled 1.5.4 driver rejects `v1.5.6`, and the 2.0 driver accepts it. `attach[].options` is parsed and dropped in v2; `attach[].options.storage_version` does not reach the `ATTACH`. Use `ATTACH ... (STORAGE_VERSION ...)` in the DuckDB CLI before dbt opens the file.
+A profile `settings: storage_compatibility_version: v1.5.4` is accepted after attach and does not create an old file. The accepted strings come from the active driver: the bundled 1.5.4 driver rejects `v1.5.6`, and the 2.0 driver accepts it. `attach[].options` is parsed and dropped in v2. `attach[].options.storage_version` does not reach the `ATTACH`. Use `ATTACH ... (STORAGE_VERSION ...)` in the DuckDB CLI before dbt opens the file.
 
 ## Materializations
 
@@ -33,10 +33,10 @@ A profile `settings: storage_compatibility_version: v1.5.4` is accepted after at
 | `ephemeral` | Works | CTE, no database object |
 | `seed` | Works | CSV fixture |
 | `snapshot` | Works | Must live in `snapshots/`, not `models/` |
-| `external` | Works | One file at `location`; parent directory must exist |
+| `external` | Works | One file at `location`. Parent directory must exist |
 | `materialized_view` | Fails | `get_create_materialized_view_as_sql has not been implemented for this adapter` |
 | Python model | Fails | `Internal Error: Python models are not supported for duckdb adapter` |
-| `table_function` | Present | Macro exists; not covered by this pack |
+| `table_function` | Present | Macro exists. Not covered by this pack |
 
 ## Incremental config
 
@@ -78,10 +78,10 @@ A table rebuild drops FTS and HNSW indexes. Recreate them in a post-hook. An inc
 | `dbt show --select model` | Previews a model without building it |
 | `dbt show --inline "select ..."` | Ad-hoc query through the active connection |
 | `dbt compile` | Compiled SQL under `target/compiled` |
-| `dbt docs generate` | Executes selected nodes and writes metadata Parquet; use `--write-catalog` for `catalog.json` |
+| `dbt docs generate` | Executes selected nodes and writes metadata Parquet. Use `--write-catalog` for `catalog.json` |
 | `dbt retry` | Reruns failed nodes from `run_results.json` |
 
-dbt v2 writes `manifest.json` and `run_results.json` to `target/`, plus a queryable metadata layer under `target/private/index/*.parquet`. Do not read `run_results.json` after `dbt docs generate`; the command can replace it with an empty run.
+dbt v2 writes `manifest.json` and `run_results.json` to `target/`, plus a queryable metadata layer under `target/private/index/*.parquet`. Do not read `run_results.json` after `dbt docs generate`. The command can replace it with an empty run.
 
 ## Exact failures
 
@@ -97,12 +97,12 @@ dbt v2 writes `manifest.json` and `run_results.json` to `target/`, plus a querya
 | `--compute inline` | `` `--compute inline` is not supported for adapter 'duckdb'. Falling back to `--compute remote`. `` |
 | Unknown incremental strategy | `No macro named 'get_incremental_<name>_sql'` on the second run |
 
-DuckDB 1.5.5 and earlier print the raw header field `999` for a natively created 2.0 file. DuckDB 1.5.6 prints `69`. The storage version is 69 in both cases; read `tags['storage_version']`, not the error number.
+DuckDB 1.5.5 and earlier print the raw header field `999` for a natively created 2.0 file. DuckDB 1.5.6 prints `69`. The storage version is 69 in both cases. Read `tags['storage_version']`, not the error number.
 
 ## v1-to-v2 checklist
 
 1. Record the v1 command output, adapter version, DuckDB build, and storage tag.
-2. Install dbt v2 in a fresh environment. Do not install `dbt-duckdb` beside it; that pulls dbt-core 1.x and can overwrite the `dbt` console script.
+2. Install dbt v2 in a fresh environment. Do not install `dbt-duckdb` beside it. That pulls dbt-core 1.x and can overwrite the `dbt` console script.
 3. Run `dbc install duckdb` when the project uses extensions or a 2.0 file.
 4. Copy the profile. Set `schema`, remove `plugins` and `filesystems`, and replace v1 external configs.
 5. Run `dbt debug`, then `dbt show --inline "select version()"`.

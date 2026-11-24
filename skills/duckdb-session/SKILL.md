@@ -58,11 +58,11 @@ Common attach options:
 | `STORAGE_VERSION 'v1.5.6'` | Create new storage version 68 files readable by DuckDB 1.5.6. DuckDB 1.4 cannot read them. `v1.5.0` writes an identical header. |
 | `ENCRYPTION_KEY '...'` | Open an encrypted database. Load `httpfs` first for OpenSSL hardware acceleration. |
 | `TYPE sqlite` | Open a SQLite file. Hand off to `duckdb-files`. |
-| `ATTACH OR REPLACE` | Forcefully rebind an existing alias. Destructive; confirm with user first. |
+| `ATTACH OR REPLACE` | Forcefully rebind an existing alias. Destructive. Confirm with user first. |
 
 If the user requested a default catalog or the state file lacks a `USE` command, append `USE analytics;`. Without an explicit `USE`, DuckDB defaults to `memory`, causing bare `SHOW TABLES;` to appear empty despite valid attachments.
 
-The `-init` flag is CLI-specific; Python and client drivers must issue `ATTACH` programmatically. Init files execute both SQL and dot commands; any SQL or syntax error immediately aborts startup with exit code 1.
+The `-init` flag is CLI-specific. Python and client drivers must issue `ATTACH` programmatically. Init files execute both SQL and dot commands. Any SQL or syntax error immediately aborts startup with exit code 1.
 
 To validate attachment in isolation before persisting, run once directly, then verify with `-init`:
 
@@ -83,7 +83,7 @@ WHERE NOT internal;
 
 `tags['storage_version']` reports the minimum compatibility floor, not raw internal integers. Storage version 69 reports `v2.0.0+` (DuckDB 1.x cannot open). Storage version 68 reports `v1.5.0+`.
 
-Opening a legacy 1.x file in DuckDB 2.0 does not upgrade it; standard reads and writes preserve existing storage versions in place. Upgrading an existing file to storage 69 occurs only when mounting via `ATTACH '<path>' AS alias (STORAGE_VERSION 'latest');` followed by a write. Never pass `STORAGE_VERSION 'latest'` unless the user explicitly requested a file format upgrade. To pin formats for older readers, follow `duckdb-migrate`.
+Opening a legacy 1.x file in DuckDB 2.0 does not upgrade it. Standard reads and writes preserve existing storage versions in place. Upgrading an existing file to storage 69 occurs only when mounting via `ATTACH '<path>' AS alias (STORAGE_VERSION 'latest');` followed by a write. Never pass `STORAGE_VERSION 'latest'` unless the user explicitly requested a file format upgrade. To pin formats for older readers, follow `duckdb-migrate`.
 
 ## Catalog exploration
 
@@ -130,7 +130,7 @@ On clean process termination, DuckDB checkpoints and removes the WAL. The settin
 
 `VACUUM` does not shrink database files on disk. `CHECKPOINT` frees deleted-row storage blocks for internal reuse without guaranteeing file truncation. On legacy storage versions, checkpoint vacuum skips tables containing ART indexes unless `vacuum_rebuild_indexes` was configured at startup or attach time (deprecated fallback).
 
-To release cross-process file locks, detach the database. DuckDB prevents detaching the active catalog; switch catalogs before detaching:
+To release cross-process file locks, detach the database. DuckDB prevents detaching the active catalog. Switch catalogs before detaching:
 
 ```sql
 ATTACH ':memory:' AS memory_db;
@@ -148,7 +148,7 @@ To transfer schemas and data directly between catalogs:
 COPY FROM DATABASE analytics TO archive;
 ```
 
-`COPY FROM DATABASE` requires an already-attached target catalog without conflicting table names; the destination database storage version governs the output file format.
+`COPY FROM DATABASE` requires an already-attached target catalog without conflicting table names. The destination database storage version governs the output file format.
 
 To back up a database, target an empty directory: `EXPORT DATABASE 'backup_dir' (FORMAT parquet);`. Default export outputs SQL and CSV without purging existing files. To restore, ensure the target catalog contains no colliding objects and run `IMPORT DATABASE 'backup_dir';`. For cross-version format conversions, see `duckdb-migrate`.
 
@@ -187,5 +187,5 @@ Confirm each configured alias appears exactly once with its expected storage ver
 - [Views-only database](https://duckdb.org/docs/2.0/guides/network_cloud_storage/duckdb_views_only.html) details catalog sharing architectures.
 - [Reclaiming space](https://duckdb.org/docs/2.0/operations_manual/footprint_of_duckdb/reclaiming_space.html) covers WAL checkpoints and vacuum limitations.
 - [duckdb_databases](https://duckdb.org/docs/2.0/sql/meta/duckdb_table_functions.html#duckdb_databases) catalogs system introspection functions.
-- `duckdb_secrets()` masks secret values while displaying `key_id`. Log secret names and provider types only; never display row contents.
+- `duckdb_secrets()` masks secret values while displaying `key_id`. Log secret names and provider types only. Never display row contents.
 - The state file pattern adapts the upstream `attach-db` skill from https://github.com/duckdb/duckdb-skills (MIT).

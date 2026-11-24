@@ -19,14 +19,14 @@ Support windows:
 | 1.4 LTS | 2026-11-17 |
 | 1.5 | 2027-03-01 |
 
-The release calendar tentatively schedules 2.0.1 for 2026-11-18. For mission-critical workloads, wait for patch releases and validate on a shadow copy; 1.5 community support continues through 2027-03-01.
+The release calendar tentatively schedules 2.0.1 for 2026-11-18. For mission-critical workloads, wait for patch releases and validate on a shadow copy. 1.5 community support continues through 2027-03-01.
 
 ## Order of work
 
 1. **Inventory**: Catalog every process, database file, client library, and extension accessing DuckDB.
 2. **Pin format**: Enforce backward-compatible storage versions on any file that older readers must open.
-3. **Back up**: Create file backups or export catalogs and data; verify the restore procedure.
-4. **Shadow run**: Spin up a shadow database and replay production workloads against DuckDB 2.0.
+3. **Back up**: Create file backups or export catalogs and data. Verify the restore procedure.
+4. **Shadow run**: Start a shadow database and replay production workloads against DuckDB 2.0.
 5. **Upgrade**: Install the 2.0 binary and update all extensions concurrently.
 6. **SQL checks**: Scan queries for syntax and semantic breaks, then run the full test suite.
 7. **Cut over**: Shift live workloads to 2.0, retaining previous binaries and backups until verification completes.
@@ -35,7 +35,7 @@ For step-by-step gate criteria and automated search patterns, see [references/ch
 
 ## Storage
 
-DuckDB 2.0 creates files using storage version 69 by default. DuckDB 1.x binaries cannot read version 69 files. DuckDB 1.5.6 reads versions 64 through 68; DuckDB 1.5.5 and earlier print version number `999`. A default 1.5.6 file uses storage version 64, not 68 (version 68 requires explicit `-storage-version v1.5.6`). DuckDB 2.0 reads and writes older storage versions without automatic upgrade; writes preserve the file's existing storage version.
+DuckDB 2.0 creates files using storage version 69 by default. DuckDB 1.x binaries cannot read version 69 files. DuckDB 1.5.6 reads versions 64 through 68. DuckDB 1.5.5 and earlier print version number `999`. A default 1.5.6 file uses storage version 64, not 68 (version 68 requires explicit `-storage-version v1.5.6`). DuckDB 2.0 reads and writes older storage versions without automatic upgrade. Writes preserve the file's existing storage version.
 
 | Reader floor | Startup pin | Compatibility tag | Storage version |
 | --- | --- | --- | --- |
@@ -52,7 +52,7 @@ SELECT database_name, tags['storage_version']
 FROM duckdb_databases();
 ```
 
-The tag reflects the compatibility floor: version 69 reports `v2.0.0+`, version 68 reports `v1.5.0+`, and default 1.5.6 reports `v1.0.0+`. The on-disk header for version 69 stores `999`; never parse versions via `hexdump`.
+The tag reflects the compatibility floor: version 69 reports `v2.0.0+`, version 68 reports `v1.5.0+`, and default 1.5.6 reports `v1.0.0+`. The on-disk header for version 69 stores `999`. Never parse versions via `hexdump`.
 
 ### Storage version pinning
 
@@ -69,13 +69,13 @@ SET storage_compatibility_version = 'v1.5.6';
 ATTACH 'file.db' (STORAGE_VERSION 'v1.5.6');
 ```
 
-In Python connections, supply `config={"storage_compatibility_version": "v1.5.0"}` (or `"v1.4.0"` for 1.4). The configuration sets the minimum compatibility floor; check `tags['storage_version']` after the first write. `latest` resolves to version 69.
+In Python connections, supply `config={"storage_compatibility_version": "v1.5.0"}` (or `"v1.4.0"` for 1.4). The configuration sets the minimum compatibility floor. Check `tags['storage_version']` after the first write. `latest` resolves to version 69.
 
 Scoping rules:
-- `-storage-version` sets the version for new databases and subsequent attaches within that CLI session; it is ignored on an existing main file.
+- `-storage-version` sets the version for new databases and subsequent attaches within that CLI session. It is ignored on an existing main file.
 - `SET storage_compatibility_version` applies only to subsequent `ATTACH` statements, never to the currently open main database.
 - To upgrade an existing database to 2.0 format, run `ATTACH 'existing.db' (STORAGE_VERSION 'latest')` and execute a write.
-- Specifying a lower `STORAGE_VERSION` on an existing database raises an error; storage versions cannot be downgraded in place.
+- Specifying a lower `STORAGE_VERSION` on an existing database raises an error. Storage versions cannot be downgraded in place.
 
 ### Database transfer: COPY vs EXPORT/IMPORT
 
@@ -87,7 +87,7 @@ ATTACH 'new.db' AS new (STORAGE_VERSION 'v1.5.6');
 COPY FROM DATABASE old TO new;
 ```
 
-`COPY FROM DATABASE` copies schema, constraints, indexes, sequences, macros, and data into an attached target. The target's `STORAGE_VERSION` determines output format. Existing schemas are reused; same-named tables, sequences, or macros abort the operation.
+`COPY FROM DATABASE` copies schema, constraints, indexes, sequences, macros, and data into an attached target. The target's `STORAGE_VERSION` determines output format. Existing schemas are reused. Same-named tables, sequences, or macros abort the operation.
 
 For cross-version migration across different environments, use `EXPORT` and `IMPORT`:
 
@@ -109,21 +109,21 @@ Scan application queries, dbt models, and scripts for syntax and semantic breaki
 | Pattern | 2.0 behavior | Replacement |
 | --- | --- | --- |
 | Legacy arrow (`->`) | Disabled by default | `lambda x: expr` |
-| `1 // 0`, `1 % 0` | Raises division-by-zero error | `TRY(expr)`; `error_on_division_by_zero` is deprecated |
+| `1 // 0`, `1 % 0` | Raises division-by-zero error | `TRY(expr)`. `error_on_division_by_zero` is deprecated |
 | `col ~ 'pat'`, `col !~ 'pat'` | Matches substring (PostgreSQL standard) | `regexp_full_match(col, 'pat')` for 1.x whole-string match |
-| `s3://bucket/key?s3_access_key_id=...` | Query parameters treated as literal key path | Store credentials in a Secret; `s3_enable_deprecated_url_parameters` temporarily |
+| `s3://bucket/key?s3_access_key_id=...` | Query parameters treated as literal key path | Store credentials in a Secret, or use `s3_enable_deprecated_url_parameters` temporarily |
 | `custom_profiling_settings` | Setting removed | `tracked_metrics` |
 | `enable_http_logging`, `http_logging_output` | Settings removed | `CALL enable_logging('HTTP')` |
 | `profiling_mode` | Deprecated and ignored | `SET enable_profiling` |
-| `preserve_identifier_case` | Boolean deprecated; expects string enum | `'preserve_case'`, `'lowercase'`, or `'uppercase'` |
+| `preserve_identifier_case` | Boolean deprecated. Expects string enum | `'preserve_case'`, `'lowercase'`, or `'uppercase'` |
 | `error_on_division_by_zero = false` | Deprecated | Wrap expressions in `TRY(expr)` |
 | `table_function_identifier_conversion` | Deprecated | Explicitly quote table-function arguments |
 | Unquoted `read_csv(file.csv)` | Implicit identifier conversion deprecated | `read_csv('file.csv')` |
-| `CREATE TABLE t AS SELECT NULL AS x` | Assigns column type `"NULL"`; typed inserts fail | `SELECT NULL::INTEGER AS x`; `legacy_disable_null_type` is deprecated |
+| `CREATE TABLE t AS SELECT NULL AS x` | Assigns column type `"NULL"`. Typed inserts fail | `SELECT NULL::INTEGER AS x`. `legacy_disable_null_type` is deprecated |
 | `X'4142'`, `B'1010'` | Inferred as `BLOB` and `BIT`, not `VARCHAR` | Explicitly cast or compare matching data types |
 | `2 * 3!` | Evaluates to `12` (`2 * (3!)`), not `720` | Parenthesize `(2 * 3)!` to retain 1.x factorial precedence |
 
-When migrating regex filters (`~`, `!~`), verify match semantics. DuckDB 1.x matched entire strings; DuckDB 2.0 matches substrings. Unadjusted queries like `WHERE msg ~ 'ERROR'` return additional matching rows.
+When migrating regex filters (`~`, `!~`), verify match semantics. DuckDB 1.x matched entire strings. DuckDB 2.0 matches substrings. Unadjusted queries like `WHERE msg ~ 'ERROR'` return additional matching rows.
 
 To temporarily unblock legacy queries during migration:
 
@@ -145,10 +145,10 @@ SELECT * FROM duckdb_logs();
 ```
 
 Deployment constraints:
-- **ICU collation and time zones**: ICU logic moved from core to the `icu` extension. Official binaries autoload `icu` automatically (no SQL changes required); custom builds that previously linked ICU must explicitly load the `icu` extension.
+- **ICU collation and time zones**: ICU logic moved from core to the `icu` extension. Official binaries autoload `icu` automatically (no SQL changes required). Custom builds that previously linked ICU must explicitly load the `icu` extension.
 - **Build prerequisites**: Building DuckDB 2.0 requires a C++17 compiler and CMake (amalgamation builds are deprecated). Precompiled Linux binaries require glibc 2.28 or newer.
-- **C API v2**: Ships with 2.0 but remains experimental; do not assume ABI stability.
-- **macOS x86_64 deprecation**: Community extensions no longer build for `osx_amd64` (core extensions still build). DuckDB 2.1 will drop `osx_amd64` completely; plan hardware upgrades prior to 2.1.
+- **C API v2**: Ships with 2.0 but remains experimental. Do not assume ABI stability.
+- **macOS x86_64 deprecation**: Community extensions no longer build for `osx_amd64` (core extensions still build). DuckDB 2.1 will drop `osx_amd64` completely. Plan hardware upgrades prior to 2.1.
 
 ## Python and extensions
 
@@ -158,7 +158,7 @@ Extension binaries are strictly compiled against specific DuckDB versions. After
 
 ## Rollback
 
-Retain previous binaries and uncompressed file backups until the 2.0 deployment completes all workload cycles. In-place storage version upgrades cannot be reversed. If a database file was written in version 69, restore from the backup copy or execute a down-copy via `COPY FROM DATABASE` into a target attached with `STORAGE_VERSION 'v1.5.6'`. Never attempt to open a storage version 69 file with DuckDB 1.x.
+Retain previous binaries and uncompressed file backups until the 2.0 deployment completes all workload cycles. In-place storage version upgrades cannot be reversed. If a database file was written in version 69, restore from the backup copy. Alternatively, execute a down-copy via `COPY FROM DATABASE` into a target attached with `STORAGE_VERSION 'v1.5.6'`. Never attempt to open a storage version 69 file with DuckDB 1.x.
 
 ## Verify
 

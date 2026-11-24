@@ -13,8 +13,8 @@ When the skill needs an attach option, a maintenance signature, or a format limi
 
 | Option | Default | Use |
 | --- | --- | --- |
-| `DATA_PATH` | `<metadata>.files` for a DuckDB catalog; required for a new SQLite or PostgreSQL catalog | Where Parquet data lives. |
-| `CREATE_IF_NOT_EXISTS` | `true`; `false` under `READ_ONLY` | Create the catalog if absent. |
+| `DATA_PATH` | `<metadata>.files` for a DuckDB catalog. Required for a new SQLite or PostgreSQL catalog | Where Parquet data lives. |
+| `CREATE_IF_NOT_EXISTS` | `true`. `false` under `READ_ONLY` | Create the catalog if absent. |
 | `READ_ONLY` | `false` | Open without creating or writing. |
 | `DATA_INLINING_ROW_LIMIT` | `ducklake_default_data_inlining_row_limit` (10) | Rows inlined into the catalog. |
 | `DUCKLAKE_VERSION` | `ducklake_default_version` | `'1.0'` or `'1.1'`. |
@@ -31,7 +31,7 @@ When the skill needs an attach option, a maintenance signature, or a format limi
 
 `MIGRATE` is not an option. `ATTACH ... (MIGRATE true)` fails.
 
-A DuckDB-file catalog allows one writing process. Other processes may attach it `READ_ONLY`. SQLite allows multiple local clients with one writer at a time and retries. PostgreSQL allows multi-user and remote lakehouses. MySQL is not recommended. Quack is experimental. Choose the catalog before the first attach; changing it later means a new catalog and a data copy.
+A DuckDB-file catalog allows one writing process. Other processes may attach it `READ_ONLY`. SQLite allows multiple local clients with one writer at a time and retries. PostgreSQL allows multi-user and remote lakehouses. MySQL is not recommended. Quack is experimental. Choose the catalog before the first attach. Changing it later means a new catalog and a data copy.
 
 ## DuckLake 1.1
 
@@ -63,7 +63,7 @@ Before migrating, back up the catalog and the data files, stop writes, compactio
 
 Top-level column names starting with `_ducklake_` are reserved on 1.1, case-insensitive. A nested field may use the prefix.
 
-Files written before migration keep `row_group_count = NULL`. A 1.0 catalog's `ducklake_data_file` has no such column. The DuckLake format version does not pin the DuckDB metadata file's storage version, so a newer DuckDB write can still make the metadata file unreadable to an older DuckDB.
+Files written before migration keep `row_group_count = NULL`. A 1.0 catalog's `ducklake_data_file` has no such column. The DuckLake format version does not pin DuckDB metadata storage versions. Therefore, a newer DuckDB write can make the metadata file unreadable to an older DuckDB.
 
 ## DuckLake operations
 
@@ -110,15 +110,15 @@ CALL ducklake_delete_orphaned_files('lake', dry_run => true);
 
 Merge when a table has many small files and no deletes. Rewrite when the deleted fraction exceeds `rewrite_delete_threshold`. Expire only when the retention policy permits and time travel is expendable. Clean only after expiry, with `dry_run` first.
 
-Merge skips files with deletes or inlined deletions. Rewrite those first, then merge. Files are not removed immediately after a merge; cleanup is a separate step.
+Merge skips files with deletes or inlined deletions. Rewrite those first, then merge. Files are not removed immediately after a merge. Cleanup is a separate step.
 
 ## DuckLake features
 
-Partition transforms: `identity`, `bucket(N, col)`, `year`, `month`, `day`, `hour`, `epoch_year`, `epoch_month`, `epoch_day`, `epoch_hour`. `ALTER TABLE ... SET/RESET PARTITIONED BY` affects new writes only. The default layout is Hive-style; `hive_file_pattern=false` opts out.
+Partition transforms: `identity`, `bucket(N, col)`, `year`, `month`, `day`, `hour`, `epoch_year`, `epoch_month`, `epoch_day`, `epoch_hour`. `ALTER TABLE ... SET/RESET PARTITIONED BY` affects new writes only. The default layout is Hive-style. `hive_file_pattern=false` opts out.
 
 `SORTED BY` supports `ASC`, `DESC`, `NULLS FIRST`, `NULLS LAST`, and scalar expressions. `sort_on_insert` defaults to `true`.
 
-Nested schemas need each parent created first. `lake.sales.europe.orders` is nested; `lake."sales.europe"` is one name. `USE` and `SHOW TABLES FROM` reject multi-part paths. `DROP SCHEMA ... CASCADE` is required for a non-empty schema.
+Nested schemas need each parent created first. `lake.sales.europe.orders` is nested. `lake."sales.europe"` is one name. `USE` and `SHOW TABLES FROM` reject multi-part paths. `DROP SCHEMA ... CASCADE` is required for a non-empty schema.
 
 Constraints are `NOT NULL` only. `PRIMARY KEY`, `UNIQUE`, `CHECK`, and foreign keys are rejected. Upserts use `MERGE INTO`.
 
@@ -126,7 +126,7 @@ Transactions use snapshot isolation. One `BEGIN` to `COMMIT` is one snapshot. Co
 
 Change feed: `lake.table_changes('t', start, end)` and `ducklake_table_changes(catalog, schema, table, start, end)`. `change_type` is `insert`, `update_preimage`, `update_postimage`, or `delete`. `table_insertions` and `table_deletions` are wrappers.
 
-Unsupported features include indexes, primary and unique keys, foreign keys, `CHECK`, sequences, user-defined types, fixed-size `ARRAY`, `ENUM`, generated columns, `VARINT`, `BITSTRING`, `UNION`, `DROP TABLE ... CASCADE`, nested `VARIANT` written to Parquet, and expression defaults in `ALTER TABLE ADD COLUMN`.
+Unsupported features include indexes, primary and unique keys, foreign keys, `CHECK`, sequences, and user-defined types. DuckLake also rejects fixed-size `ARRAY`, `ENUM`, generated columns, `VARINT`, `BITSTRING`, `UNION`, `DROP TABLE ... CASCADE`, nested `VARIANT` written to Parquet, and expression defaults in `ALTER TABLE ADD COLUMN`.
 
 ## Iceberg
 
@@ -184,11 +184,11 @@ S3 Tables: `ATTACH '<s3_tables_arn>' ... (ENDPOINT_TYPE s3_tables)`. This sets S
 
 For Unity Catalog Horizon over Iceberg REST, set `STAGE_CREATE_TABLES false`, `DISABLE_MULTI_TABLE_COMMIT true`, `SKIP_CREATE_TABLE_METADATA_UPDATES true`, `REMOVE_FILES_ON_DELETE false`.
 
-Writes through an attached REST catalog: `CREATE/DROP SCHEMA`, `CREATE/DROP TABLE`, `INSERT`, `UPDATE`, `DELETE`, `MERGE INTO`, `ALTER TABLE`, `SELECT`, and `COPY FROM DATABASE` both ways. `UPDATE`, `DELETE`, and `MERGE` use merge-on-read positional deletes. They fail on sorted tables, copy-on-write is unsupported, and `write.update.mode`/`write.delete.mode` must be `merge-on-read`. V3 adds `VARIANT`, `TIMESTAMP_NS`, binary deletion vectors, and row lineage. `GEOGRAPHY` is unsupported.
+Writes through an attached REST catalog: `CREATE/DROP SCHEMA`, `CREATE/DROP TABLE`, `INSERT`, `UPDATE`, `DELETE`, `MERGE INTO`, `ALTER TABLE`, `SELECT`, and `COPY FROM DATABASE` both ways. `UPDATE`, `DELETE`, and `MERGE` use merge-on-read positional deletes. They fail on sorted tables. Copy-on-write is unsupported. Settings `write.update.mode` and `write.delete.mode` must be `merge-on-read`. V3 adds `VARIANT`, `TIMESTAMP_NS`, binary deletion vectors, and row lineage. `GEOGRAPHY` is unsupported.
 
 Functions: `iceberg_metadata`, `iceberg_snapshots`, `iceberg_files`, `iceberg_manifests`, `iceberg_history`, `iceberg_refs`, `iceberg_partition_specs`, `iceberg_partition_stats`, `iceberg_column_stats`, `iceberg_scan_plan`, `iceberg_load_table_response`, `iceberg_view_metadata`, `iceberg_rewrite_data_files`, `iceberg_rollback_to_snapshot`, `iceberg_to_ducklake`. `iceberg_multi_file_reader` does not exist in 2.0.0.
 
-Time travel on an attached catalog: `AT (VERSION => <snapshot_id>)` or `AT (TIMESTAMP => ...)`. `VERSION` is a snapshot id, not a table version. Direct scans use `snapshot_from_id` or `snapshot_from_timestamp`; they are mutually exclusive.
+Time travel on an attached catalog: `AT (VERSION => <snapshot_id>)` or `AT (TIMESTAMP => ...)`. `VERSION` is a snapshot id, not a table version. Direct scans use `snapshot_from_id` or `snapshot_from_timestamp`. They are mutually exclusive.
 
 ## Delta
 
@@ -214,7 +214,7 @@ INSERT INTO events VALUES (1, 'eu');
 
 Time travel: `AT (VERSION => 5)`, `AT (TIMESTAMP => TIMESTAMPTZ '...')`, `ATTACH ... (VERSION 5)`, `delta_scan(..., version => 5)`, `delta_scan(..., timestamp => ...)`. A future or pre-first-commit timestamp fails.
 
-For `VARIANT`, top-level columns can be created, read, and appended. A nested `VARIANT` inside a struct, list, or map can be created but not written. DuckDB shreds only when `delta.enableVariantShredding` is true; `CREATE TABLE` cannot set it.
+For `VARIANT`, top-level columns can be created, read, and appended. A nested `VARIANT` inside a struct, list, or map can be created but not written. DuckDB shreds only when `delta.enableVariantShredding` is true. `CREATE TABLE` cannot set it.
 
 `delta_column_mapping_policy` defaults to `strict` in 2.0. `SET delta_column_mapping_policy = 'lenient'` restores name-based reads for id-mode files without Parquet field ids.
 
@@ -235,13 +235,13 @@ CREATE SECRET uc (
 ATTACH 'my_catalog' AS uc (TYPE unity_catalog, DEFAULT_SCHEMA 'main');
 ```
 
-Options: `SECRET`, `DEFAULT_SCHEMA`, `READ_ONLY`, `USE_IRC_SCAN_PLAN`. A storage secret is also required for the data files. Create it before `ATTACH`; the catalog secret only authenticates the REST endpoint. `DEFAULT_SCHEMA` is required for Unity Catalog OSS.
+Options: `SECRET`, `DEFAULT_SCHEMA`, `READ_ONLY`, `USE_IRC_SCAN_PLAN`. A storage secret is also required for the data files. Create it before `ATTACH`. The catalog secret only authenticates the REST endpoint. `DEFAULT_SCHEMA` is required for Unity Catalog OSS.
 
-Time travel uses `AT (VERSION => 5)` or `AT (TIMESTAMP => TIMESTAMPTZ '...')`. A timestamp reads the latest version committed at or before that time; a time before the first commit or in the future fails.
+Time travel uses `AT (VERSION => 5)` or `AT (TIMESTAMP => TIMESTAMPTZ '...')`. A timestamp reads the latest version committed at or before that time. A time before the first commit or in the future fails.
 
 Unity Catalog reads, inserts, and creates tables. Managed tables use catalog-managed commits. It does not support `UPDATE`, `DELETE`, `DROP TABLE`, `ALTER TABLE`, or view and schema DDL. Inserts into tables with `DEFAULT` or generated columns fail. `CREATE TABLE` rejects constraints, defaults, generated columns, unsupported types, `SORTED BY`, and `WITH` options other than `location`.
 
-`USE_IRC_SCAN_PLAN` uses Databricks server-side planning. Tables with equality deletes fail under it; reattach without the option.
+`USE_IRC_SCAN_PLAN` uses Databricks server-side planning. Tables with equality deletes fail under it. Reattach without the option.
 
 Unity Catalog is a catalog, not a fourth file format. Use it for Delta tables, or an Iceberg REST attach for Iceberg tables.
 

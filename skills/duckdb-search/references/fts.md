@@ -2,7 +2,7 @@
 
 Read this when the skill needs the exact FTS parameters, query semantics, layered search, freshness contract, or an update repair.
 
-Behavior below was probed on DuckDB 2.0.0 with fts `2266e67d01`. The released 2.0.0 extension build predates the `v2.0-cyanoptera` branch HEAD (`623ee80e`); where behavior differs, both are noted. The official 2.0 page is older than the extension and omits `tokenizer`, `cluster_terms`, `layered_search`, `field_weights`, `field_b`, `scoring_model`, and `tie_breaker`.
+Behavior below was probed on DuckDB 2.0.0 with fts `2266e67d01`. The released 2.0.0 extension build predates the `v2.0-cyanoptera` branch HEAD (`623ee80e`). Where behavior differs, both are noted. The official 2.0 page is older than the extension and omits `tokenizer`, `cluster_terms`, `layered_search`, `field_weights`, `field_b`, `scoring_model`, and `tie_breaker`.
 
 ## Create an index
 
@@ -37,7 +37,7 @@ PRAGMA create_fts_index(
 | `cluster_terms` | `0` | Physically order the terms table. Implied by `layered_search`. |
 | `layered_search` | `0` | Add dictionary sidecar tables and the layered search macros. |
 
-The index is a schema named `fts_<schema>_<table>`. `main.docs` becomes `fts_main_docs`; `sales.docs` becomes `fts_sales_docs`. Two table names can collide after flattening, for example `a.b_c` and `a_b.c`. The base index has `dict`, `docs`, `fields`, `stats`, `stopwords`, and `terms`. Layered search adds `raw_dict`, `term_stats`, `term_stats_by_len`, `term_grams`, and `term_prefixes`.
+The index is a schema named `fts_<schema>_<table>`. `main.docs` becomes `fts_main_docs`. `sales.docs` becomes `fts_sales_docs`. Two table names can collide after flattening, for example `a.b_c` and `a_b.c`. The base index has `dict`, `docs`, `fields`, `stats`, `stopwords`, and `terms`. Layered search adds `raw_dict`, `term_stats`, `term_stats_by_len`, `term_grams`, and `term_prefixes`.
 
 A static index stores `docid` as the base-table row id at build time. It is a snapshot. An `UPDATE` does not move the row, and the index never re-reads the row. Indexes on views are rejected with `Catalog Error: <view> is not an table`. Indexes on temp tables and non-main schemas work.
 
@@ -71,10 +71,10 @@ Terms are OR by default. `conjunctive := 1` requires every term that survives to
 | Query | Result |
 | --- | --- |
 | `duck database` | Documents with `duck`, `database`, or both. |
-| `duck AND database` | Same as `duck database`; `and` is a stopword. |
-| `"duck database"` | Same as `duck database`; quotes are delimiters. |
-| `duck -database` | Same as `duck database`; `-` is a delimiter. |
-| `databas*` | No prefix match; `*` is stripped. |
+| `duck AND database` | Same as `duck database`. `and` is a stopword. |
+| `"duck database"` | Same as `duck database`. Quotes are delimiters. |
+| `duck -database` | Same as `duck database`. Hyphen `-` is a delimiter. |
+| `databas*` | No prefix match. Asterisk `*` is stripped. |
 | `duckling` | A separate term from `duck`. |
 
 Use a layered index for prefix, substring, fuzzy, autocomplete, or boolean queries.
@@ -192,7 +192,7 @@ PRAGMA create_fts_index(
 );
 ```
 
-`'*'` indexes every `VARCHAR` column, including a `VARCHAR` id. Name columns explicitly. An explicit non-`VARCHAR` column is cast and indexed; `'*'` skips it.
+`'*'` indexes every `VARCHAR` column, including a `VARCHAR` id. Name columns explicitly. An explicit non-`VARCHAR` column is cast and indexed. An asterisk `'*'` skips it.
 
 ## Layered search
 
@@ -236,7 +236,7 @@ FROM fts_main_docs.search_layered_bm25_query(
 
 A group with at least one `must` clause defaults `minimum_should_match` to zero. A should-only group defaults to one. Setting it to zero on a should-only group matches every indexed document with score `0`. Empty groups, pure-negative groups, unknown keys, and out-of-range boosts are rejected. Defaults are 1024 leaves and depth 64.
 
-For an existing layered index created before `json` was loaded, install the macros with `PRAGMA create_fts_boolean_query_macros('docs')`. They reuse the existing index; no rebuild.
+For an existing layered index created before `json` was loaded, install the macros with `PRAGMA create_fts_boolean_query_macros('docs')`. They reuse the existing index with no rebuild required.
 
 Layered indexes are still snapshots unless `incremental = 1`. Incremental triggers maintain the sidecars for `INSERT` and `DELETE`, not `UPDATE`.
 
@@ -244,7 +244,7 @@ Layered indexes are still snapshots unless `incremental = 1`. Incremental trigge
 
 Build cost scales with text and postings, not row count alone. A 100k-document, 65 MB text fixture with 10.2M postings built in 10.3 s at one thread and 9.6 s at eight, effectively serial. The index was about 22 MB, roughly 0.34 times the raw text. A query over 100k rows with 500 hits took 0.08 s.
 
-The build respects `memory_limit`. A 50 MB limit failed with `Out of Memory Error` on that fixture; 100 MB passed. Budget at least twice the indexed text.
+The build respects `memory_limit`. A 50 MB limit failed with `Out of Memory Error` on that fixture. 100 MB passed. Budget at least twice the indexed text.
 
 A rebuild takes an exclusive file lock. A reader blocks the rebuild and the rebuild blocks the reader:
 
@@ -252,7 +252,7 @@ A rebuild takes an exclusive file lock. A reader blocks the rebuild and the rebu
 IO Error: Could not set lock on file "...": Conflicting lock is held in ...
 ```
 
-`overwrite = 1` inside a transaction works. `ROLLBACK` restores the previous index; `COMMIT` publishes the rebuild.
+`overwrite = 1` inside a transaction works. `ROLLBACK` restores the previous index. `COMMIT` publishes the rebuild.
 
 The official `EXPLAIN` does not show an FTS operator. The index is ordinary tables read by a macro. Prove use with results, not a plan:
 

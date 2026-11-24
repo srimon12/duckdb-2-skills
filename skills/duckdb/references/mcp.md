@@ -1,6 +1,6 @@
 # MCP reference
 
-Read this when an agent or desktop client must connect to DuckDB over the Model Context Protocol, or when DuckDB must expose tables as MCP resources.
+Read this when an agent or desktop client connects to DuckDB over the Model Context Protocol. Also read this when DuckDB exposes tables as MCP resources.
 
 ## Two paths
 
@@ -67,7 +67,7 @@ The token is not tenant isolation. A Quack token or MCP client can see every tab
 }
 ```
 
-The server is version 1.1.0 and requires `duckdb==1.5.6`. Its read-only mode is not a filesystem sandbox; add the init SQL above, or use the extension on a 2.0 binary.
+The server is version 1.1.0 and requires `duckdb==1.5.6`. Its read-only mode is not a filesystem sandbox. Add the initialization SQL above, or run the extension on a 2.0 binary.
 
 ## Verify
 

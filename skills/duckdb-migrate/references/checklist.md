@@ -78,7 +78,7 @@ rg -n --glob '*.sql' --glob '*.py' --glob '*.md' \
 | --- | --- |
 | Legacy arrow (`x -> expr`) | `lambda x: expr` |
 | `// 0`, `% 0` | `TRY(expr)` |
-| `~`, `!~` | Decide partial or full; use `regexp_full_match` for full |
+| `~`, `!~` | Decide partial or full. Use `regexp_full_match` for full |
 | `s3_access_key_id` | A secret |
 | `custom_profiling_settings` | `tracked_metrics` |
 | `enable_http_logging`, `http_logging_output` | `CALL enable_logging('HTTP')` |
@@ -95,7 +95,7 @@ Arrow syntax also appears in JSON and in C code. Review each hit.
 ## Phase 3: settings and CLI
 
 - Replace removed settings.
-- Check scripts that parse errors. Agent mode writes JSON to stderr; `-json` writes text errors to stderr and can leave a partial `[` on stdout.
+- Check scripts that parse errors. Agent mode writes JSON to stderr. `-json` writes text errors to stderr and can leave a partial `[` on stdout.
 - Use `duckdb` for output mode, `max_execution_time`, and `~/.duckdbrc` checks.
 
 **Gate:** a representative command produces the expected output under the new binary.
@@ -124,9 +124,9 @@ duckdb mydata.old.db -c "EXPORT DATABASE 'tmp'"
 duckdb mydata.new.db -c "IMPORT DATABASE 'tmp'"
 ```
 
-`EXPORT DATABASE` writes CSV by default; add `(FORMAT parquet)` if you expect Parquet. The export directory should be empty. `IMPORT DATABASE` may target a database with unrelated objects; any same-named object aborts.
+`EXPORT DATABASE` writes CSV by default. Add `(FORMAT parquet)` if you expect Parquet. The export directory should be empty. `IMPORT DATABASE` may target a database with unrelated objects. Any same-named object aborts.
 
-To copy between attached databases, the target may hold unrelated objects; same-named tables, macros, and sequences abort, and an existing schema is reused. The target storage version controls the output:
+When copying between attached databases, the target may hold unrelated objects. Same-named tables, macros, and sequences abort, and an existing schema is reused. The target storage version controls the output:
 
 ```sql
 ATTACH 'old.db' AS old (READ_ONLY);
@@ -154,7 +154,7 @@ Upgrade the binary and every extension together. Roll out to one process first. 
 
 ## Rollback
 
-An in-place storage upgrade is not reversible. Roll back by restoring the file copy, switching back to the old file, or using a tested down-copy with `COPY FROM DATABASE` into a target attached with `STORAGE_VERSION 'v1.5.6'`. Do not try to open a 2.0 file with 1.x and expect a downgrade path.
+An in-place storage upgrade is not reversible. Roll back by restoring the file copy or switching back to the old file. Alternatively, perform a tested down-copy with `COPY FROM DATABASE` into a target attached with `STORAGE_VERSION 'v1.5.6'`. Do not try to open a 2.0 file with 1.x and expect a downgrade path.
 
 **Gate:** the restore was tested, not only the backup.
 

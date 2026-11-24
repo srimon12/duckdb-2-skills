@@ -72,11 +72,11 @@ FROM fused JOIN relevant USING (id);
 
 Run the same query with the lexical leg only and the vector leg only. A fusion that loses to both legs is a weighting or candidate-limit problem, not a reason to add a reranker.
 
-For recall against an exact baseline, compute the true top-k with `array_cosine_distance` on a copy without the HNSW index, then compare the fused top-k with the union of the two exact rankings. Record the fixture size, dimensions, `hnsw_ef_search`, and candidate limit.
+For recall against an exact baseline, compute the true top-k with `array_cosine_distance` on an unindexed table copy. Then compare the fused top-k with the union of the two exact rankings. Record the fixture size, dimensions, `hnsw_ef_search`, and candidate limit.
 
 ## Rerank
 
-A two-stage query is worth it when the embedding model is weak on the domain or the order must be exact. Fuse to 50 or 100, then rerank that set with a cross-encoder or an exact distance. Do not rerank the full table; the cost defeats the index.
+A two-stage query is worth it when the embedding model is weak on the domain or the order must be exact. Fuse to 50 or 100, then rerank that set with a cross-encoder or an exact distance. Do not rerank the full table. The cost defeats the index.
 
 Below roughly 10k rows, a brute-force scan over both scores is simpler and often faster than building two indexes. Build the indexes when the table grows past that or when the query repeats.
 
@@ -91,7 +91,7 @@ Below roughly 10k rows, a brute-force scan over both scores is simpler and often
 | `OFFSET` on the fused query | repeated rows | Fuse to `k + offset` and slice. |
 | No `id` tie-break | unstable ranks on ties | Add `, id` to both `ORDER BY` clauses. |
 | Fusing raw scores | BM25 and cosine are not comparable | Fuse ranks or normalize first. |
-| `search_layered_bm25` output joined as a row number | wrong ids or dropped rows | `docname` is the document id value; alias it to the id column. |
+| `search_layered_bm25` output joined as a row number | wrong ids or dropped rows | `docname` is the document id value. Alias it to the id column. |
 
 ## References
 
