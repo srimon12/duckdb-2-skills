@@ -71,7 +71,7 @@ Terms are OR by default. `conjunctive := 1` requires every term that survives to
 | Query | Result |
 | --- | --- |
 | `duck database` | Documents with `duck`, `database`, or both. |
-| `duck AND database` | Same as `duck database`. 'and' is a stopword. |
+| `duck AND database` | Same as `duck database`. `and` is a stopword. |
 | `"duck database"` | Same as `duck database`. Quotes are delimiters. |
 | `duck -database` | Same as `duck database`. Hyphen `-` is a delimiter. |
 | `databas*` | No prefix match. Asterisk `*` is stripped. |
